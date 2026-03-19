@@ -1,45 +1,101 @@
-/* ===== OpenWolf VitePress + DaisyUI Integration ===== */
+/* ===== OpenWolf — Precision Dark Interface ===== */
 
-/* Brand colors mapped to VitePress variables */
+/* ---- Light mode ---- */
 :root {
-  --vp-c-brand-1: oklch(0.627 0.265 303.9);
-  --vp-c-brand-2: oklch(0.714 0.221 303.6);
-  --vp-c-brand-3: oklch(0.541 0.281 293.009);
-  --vp-c-brand-soft: oklch(0.627 0.265 303.9 / 0.12);
+  --vp-c-brand-1: #0d9373;
+  --vp-c-brand-2: #0fa882;
+  --vp-c-brand-3: #0d9373;
+  --vp-c-brand-soft: rgba(13, 147, 115, 0.12);
+
+  --vp-c-bg: #ffffff;
+  --vp-c-bg-alt: #f6f7f9;
+  --vp-c-bg-soft: #eef0f4;
+  --vp-c-bg-elv: #ffffff;
+  --vp-c-divider: #e2e4e9;
+  --vp-c-text-1: #1a1d26;
+  --vp-c-text-2: #4a4f5e;
+  --vp-c-text-3: #7c8298;
+
   --vp-font-family-base: "Inter", system-ui, -apple-system, sans-serif;
   --vp-font-family-mono: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+
+  /* OpenWolf tokens — light */
+  --ow-bg-deep: #f6f7f9;
+  --ow-bg-surface: #ffffff;
+  --ow-bg-elevated: #ffffff;
+  --ow-border: #e2e4e9;
+  --ow-border-hover: #c8ccd6;
+  --ow-text-primary: #1a1d26;
+  --ow-text-secondary: #4a4f5e;
+  --ow-text-muted: #7c8298;
+  --ow-text-faint: #a0a5b8;
+  --ow-accent: #0d9373;
+  --ow-accent-soft: rgba(13, 147, 115, 0.08);
+  --ow-accent-glow: rgba(13, 147, 115, 0.15);
+  --ow-terminal-bg: #1a1d26;
+  --ow-terminal-text: #c8ccd6;
+  --ow-terminal-prompt: #0fa882;
+  --ow-terminal-success: #34d399;
+  --ow-terminal-muted: #636980;
+  --ow-card-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --ow-card-shadow-hover: 0 8px 25px rgba(0,0,0,0.08);
 }
 
-/* Dark VitePress surfaces match DaisyUI dark theme */
+/* ---- Dark mode ---- */
 .dark {
-  --vp-c-bg: oklch(0.178 0.014 285.938);
-  --vp-c-bg-alt: oklch(0.21 0.014 285.938);
-  --vp-c-bg-soft: oklch(0.23 0.015 285.938);
-  --vp-c-bg-elv: oklch(0.25 0.015 285.938);
-  --vp-c-divider: oklch(0.3 0.015 285.938);
-  --vp-c-text-1: oklch(0.92 0.01 285.938);
-  --vp-c-text-2: oklch(0.65 0.02 260);
-  --vp-c-text-3: oklch(0.5 0.02 260);
+  --vp-c-brand-1: #34d399;
+  --vp-c-brand-2: #5eead4;
+  --vp-c-brand-3: #34d399;
+  --vp-c-brand-soft: rgba(52, 211, 153, 0.1);
+
+  --vp-c-bg: #0c0e14;
+  --vp-c-bg-alt: #12151e;
+  --vp-c-bg-soft: #181c28;
+  --vp-c-bg-elv: #1e2230;
+  --vp-c-divider: #262b3a;
+  --vp-c-text-1: #e8eaf0;
+  --vp-c-text-2: #9ca3b8;
+  --vp-c-text-3: #636980;
+
+  --ow-bg-deep: #0c0e14;
+  --ow-bg-surface: #12151e;
+  --ow-bg-elevated: #181c28;
+  --ow-border: #262b3a;
+  --ow-border-hover: #353c52;
+  --ow-text-primary: #e8eaf0;
+  --ow-text-secondary: #9ca3b8;
+  --ow-text-muted: #636980;
+  --ow-text-faint: #454b60;
+  --ow-accent: #34d399;
+  --ow-accent-soft: rgba(52, 211, 153, 0.08);
+  --ow-accent-glow: rgba(52, 211, 153, 0.12);
+  --ow-terminal-bg: #0a0c12;
+  --ow-terminal-text: #9ca3b8;
+  --ow-terminal-prompt: #34d399;
+  --ow-terminal-success: #34d399;
+  --ow-terminal-muted: #454b60;
+  --ow-card-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+  --ow-card-shadow-hover: 0 8px 30px rgba(0,0,0,0.4);
 }
 
-/* Nav bar: glass morphism */
+/* Nav bar: glass */
 .VPNav {
   backdrop-filter: blur(16px) saturate(180%) !important;
 }
 .dark .VPNav {
-  background: oklch(0.178 0.014 285.938 / 0.85) !important;
+  background: rgba(12, 14, 20, 0.85) !important;
 }
 .VPNavBar {
-  border-bottom-color: oklch(0.3 0.015 285.938 / 0.5) !important;
+  border-bottom-color: var(--ow-border) !important;
 }
 
-/* Hide VitePress default home hero/features — replaced by HeroLanding component */
+/* Hide VitePress default home hero/features */
 .VPHome .VPHero,
 .VPHome .VPFeatures {
   display: none !important;
 }
 
-/* Remove VitePress home padding so our landing is edge-to-edge */
+/* Edge-to-edge landing */
 .VPContent.is-home {
   padding: 0 !important;
 }
@@ -50,20 +106,20 @@
 
 /* Brand buttons */
 .VPButton.brand {
-  background: oklch(0.627 0.265 303.9) !important;
-  border-color: oklch(0.627 0.265 303.9) !important;
+  background: var(--ow-accent) !important;
+  border-color: var(--ow-accent) !important;
+  color: #0c0e14 !important;
+  font-weight: 600 !important;
 }
 .VPButton.brand:hover {
-  background: oklch(0.714 0.221 303.6) !important;
-  border-color: oklch(0.714 0.221 303.6) !important;
+  opacity: 0.9 !important;
 }
 
-/* Doc pages: better code blocks */
+/* Doc code blocks */
 .vp-doc div[class*="language-"] {
   border-radius: 12px;
 }
 
-/* Smooth scrolling */
 html {
   scroll-behavior: smooth;
 }
