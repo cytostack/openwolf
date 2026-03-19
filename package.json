@@ -1,6 +1,6 @@
 {
   "name": "openwolf",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Token-conscious AI brain for Claude Code projects",
   "type": "module",
   "bin": {
