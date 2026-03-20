@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://res.cloudinary.com/dh2mghhah/image/upload/v1774033377/CytoStack/openwolf_mad0dz.gif" alt="OpenWolf demo" width="820" />
+  <img src="demo.gif" alt="OpenWolf demo" width="820" />
 </p>
 
 <h1 align="center">OpenWolf</h1>
