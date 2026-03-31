@@ -8,7 +8,8 @@
   },
   "scripts": {
     "prebuild": "node -e \"const fs=require('fs');if(fs.existsSync('dist'))fs.rmSync('dist',{recursive:true})\"",
-    "build": "tsc && pnpm build:hooks && pnpm build:dashboard",
+    "build": "tsc && pnpm build:hooks && pnpm build:dashboard && chmod +x dist/bin/openwolf.js",
+    "postinstall": "chmod +x dist/bin/openwolf.js 2>/dev/null || true",
     "build:hooks": "tsc -p tsconfig.hooks.json",
     "build:dashboard": "cd src/dashboard/app && npx vite build --outDir ../../../dist/dashboard",
     "dev": "tsc --watch",

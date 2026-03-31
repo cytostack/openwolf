@@ -1,5 +1,4 @@
-import React from "react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, Legend } from "recharts";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
 import { formatTokens } from "../../lib/utils.js";
 import type { WolfData } from "../../hooks/useWolfData.js";
 
@@ -9,23 +8,21 @@ export function TokenUsage({ data }: { data: WolfData }) {
 
   // Build chart data from sessions
   const chartData = tokenLedger.sessions.map((s: any) => ({
-    date: s.started?.slice(0, 10) || "",
+    date: s.started ? s.started.slice(0, 16).replace("T", " ") : "",
     input: s.totals?.input_tokens_estimated || 0,
     output: s.totals?.output_tokens_estimated || 0,
   }));
 
-  // Comparison data
+  // Comparison data — only real tracked numbers, no fabricated estimates
   const totalTracked = lt.total_tokens_estimated;
   const savings = lt.estimated_savings_vs_bare_cli;
   const withoutWolf = totalTracked + savings;
-  // OpenClaw adds overhead — uses ~30% MORE tokens than bare CLI due to extra turns/sessions
-  const withOpenClaw = Math.round(withoutWolf * 1.3);
   const savingsPercent = withoutWolf > 0 ? Math.round((savings / withoutWolf) * 100) : 0;
+  const hasComparisonData = savings > 0;
 
   const comparisonData = [
-    { name: "OpenClaw + Claude", tokens: withOpenClaw, fill: "#f87171" },
-    { name: "Claude CLI (without OpenWolf)", tokens: withoutWolf, fill: "#fbbf24" },
-    { name: "OpenWolf + Claude CLI", tokens: totalTracked, fill: "#34d399" },
+    { name: "Without OpenWolf (est.)", tokens: withoutWolf, fill: "#fbbf24" },
+    { name: "With OpenWolf (actual)", tokens: totalTracked, fill: "#34d399" },
   ];
 
   return (
@@ -41,7 +38,7 @@ export function TokenUsage({ data }: { data: WolfData }) {
               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
               <XAxis dataKey="date" tick={{ fill: "var(--text-muted)", fontSize: 12 }} />
               <YAxis tick={{ fill: "var(--text-muted)", fontSize: 12 }} tickFormatter={(v) => formatTokens(v)} />
-              <Tooltip contentStyle={{ background: "var(--chart-tooltip-bg)", border: "1px solid var(--chart-tooltip-border)", borderRadius: 8, color: "var(--text-primary)" }} />
+              <Tooltip contentStyle={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: 8, color: "#e5e5e5" }} />
               <Area type="monotone" dataKey="input" name="Input (reads)" stackId="1" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} />
               <Area type="monotone" dataKey="output" name="Output (writes)" stackId="1" stroke="#a78bfa" fill="#a78bfa" fillOpacity={0.3} />
             </AreaChart>
@@ -59,19 +56,27 @@ export function TokenUsage({ data }: { data: WolfData }) {
             </span>
           )}
         </div>
-        <ResponsiveContainer width="100%" height={150}>
-          <BarChart data={comparisonData} layout="vertical">
-            <XAxis type="number" tick={{ fill: "var(--text-muted)", fontSize: 12 }} tickFormatter={(v) => formatTokens(v)} />
-            <YAxis type="category" dataKey="name" tick={{ fill: "var(--text-secondary)", fontSize: 12 }} width={200} />
-            <Tooltip contentStyle={{ background: "var(--chart-tooltip-bg)", border: "1px solid var(--chart-tooltip-border)", borderRadius: 8, color: "var(--text-primary)" }} formatter={(v: number) => [formatTokens(v) + " tokens", ""]} />
-            <Bar dataKey="tokens" radius={[0, 4, 4, 0]}>
-              {comparisonData.map((entry, i) => (
-                <Cell key={i} fill={entry.fill} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-        <p className="text-xs mt-3" style={{ color: "var(--text-faint)" }}>Estimates based on project size and average session patterns.</p>
+        {!hasComparisonData ? (
+          <div className="text-sm py-6 text-center" style={{ color: "var(--text-muted)" }}>
+            No savings data yet. Comparison will appear once OpenWolf has tracked repeated-read savings across sessions.
+          </div>
+        ) : (
+          <>
+            <ResponsiveContainer width="100%" height={100}>
+              <BarChart data={comparisonData} layout="vertical">
+                <XAxis type="number" tick={{ fill: "var(--text-muted)", fontSize: 12 }} tickFormatter={(v) => formatTokens(v)} />
+                <YAxis type="category" dataKey="name" tick={{ fill: "var(--text-secondary)", fontSize: 12 }} width={220} />
+                <Tooltip contentStyle={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: 8, color: "#e5e5e5" }} cursor={{ fill: "transparent" }} formatter={(v: number) => [formatTokens(v) + " tokens", ""]} />
+                <Bar dataKey="tokens" radius={[0, 4, 4, 0]} background={{ fill: "transparent" }}>
+                  {comparisonData.map((entry, i) => (
+                    <Cell key={i} fill={entry.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            <p className="text-xs mt-3" style={{ color: "var(--text-faint)" }}>Based on repeated-read blocks tracked by OpenWolf across your sessions.</p>
+          </>
+        )}
       </div>
 
       {/* Waste alerts */}

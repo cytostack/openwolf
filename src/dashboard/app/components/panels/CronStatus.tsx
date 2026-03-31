@@ -7,6 +7,7 @@ export function CronStatus({ data }: { data: WolfData }) {
   const { cronManifest, cronState, client } = data;
   const [showDeadLetters, setShowDeadLetters] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
+  const [runningTasks, setRunningTasks] = useState<Record<string, "running" | "ok" | "error">>({});
 
   const getTaskStatus = (taskId: string): string => {
     if (cronState.dead_letter_queue.some((d: any) => d.task_id === taskId)) return "failed";
@@ -20,7 +21,16 @@ export function CronStatus({ data }: { data: WolfData }) {
   };
 
   const triggerTask = (taskId: string) => {
-    client?.send({ type: "trigger_task", task_id: taskId });
+    setRunningTasks(prev => ({ ...prev, [taskId]: "running" }));
+    fetch(`/api/cron/run/${encodeURIComponent(taskId)}`, { method: "POST" })
+      .then(r => {
+        setRunningTasks(prev => ({ ...prev, [taskId]: r.ok ? "ok" : "error" }));
+        setTimeout(() => setRunningTasks(prev => { const n = { ...prev }; delete n[taskId]; return n; }), 3000);
+      })
+      .catch(() => {
+        setRunningTasks(prev => ({ ...prev, [taskId]: "error" }));
+        setTimeout(() => setRunningTasks(prev => { const n = { ...prev }; delete n[taskId]; return n; }), 3000);
+      });
   };
 
   const retryDeadLetter = (taskId: string) => {
@@ -54,10 +64,17 @@ export function CronStatus({ data }: { data: WolfData }) {
                 <td className="px-4 py-3 hidden md:table-cell text-sm" style={{ color: "var(--text-muted)" }}>{formatSchedule(task.schedule)}</td>
                 <td className="px-4 py-3 hidden md:table-cell text-sm" style={{ color: "var(--text-faint)" }}>{getLastRun(task.id)}</td>
                 <td className="px-4 py-3 text-right">
-                  <button onClick={() => triggerTask(task.id)}
-                    className="px-3 py-1 text-xs rounded-md transition-colors"
-                    style={{ background: "var(--bg-surface-hover)", border: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}
-                  >Run Now</button>
+                  {(() => {
+                    const st = runningTasks[task.id];
+                    const label = st === "running" ? "Running…" : st === "ok" ? "Triggered ✓" : st === "error" ? "Failed ✗" : "Run Now";
+                    const color = st === "ok" ? "var(--accent)" : st === "error" ? "var(--danger)" : "var(--text-secondary)";
+                    return (
+                      <button onClick={() => triggerTask(task.id)} disabled={st === "running"}
+                        className="px-3 py-1 text-xs rounded-md transition-colors"
+                        style={{ background: "var(--bg-surface-hover)", border: "1px solid var(--border-subtle)", color, opacity: st === "running" ? 0.6 : 1 }}
+                      >{label}</button>
+                    );
+                  })()}
                 </td>
               </tr>
             ))}

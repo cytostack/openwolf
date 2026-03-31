@@ -1,6 +1,5 @@
 import { execSync } from "node:child_process";
 import * as fs from "node:fs";
-import * as net from "node:net";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { findProjectRoot } from "../scanner/project-root.js";
@@ -81,12 +80,23 @@ export function daemonStart(): void {
     console.log("pm2 not found. Install with: pnpm add -g pm2");
     return;
   }
+
+  const port = getDashboardPort();
   const name = getPm2Name();
+
+  // Stop any daemon already running on this port (from a different project)
+  const existingPid = findPidOnPort(port);
+  if (existingPid) {
+    killPid(existingPid);
+    // Also delete any stale PM2 entry for the old daemon
+    try { execSync(`pm2 delete /openwolf-/`, { stdio: "ignore" }); } catch {}
+  }
+
   // Resolve daemon script relative to openwolf's install dir, not the target project
   const daemonScript = path.resolve(__dirname, "..", "daemon", "wolf-daemon.js");
 
   try {
-    execSync(`pm2 start "${daemonScript}" --name ${name} --cwd "${projectRoot}" -- --env OPENWOLF_PROJECT_ROOT="${projectRoot}"`, {
+    execSync(`pm2 start "${daemonScript}" --name ${name} --cwd "${projectRoot}"`, {
       stdio: "inherit",
       env: { ...process.env, OPENWOLF_PROJECT_ROOT: projectRoot },
     });

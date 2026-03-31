@@ -1,6 +1,5 @@
 import React from "react";
 import { cn } from "../../lib/utils.js";
-import { StatusBadge } from "../shared/StatusBadge.js";
 import type { Theme } from "../../hooks/useTheme.js";
 
 const navItems = [
@@ -19,13 +18,12 @@ const navItems = [
 interface SidebarProps {
   activePanel: string;
   onNavigate: (panel: string) => void;
-  daemonStatus: string;
   projectName: string;
   theme: Theme;
   onToggleTheme: () => void;
 }
 
-export function Sidebar({ activePanel, onNavigate, daemonStatus, projectName, theme, onToggleTheme }: SidebarProps) {
+export function Sidebar({ activePanel, onNavigate, projectName, theme, onToggleTheme }: SidebarProps) {
   return (
     <>
       {/* Desktop sidebar */}
@@ -48,9 +46,6 @@ export function Sidebar({ activePanel, onNavigate, daemonStatus, projectName, th
           {projectName && (
             <p className="text-xs mt-1 truncate" style={{ color: "var(--text-secondary)" }} title={projectName}>{projectName}</p>
           )}
-          <div className="mt-2">
-            <StatusBadge status={daemonStatus} />
-          </div>
         </div>
         <nav className="flex-1 py-2 overflow-y-auto">
           {navItems.map((item) => (
