@@ -1,12 +1,13 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { type ChildProcess } from "node:child_process";
-import { appendText } from "../utils/fs-safe.js";
+import { appendText, writeJSON } from "../utils/fs-safe.js";
 import {
   findChromePath,
   captureRouteSectioned,
   detectRoutes,
   detectDevServer,
+  detectDeployedUrl,
   startDevServer,
 } from "./designqc-capture.js";
 import type { DesignQCOptions, Screenshot, CaptureResult } from "./designqc-types.js";
@@ -29,24 +30,30 @@ export class DesignQCEngine {
     let weStartedServer = false;
 
     try {
-      // 1. Find or start dev server
+      // 1. Find or start server — try deployed URL, then local dev server
       if (!baseUrl) {
-        console.log("  Checking for running dev server...");
-        const existing = await detectDevServer();
-        if (existing) {
-          baseUrl = existing.url;
-          console.log(`  Found running server at ${baseUrl}`);
+        const deployedUrl = detectDeployedUrl(this.projectRoot);
+        if (deployedUrl) {
+          baseUrl = deployedUrl;
+          console.log(`  Detected deployed URL: ${baseUrl}`);
         } else {
-          console.log("  No running server found. Starting dev server...");
-          const started = await startDevServer(this.projectRoot);
-          if (!started) {
-            console.error("  Could not start dev server. Use --url to specify manually.");
-            return { screenshots: [], captureDir: "", totalSizeKB: 0, estimatedTokens: 0 };
+          console.log("  Checking for running dev server...");
+          const existing = await detectDevServer();
+          if (existing) {
+            baseUrl = existing.url;
+            console.log(`  Found running server at ${baseUrl}`);
+          } else {
+            console.log("  No running server found. Starting dev server...");
+            const started = await startDevServer(this.projectRoot);
+            if (!started) {
+              console.error("  Could not start dev server. Add a 'homepage' to package.json or use --url to specify the URL.");
+              return { screenshots: [], captureDir: "", totalSizeKB: 0, estimatedTokens: 0 };
+            }
+            baseUrl = started.url;
+            serverProc = started.proc;
+            weStartedServer = true;
+            console.log(`  Dev server ready at ${baseUrl}`);
           }
-          baseUrl = started.url;
-          serverProc = started.proc;
-          weStartedServer = true;
-          console.log(`  Dev server ready at ${baseUrl}`);
         }
       }
 
@@ -138,7 +145,19 @@ export class DesignQCEngine {
       console.log("");
       console.log("  Ask Claude: \"Read the screenshots in .wolf/designqc-captures/ and evaluate the design\"");
 
-      // 7. Log to memory
+      // 7. Write report for dashboard
+      writeJSON(path.join(this.wolfDir, "designqc-report.json"), {
+        captured_at: new Date().toISOString(),
+        captures: allScreenshots.map((s) => ({
+          file: path.basename(s.path),
+          viewport: s.viewport.name,
+          route: s.route,
+        })),
+        total_size_kb: totalSizeKB,
+        estimated_tokens: estimatedTokens,
+      });
+
+      // 8. Log to memory
       const now = new Date();
       const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
       appendText(

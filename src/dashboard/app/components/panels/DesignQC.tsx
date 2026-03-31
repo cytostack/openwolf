@@ -1,33 +1,84 @@
-import React from "react";
+import React, { useState } from "react";
 import type { WolfData } from "../../hooks/useWolfData.js";
 
 export function DesignQC({ data }: { data: WolfData }) {
-  const { designqcReport } = data;
+  const { designqcReport, project } = data;
+  const [captureState, setCaptureState] = useState<"idle" | "running" | "error">("idle");
+  const [captureError, setCaptureError] = useState<string | null>(null);
 
   const hasCaptures = designqcReport && designqcReport.captures && designqcReport.captures.length > 0;
 
+  const runCapture = () => {
+    setCaptureState("running");
+    setCaptureError(null);
+    fetch("/api/designqc/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+      .then(async r => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({ error: r.statusText }));
+          throw new Error(body.error || r.statusText);
+        }
+        setCaptureState("idle");
+      })
+      .catch(err => {
+        setCaptureState("error");
+        setCaptureError(err.message);
+      });
+  };
+
   return (
     <div>
-      {/* How it works */}
-      <div className="rounded-xl p-5 mb-6" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
-        <h3 className="font-medium mb-3" style={{ color: "var(--text-secondary)" }}>How Design QC Works</h3>
-        <div className="space-y-2 text-sm" style={{ color: "var(--text-muted)" }}>
-          <p>1. Run <code className="px-1.5 py-0.5 rounded text-xs" style={{ background: "var(--bg-base)" }}>openwolf designqc --url http://localhost:3000</code></p>
-          <p>2. OpenWolf captures compressed screenshots of your app</p>
-          <p>3. In your Claude Code session, ask Claude to evaluate the screenshots:</p>
-          <p className="pl-4 italic">"Read the screenshots in .wolf/designqc-captures/ and evaluate the design"</p>
-          <p>4. Claude sees the images, evaluates design, and can fix issues right in your session</p>
+      {/* URL auto-detection note */}
+      <div className="rounded-xl px-4 py-3 mb-6 flex items-start gap-3" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
+        <span style={{ color: "var(--text-faint)", marginTop: 1 }}>ℹ</span>
+        <div className="text-sm" style={{ color: "var(--text-muted)" }}>
+          Works with <span className="font-medium" style={{ color: "var(--text-secondary)" }}>any accessible URL</span> — local or deployed.
+          The URL is auto-detected from <code className="px-1 rounded text-xs" style={{ background: "var(--bg-base)" }}>package.json</code> homepage, env files, or a running dev server.
+          {project?.root && (
+            <span> Scanning <code className="px-1 rounded text-xs" style={{ background: "var(--bg-base)" }}>{project.root}</code>.</span>
+          )}
         </div>
       </div>
 
-      {/* Capture status */}
+      {/* Run Capture */}
+      <div className="rounded-xl p-5 mb-6" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>Capture Screenshots</h3>
+          <button
+            onClick={runCapture}
+            disabled={captureState === "running"}
+            className="px-4 py-1.5 text-sm rounded-lg transition-colors"
+            style={{
+              background: captureState === "error" ? "var(--danger-subtle)" : "var(--accent-subtle)",
+              border: `1px solid ${captureState === "error" ? "rgba(220,38,38,0.3)" : "var(--accent)"}`,
+              color: captureState === "error" ? "var(--danger)" : "var(--accent)",
+              opacity: captureState === "running" ? 0.6 : 1,
+            }}
+          >
+            {captureState === "running" ? "Capturing…" : captureState === "error" ? "Retry Capture" : "Run Capture"}
+          </button>
+        </div>
+        {captureState === "running" && (
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+            Auto-detecting URL, launching browser, capturing screenshots… this takes ~15–30s.
+          </p>
+        )}
+        {captureState === "error" && captureError && (
+          <p className="text-sm" style={{ color: "var(--danger)" }}>{captureError}</p>
+        )}
+        {captureState === "idle" && (
+          <div className="space-y-1.5 text-sm" style={{ color: "var(--text-muted)" }}>
+            <p>Detects your URL automatically from <code className="px-1 rounded text-xs" style={{ background: "var(--bg-base)" }}>package.json</code>, env files, or a running dev server.</p>
+            <p>After capture, ask Claude: <span className="italic">"Read .wolf/designqc-captures/ and evaluate the design"</span></p>
+          </div>
+        )}
+      </div>
+
+      {/* Last Capture */}
       <div className="rounded-xl p-5" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
         <h3 className="font-medium mb-3" style={{ color: "var(--text-secondary)" }}>Last Capture</h3>
         {!hasCaptures ? (
           <div className="text-center py-8">
-            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-              No screenshots captured yet.
-            </p>
+            <p className="text-sm" style={{ color: "var(--text-muted)" }}>No screenshots captured yet.</p>
           </div>
         ) : (
           <div className="space-y-2">

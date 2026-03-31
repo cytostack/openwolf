@@ -1,4 +1,4 @@
-import React, { useState, Suspense, lazy } from "react";
+import { useState, Suspense, lazy } from "react";
 import { Sidebar } from "./components/layout/Sidebar.js";
 import { Layout } from "./components/layout/Layout.js";
 import { Header } from "./components/layout/Header.js";
@@ -64,13 +64,12 @@ export default function App() {
       <Sidebar
         activePanel={activePanel}
         onNavigate={setActivePanel}
-        daemonStatus={data.health.status}
-        projectName={data.project.name || data.identity.name}
+                projectName={data.project.name || data.identity.name}
         theme={theme}
         onToggleTheme={toggleTheme}
       />
       <Layout>
-        <Header title={panelTitles[activePanel] || "OpenWolf"} theme={theme} onToggleTheme={toggleTheme} />
+        <Header title={panelTitles[activePanel] || "OpenWolf"} theme={theme} onToggleTheme={toggleTheme} currentProject={data.project.root} />
         <Suspense fallback={<Skeleton />}>
           {activePanel === "overview" && <ProjectOverview data={data} />}
           {activePanel === "activity" && <ActivityTimeline data={data} />}

@@ -4,7 +4,7 @@ import { relativeTime, formatTokens } from "../../lib/utils.js";
 import type { WolfData } from "../../hooks/useWolfData.js";
 
 export function ProjectOverview({ data }: { data: WolfData }) {
-  const { identity, health, tokenLedger, anatomy, memory, project } = data;
+  const { identity, health, cronState, tokenLedger, anatomy, memory, project } = data;
   const lt = tokenLedger.lifetime;
   const projectName = project.name || identity.name;
   const projectDesc = project.description || "";
@@ -16,9 +16,12 @@ export function ProjectOverview({ data }: { data: WolfData }) {
         <h2 className="text-3xl font-bold" style={{ color: "var(--text-primary)" }}>{projectName}</h2>
         {projectDesc && <p className="mt-1" style={{ color: "var(--text-muted)" }}>{projectDesc}</p>}
         <div className="flex items-center gap-4 mt-3">
-          <StatusBadge status={health.status} />
+          <StatusBadge status={cronState.engine_status} />
           {health.uptime_seconds > 0 && (
             <span className="text-xs" style={{ color: "var(--text-faint)" }}>Uptime: {Math.floor(health.uptime_seconds / 3600)}h {Math.floor((health.uptime_seconds % 3600) / 60)}m</span>
+          )}
+          {cronState.last_heartbeat && (
+            <span className="text-xs" style={{ color: "var(--text-faint)" }}>Last heartbeat: {relativeTime(cronState.last_heartbeat)}</span>
           )}
         </div>
       </div>

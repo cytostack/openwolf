@@ -65,6 +65,7 @@ export interface WolfData {
   identity: { name: string; role: string };
   project: ProjectMeta;
   loading: boolean;
+  connected: boolean;
   client: WolfClient | null;
 }
 
@@ -83,6 +84,7 @@ export function useWolfData(): WolfData {
   const [identity, setIdentity] = useState({ name: "Wolf", role: "AI development assistant" });
   const [project, setProject] = useState<ProjectMeta>({ name: "", description: "", root: "" });
   const [client, setClient] = useState<WolfClient | null>(null);
+  const [connected, setConnected] = useState(false);
 
   const processFiles = useCallback((files: Record<string, string>) => {
     if (files["anatomy.md"]) setAnatomy(parseAnatomy(files["anatomy.md"]));
@@ -140,6 +142,7 @@ export function useWolfData(): WolfData {
 
     // WebSocket
     const wsClient = new WolfClient();
+    wsClient.onStatusChange(setConnected);
     wsClient.connect();
     setClient(wsClient);
 
@@ -150,6 +153,10 @@ export function useWolfData(): WolfData {
       if (msg.type === "full_state" && msg.files) {
         processFiles(msg.files);
       }
+      if (msg.type === "project_switched") {
+        if (msg.project) setProject(msg.project);
+        if (msg.files) processFiles(msg.files);
+      }
       if (msg.type === "health") {
         setHealth({ status: msg.status, uptime_seconds: msg.uptime });
       }
@@ -158,5 +165,5 @@ export function useWolfData(): WolfData {
     return () => wsClient.disconnect();
   }, [processFiles]);
 
-  return { anatomy, cerebrum, memory, tokenLedger, cronState, cronManifest, buglog, suggestions, designqcReport, health, identity, project, loading, client };
+  return { anatomy, cerebrum, memory, tokenLedger, cronState, cronManifest, buglog, suggestions, designqcReport, health, identity, project, loading, connected, client };
 }
