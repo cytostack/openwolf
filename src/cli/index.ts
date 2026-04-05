@@ -31,6 +31,7 @@ export function createProgram(): Command {
   program
     .command("init")
     .description("Initialize .wolf/ in current project")
+    .option("--opencode", "Register OpenCode plugin instead of Claude Code hooks")
     .action(initCommand);
 
   program

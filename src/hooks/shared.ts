@@ -2,10 +2,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 
-export function getWolfDir(): string {
+export function getWolfDir(projectDir?: string): string {
   // Prefer CLAUDE_PROJECT_DIR so hooks work even if CWD changes during a session
-  const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-  return path.join(projectDir, ".wolf");
+  const dir = projectDir || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  return path.join(dir, ".wolf");
 }
 
 /**
@@ -17,6 +17,14 @@ export function ensureWolfDir(): void {
   if (!fs.existsSync(wolfDir)) {
     process.exit(0);
   }
+}
+
+/**
+ * Check if .wolf/ directory exists without exiting.
+ * Used by the OpenCode plugin to skip processing in non-OpenWolf projects.
+ */
+export function wolfDirExists(): boolean {
+  return fs.existsSync(getWolfDir());
 }
 
 export function readJSON<T = unknown>(filePath: string, fallback: T): T {

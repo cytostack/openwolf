@@ -118,7 +118,11 @@ const HOOK_SETTINGS = {
   },
 };
 
-export async function initCommand(): Promise<void> {
+export interface InitOptions {
+  opencode?: boolean;
+}
+
+export async function initCommand(opts: InitOptions = {}): Promise<void> {
   // Check Node.js version
   const nodeVersion = parseInt(process.version.slice(1), 10);
   if (nodeVersion < 20) {
@@ -182,35 +186,40 @@ export async function initCommand(): Promise<void> {
   // --- Hook scripts: always update (bug fixes, new features) ---
   copyHookScripts(wolfDir);
 
-  // --- Claude settings: replace OpenWolf hooks (upgrade old paths) ---
-  const claudeDir = path.join(projectRoot, ".claude");
-  ensureDir(claudeDir);
-
-  const settingsPath = path.join(claudeDir, "settings.json");
-  if (fs.existsSync(settingsPath)) {
-    const existing = readJSON<Record<string, unknown>>(settingsPath, {});
-    const merged = replaceOpenWolfHooks(existing, HOOK_SETTINGS);
-    writeJSON(settingsPath, merged);
+  if (opts.opencode) {
+    // --- OpenCode plugin ---
+    initOpenCode(projectRoot, actualTemplatesDir);
   } else {
-    writeJSON(settingsPath, HOOK_SETTINGS);
-  }
+    // --- Claude settings: replace OpenWolf hooks (upgrade old paths) ---
+    const claudeDir = path.join(projectRoot, ".claude");
+    ensureDir(claudeDir);
 
-  // --- Claude rules: always update ---
-  const rulesDir = path.join(claudeDir, "rules");
-  ensureDir(rulesDir);
-  const rulesContent = readTemplateContent("claude-rules-openwolf.md", actualTemplatesDir);
-  writeText(path.join(rulesDir, "openwolf.md"), rulesContent);
-
-  // --- CLAUDE.md: add snippet if missing ---
-  const claudeMdPath = path.join(projectRoot, "CLAUDE.md");
-  const snippetContent = readTemplateContent("claude-md-snippet.md", actualTemplatesDir);
-  if (fs.existsSync(claudeMdPath)) {
-    const existing = readText(claudeMdPath);
-    if (!existing.includes("OpenWolf")) {
-      writeText(claudeMdPath, snippetContent + "\n\n" + existing);
+    const settingsPath = path.join(claudeDir, "settings.json");
+    if (fs.existsSync(settingsPath)) {
+      const existing = readJSON<Record<string, unknown>>(settingsPath, {});
+      const merged = replaceOpenWolfHooks(existing, HOOK_SETTINGS);
+      writeJSON(settingsPath, merged);
+    } else {
+      writeJSON(settingsPath, HOOK_SETTINGS);
     }
-  } else {
-    writeText(claudeMdPath, snippetContent);
+
+    // --- Claude rules: always update ---
+    const rulesDir = path.join(claudeDir, "rules");
+    ensureDir(rulesDir);
+    const rulesContent = readTemplateContent("claude-rules-openwolf.md", actualTemplatesDir);
+    writeText(path.join(rulesDir, "openwolf.md"), rulesContent);
+
+    // --- CLAUDE.md: add snippet if missing ---
+    const claudeMdPath = path.join(projectRoot, "CLAUDE.md");
+    const snippetContent = readTemplateContent("claude-md-snippet.md", actualTemplatesDir);
+    if (fs.existsSync(claudeMdPath)) {
+      const existing = readText(claudeMdPath);
+      if (!existing.includes("OpenWolf")) {
+        writeText(claudeMdPath, snippetContent + "\n\n" + existing);
+      }
+    } else {
+      writeText(claudeMdPath, snippetContent);
+    }
   }
 
   // --- Anatomy scan: only on fresh init ---
@@ -277,14 +286,23 @@ export async function initCommand(): Promise<void> {
   } else {
     console.log(`  ✓ OpenWolf v${version} initialized`);
     console.log(`  ✓ .wolf/ created with ${createdCount} files`);
-    console.log(`  ✓ Claude Code hooks registered (6 hooks)`);
-    console.log(`  ✓ CLAUDE.md updated`);
-    console.log(`  ✓ .claude/rules/openwolf.md created`);
+    if (opts.opencode) {
+      console.log(`  ✓ OpenCode plugin registered (.opencode/plugin/openwolf.ts)`);
+      console.log(`  ✓ opencode.md updated`);
+    } else {
+      console.log(`  ✓ Claude Code hooks registered (6 hooks)`);
+      console.log(`  ✓ CLAUDE.md updated`);
+      console.log(`  ✓ .claude/rules/openwolf.md created`);
+    }
     console.log(`  ✓ Anatomy scan: ${fileCount} files indexed`);
   }
   console.log(`  ✓ Daemon: ${daemonStatus}`);
   console.log("");
-  console.log("  You're ready. Just use 'claude' as normal — OpenWolf is watching.");
+  if (opts.opencode) {
+    console.log("  You're ready. Just use 'opencode' as normal — OpenWolf is watching.");
+  } else {
+    console.log("  You're ready. Just use 'claude' as normal — OpenWolf is watching.");
+  }
   console.log("");
 }
 
@@ -324,6 +342,7 @@ function readTemplateContent(filename: string, templatesDir: string): string {
 function getEmbeddedTemplate(filename: string): string {
   const templates: Record<string, string> = {
     "claude-md-snippet.md": `# OpenWolf\n\n@.wolf/OPENWOLF.md\n\nThis project uses OpenWolf for context management. Read and follow .wolf/OPENWOLF.md every session. Check .wolf/cerebrum.md before generating code. Check .wolf/anatomy.md before reading files.`,
+    "opencode-md-snippet.md": `# OpenWolf\n\n@.wolf/OPENWOLF.md\n\nThis project uses OpenWolf for context management. Read and follow .wolf/OPENWOLF.md every session. Check .wolf/cerebrum.md before generating code. Check .wolf/anatomy.md before reading files.`,
     "claude-rules-openwolf.md": `---\ndescription: OpenWolf protocol enforcement — active on all files\nglobs: **/*\n---\n\n- Check .wolf/anatomy.md before reading any project file\n- Check .wolf/cerebrum.md Do-Not-Repeat list before generating code\n- After writing or editing files, update .wolf/anatomy.md and append to .wolf/memory.md\n- After receiving a user correction, update .wolf/cerebrum.md immediately (Preferences, Learnings, or Do-Not-Repeat)\n- LEARN from every interaction: if you discover a convention, user preference, or project pattern, add it to .wolf/cerebrum.md. Low threshold — when in doubt, log it.\n- BEFORE fixing any bug or error: read .wolf/buglog.json for known fixes\n- AFTER fixing any bug, error, failed test, failed build, or user-reported problem: ALWAYS log to .wolf/buglog.json with error_message, root_cause, fix, and tags\n- If you edit a file more than twice in a session, that likely indicates a bug — log it to .wolf/buglog.json\n- When the user asks to check/evaluate UI design: run \`openwolf designqc\` to capture screenshots, then read them from .wolf/designqc-captures/\n- When the user asks to change/pick/migrate UI framework: read .wolf/reframe-frameworks.md, ask decision questions, recommend a framework, then execute with the framework's prompt`,
   };
   return templates[filename] ?? "";
@@ -465,6 +484,74 @@ function copyHookScripts(wolfDir: string): void {
   // Always write a package.json with type:module so ESM hooks work in any project
   const hooksPkgPath = path.join(hooksDir, "package.json");
   fs.writeFileSync(hooksPkgPath, JSON.stringify({ type: "module" }, null, 2) + "\n", "utf-8");
+}
+
+/**
+ * Initialize OpenCode plugin for OpenWolf.
+ * Creates .opencode/plugin/openwolf.ts and injects snippet into opencode.md.
+ */
+function initOpenCode(projectRoot: string, templatesDir: string): void {
+  // Create .opencode/plugin/ directory
+  const pluginDir = path.join(projectRoot, ".opencode", "plugin");
+  ensureDir(pluginDir);
+
+  // Copy the plugin template directory
+  const pluginSrcDir = path.join(templatesDir, "opencode-plugin");
+  const pluginDestDir = path.join(pluginDir, "openwolf");
+
+  if (fs.existsSync(pluginSrcDir)) {
+    copyPluginDirectory(pluginSrcDir, pluginDestDir);
+  } else {
+    // Fallback: write embedded version
+    const pluginDest = path.join(pluginDir, "openwolf.ts");
+    fs.writeFileSync(pluginDest, getEmbeddedOpenCodePlugin(), "utf-8");
+  }
+
+  // Inject snippet into opencode.md (OpenCode's equivalent of CLAUDE.md)
+  const opencodeMdPath = path.join(projectRoot, "opencode.md");
+  const snippetContent = readTemplateContent("opencode-md-snippet.md", templatesDir);
+  if (fs.existsSync(opencodeMdPath)) {
+    const existing = readText(opencodeMdPath);
+    if (!existing.includes("OpenWolf")) {
+      writeText(opencodeMdPath, snippetContent + "\n\n" + existing);
+    }
+  } else {
+    writeText(opencodeMdPath, snippetContent);
+  }
+}
+
+function copyPluginDirectory(srcDir: string, destDir: string): void {
+  ensureDir(destDir);
+  const files = fs.readdirSync(srcDir);
+  for (const file of files) {
+    const srcPath = path.join(srcDir, file);
+    const destPath = path.join(destDir, file);
+    if (fs.statSync(srcPath).isDirectory()) {
+      copyPluginDirectory(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+function getEmbeddedOpenCodePlugin(): string {
+  return `import type { Plugin } from "@opencode-ai/plugin"
+// OpenWolf plugin — auto-generated by openwolf init
+// For the full implementation, see the openwolf source repository.
+export const OpenWolf: Plugin = async ({ directory }) => {
+  return {
+    event: async ({ event }) => {
+      // Session lifecycle handled by .wolf/ infrastructure
+    },
+    "tool.execute.before": async (_input, _output) => {},
+    "tool.execute.after": async (_input, _output) => {},
+    stop: async (_input) => {},
+    "experimental.chat.system.transform": async (_input, output) => {
+      output.system.push("This project uses OpenWolf. Read .wolf/OPENWOLF.md for protocol instructions.")
+    },
+  }
+}
+`;
 }
 
 /**
