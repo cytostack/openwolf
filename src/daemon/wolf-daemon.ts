@@ -34,7 +34,7 @@ const config = readJSON<WolfConfig>(path.join(wolfDir, "config.json"), {
 
 const logger = new Logger(
   path.join(wolfDir, "daemon.log"),
-  config.openwolf.daemon.log_level as "debug" | "info" | "warn" | "error"
+  (config.openwolf?.daemon?.log_level ?? "info") as "debug" | "info" | "warn" | "error"
 );
 
 const startTime = Date.now();
@@ -186,7 +186,7 @@ app.get("/{*path}", (_req, res) => {
 });
 
 // Start HTTP server
-const port = config.openwolf.dashboard.port;
+const port = config.openwolf?.dashboard?.port ?? 18791;
 const server = app.listen(port, () => {
   logger.info(`Dashboard server listening on port ${port}`);
 });
@@ -279,7 +279,7 @@ function handleDashboardCommand(msg: { type: string; task_id?: string }): void {
 
 // Cron engine
 let cronEngine: CronEngine | null = null;
-if (config.openwolf.cron.enabled) {
+if (config.openwolf?.cron?.enabled ?? true) {
   cronEngine = new CronEngine(wolfDir, projectRoot, logger, broadcast);
   cronEngine.start();
 }
@@ -288,7 +288,7 @@ if (config.openwolf.cron.enabled) {
 startFileWatcher(wolfDir, logger, broadcast);
 
 // Health heartbeat
-const heartbeatInterval = config.openwolf.cron.heartbeat_interval_minutes * 60 * 1000;
+const heartbeatInterval = (config.openwolf?.cron?.heartbeat_interval_minutes ?? 30) * 60 * 1000;
 const heartbeatTimer = setInterval(() => {
   const statePath = path.join(wolfDir, "cron-state.json");
   const state = readJSON<Record<string, unknown>>(statePath, {});

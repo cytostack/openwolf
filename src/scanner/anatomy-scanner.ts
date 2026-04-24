@@ -229,8 +229,8 @@ export function buildAnatomy(wolfDir: string, projectRoot: string): { content: s
   walkDir(
     projectRoot,
     projectRoot,
-    config.openwolf.anatomy.exclude_patterns,
-    config.openwolf.anatomy.max_files,
+    config.openwolf?.anatomy?.exclude_patterns ?? ["node_modules", ".git", "dist", "build", ".wolf"],
+    config.openwolf?.anatomy?.max_files ?? 500,
     entries
   );
 

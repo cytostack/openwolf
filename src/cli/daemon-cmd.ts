@@ -17,7 +17,7 @@ function getDashboardPort(): number {
     path.join(wolfDir, "config.json"),
     { openwolf: { dashboard: { port: 18791 } } }
   );
-  return config.openwolf.dashboard.port;
+  return config.openwolf?.dashboard?.port ?? 18791;
 }
 
 function getPm2Name(): string {

@@ -48,7 +48,7 @@ export async function dashboardCommand(): Promise<void> {
     openwolf: { dashboard: { port: 18791 } },
   });
 
-  const port = config.openwolf.dashboard.port;
+  const port = config.openwolf?.dashboard?.port ?? 18791;
   const url = `http://localhost:${port}`;
 
   // Check if daemon is already running on that port
