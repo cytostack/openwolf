@@ -55,6 +55,7 @@ const HOOK_SETTINGS = {
             type: "command",
             command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/session-start.js"',
             timeout: 5,
+            _managedBy: "openwolf",
           },
         ],
       },
@@ -67,6 +68,7 @@ const HOOK_SETTINGS = {
             type: "command",
             command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/pre-read.js"',
             timeout: 5,
+            _managedBy: "openwolf",
           },
         ],
       },
@@ -77,6 +79,7 @@ const HOOK_SETTINGS = {
             type: "command",
             command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/pre-write.js"',
             timeout: 5,
+            _managedBy: "openwolf",
           },
         ],
       },
@@ -89,6 +92,7 @@ const HOOK_SETTINGS = {
             type: "command",
             command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/post-read.js"',
             timeout: 5,
+            _managedBy: "openwolf",
           },
         ],
       },
@@ -99,6 +103,7 @@ const HOOK_SETTINGS = {
             type: "command",
             command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/post-write.js"',
             timeout: 10,
+            _managedBy: "openwolf",
           },
         ],
       },
@@ -111,6 +116,7 @@ const HOOK_SETTINGS = {
             type: "command",
             command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/stop.js"',
             timeout: 10,
+            _managedBy: "openwolf",
           },
         ],
       },
@@ -480,17 +486,22 @@ function replaceOpenWolfHooks(
   if (!merged.hooks) {
     merged.hooks = {};
   }
-  const hooks = merged.hooks as Record<string, Array<{ matcher: string; hooks: Array<{ command?: string; type: string }> }>>;
+  const hooks = merged.hooks as Record<string, Array<{ matcher: string; hooks: Array<{ command?: string; type: string; _managedBy?: string }> }>>;
 
   for (const [event, newMatchers] of Object.entries(hookSettings.hooks)) {
     if (!hooks[event]) {
       hooks[event] = [];
     }
 
-    // Remove any existing OpenWolf hook entries (match by .wolf/hooks/ in command)
+    // Remove any existing OpenWolf hook entries. Prefer the explicit
+    // `_managedBy: "openwolf"` tag, fall back to the legacy
+    // `.wolf/hooks/` substring match so we still clean up entries
+    // installed by versions before the tag existed.
     hooks[event] = hooks[event].filter((entry) => {
       const isOpenWolfHook = entry.hooks?.some(
-        (h) => h.command && h.command.includes(".wolf/hooks/")
+        (h) =>
+          h._managedBy === "openwolf" ||
+          (h.command && h.command.includes(".wolf/hooks/"))
       );
       return !isOpenWolfHook;
     });
