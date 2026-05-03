@@ -14,6 +14,7 @@
     "dev": "tsc --watch",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
+    "test": "node --experimental-strip-types --test tests/**/*.test.ts",
     "prepublishOnly": "pnpm build"
   },
   "dependencies": {

@@ -49,7 +49,7 @@ export async function dashboardCommand(): Promise<void> {
   });
 
   const port = config.openwolf.dashboard.port;
-  const url = `http://localhost:${port}`;
+  let url = `http://localhost:${port}`;
 
   // Check if daemon is already running on that port
   const running = await isPortOpen(port);
@@ -92,7 +92,14 @@ export async function dashboardCommand(): Promise<void> {
     console.log(`  ✓ Dashboard server running on port ${port}`);
   }
 
-  console.log(`  Opening ${url}...`);
+  // Append auth token if available
+  const tokenPath = path.join(wolfDir, "daemon-token.tmp");
+  if (fs.existsSync(tokenPath)) {
+    const token = fs.readFileSync(tokenPath, "utf-8").trim();
+    url += `?token=${token}`;
+  }
+
+  console.log(`  Opening http://localhost:${port}...`);
 
   try {
     const { default: open } = await import("open");

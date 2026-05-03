@@ -29,6 +29,13 @@ export function startFileWatcher(
     logger.debug(`File changed: ${relativePath}`);
 
     try {
+      // DoS Protection: Skip massive files
+      const stat = fs.statSync(filePath as string);
+      if (stat.size > 1024 * 1024) {
+        logger.warn(`Skipping broadcast for large file: ${relativePath} (${stat.size} bytes)`);
+        return;
+      }
+
       const content = fs.readFileSync(filePath as string, "utf-8");
       broadcast({
         type: "file_changed",

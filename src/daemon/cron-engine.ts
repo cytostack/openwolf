@@ -312,7 +312,14 @@ export class CronEngine {
 
     const contextParts: string[] = [];
     for (const file of params.context_files) {
-      const filePath = path.join(this.projectRoot, file);
+      const filePath = path.resolve(this.projectRoot, file);
+      
+      // Path Traversal Protection: Ensure the resolved path is within projectRoot
+      if (!filePath.startsWith(this.projectRoot + path.sep) && filePath !== this.projectRoot) {
+        this.logger.warn(`Path traversal attempt blocked: ${file}`);
+        continue;
+      }
+
       try {
         contextParts.push(`--- ${file} ---\n${fs.readFileSync(filePath, "utf-8")}`);
       } catch {

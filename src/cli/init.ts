@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { execSync } from "node:child_process";
+import { execSync, spawnSync, execFileSync } from "node:child_process";
 import { findProjectRoot } from "../scanner/project-root.js";
 import { scanProject } from "../scanner/anatomy-scanner.js";
 import { readJSON, writeJSON, readText, writeText } from "../utils/fs-safe.js";
@@ -235,17 +235,18 @@ export async function initCommand(): Promise<void> {
   // --- Daemon ---
   let daemonStatus = "start manually with: openwolf daemon start";
   try {
-    const pm2Cmd = isWindows() ? "where pm2" : "which pm2";
-    execSync(pm2Cmd, { stdio: "ignore" });
+    const whichCmd = isWindows() ? "where" : "which";
+    execFileSync(whichCmd, ["pm2"], { stdio: "ignore" });
     const name = `openwolf-${path.basename(projectRoot)}`;
     // Resolve daemon script relative to openwolf's install dir, not the target project
     const daemonScript = path.resolve(__dirname, "..", "daemon", "wolf-daemon.js");
     try {
-      execSync(`pm2 start "${daemonScript}" --name ${name} --cwd "${projectRoot}"`, {
+      const pm2Cmd = isWindows() ? "pm2.cmd" : "pm2";
+      execFileSync(pm2Cmd, ["start", daemonScript, "--name", name, "--cwd", projectRoot], {
         stdio: "ignore",
         env: { ...process.env, OPENWOLF_PROJECT_ROOT: projectRoot },
       });
-      execSync("pm2 save", { stdio: "ignore" });
+      execFileSync(pm2Cmd, ["save"], { stdio: "ignore" });
       daemonStatus = "running via pm2";
     } catch {
       daemonStatus = "pm2 found but daemon start failed. Try: openwolf daemon start";

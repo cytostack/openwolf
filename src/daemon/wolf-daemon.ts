@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { WebSocketServer, WebSocket } from "ws";
@@ -15,6 +16,10 @@ const __dirname = path.dirname(__filename);
 // Prefer explicit OPENWOLF_PROJECT_ROOT env (set by CLI commands) over cwd detection
 const projectRoot = process.env.OPENWOLF_PROJECT_ROOT || findProjectRoot();
 const wolfDir = path.join(projectRoot, ".wolf");
+
+// Generate a session token for authentication
+const authToken = crypto.randomBytes(32).toString("hex");
+fs.writeFileSync(path.join(wolfDir, "daemon-token.tmp"), authToken, "utf-8");
 
 interface WolfConfig {
   openwolf: {
@@ -43,6 +48,16 @@ const wsClients = new Set<WebSocket>();
 // Express server
 const app = express();
 app.use(express.json());
+
+// Auth middleware
+app.use((req, res, next) => {
+  const token = req.headers["x-api-token"] || req.query.token;
+  if (token !== authToken) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  next();
+});
 
 // Serve dashboard static files
 // In dist: dist/src/daemon/wolf-daemon.js → ../../../dist/dashboard/
@@ -187,12 +202,23 @@ app.get("/{*path}", (_req, res) => {
 
 // Start HTTP server
 const port = config.openwolf.dashboard.port;
-const server = app.listen(port, () => {
-  logger.info(`Dashboard server listening on port ${port}`);
+const server = app.listen(port, "127.0.0.1", () => {
+  logger.info(`Dashboard server listening on 127.0.0.1:${port}`);
 });
 
 // WebSocket server
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ 
+  server,
+  verifyClient: (info, callback) => {
+    const url = new URL(info.req.url || "", `http://${info.req.headers.host}`);
+    const token = url.searchParams.get("token");
+    if (token !== authToken) {
+      callback(false, 401, "Unauthorized");
+    } else {
+      callback(true);
+    }
+  }
+});
 
 wss.on("connection", (ws) => {
   wsClients.add(ws);
