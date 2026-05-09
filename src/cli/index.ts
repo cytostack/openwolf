@@ -30,8 +30,66 @@ export function createProgram(): Command {
 
   program
     .command("init")
-    .description("Initialize .wolf/ in current project")
-    .action(initCommand);
+    .description(
+      "Initialize .wolf/ in current project (default) or install agent integration",
+    )
+    .option(
+      "--agent <name>",
+      "Target agent: claude (default, per-project .wolf/) | codex | gemini | opencode | openclaw | hermes | cline | cursor | pi-mono | all",
+      "claude",
+    )
+    .option("--uninstall", "Remove OpenWolf integration for the chosen agent")
+    .action(async (opts: { agent?: string; uninstall?: boolean }) => {
+      const agent = opts.agent ?? "claude";
+
+      // Default behavior: claude per-project init (unchanged from v1.0.4)
+      if (agent === "claude" && !opts.uninstall) {
+        await initCommand();
+        return;
+      }
+
+      const { getAdapter, detectInstalled } =
+        await import("../agents/index.js");
+
+      // --agent all: per-project claude init + global install for every other detected agent
+      if (agent === "all") {
+        if (!opts.uninstall) {
+          await initCommand();
+        }
+        for (const adapter of detectInstalled()) {
+          if (adapter.name === "claude") continue;
+          try {
+            if (opts.uninstall) {
+              await adapter.uninstallGlobal();
+              console.log(`  ✓ OpenWolf uninstalled for ${adapter.name}`);
+            } else {
+              await adapter.installGlobal({ global: true });
+              console.log(
+                `  ✓ OpenWolf soft-instruction installed for ${adapter.name}`,
+              );
+            }
+          } catch (e) {
+            console.warn(`  ⚠ ${adapter.name}: ${(e as Error).message}`);
+          }
+        }
+        return;
+      }
+
+      // Specific non-claude agent
+      const adapter = getAdapter(agent as never);
+      if (opts.uninstall) {
+        await adapter.uninstallGlobal();
+        console.log(`  ✓ OpenWolf uninstalled for ${adapter.name}`);
+      } else {
+        await adapter.installGlobal({ global: true });
+        console.log(
+          `  ✓ OpenWolf soft-instruction installed for ${adapter.name}`,
+        );
+        console.log(
+          `  Now cd to a project and run \`openwolf init\` to create .wolf/`,
+        );
+      }
+    });
 
   program
     .command("status")
@@ -49,9 +107,7 @@ export function createProgram(): Command {
     .description("Open browser to dashboard")
     .action(dashboardCommand);
 
-  const daemon = program
-    .command("daemon")
-    .description("Daemon management");
+  const daemon = program.command("daemon").description("Daemon management");
 
   daemon
     .command("start")
@@ -85,9 +141,7 @@ export function createProgram(): Command {
       daemonLogs();
     });
 
-  const cron = program
-    .command("cron")
-    .description("Cron task management");
+  const cron = program.command("cron").description("Cron task management");
 
   cron
     .command("list")
@@ -118,21 +172,28 @@ export function createProgram(): Command {
     .command("update")
     .description("Update all registered OpenWolf projects to latest version")
     .option("--dry-run", "Show what would be updated without making changes")
-    .option("--project <name>", "Update only a specific project (partial name match)")
+    .option(
+      "--project <name>",
+      "Update only a specific project (partial name match)",
+    )
     .option("--list", "List all registered projects")
-    .action(async (opts: { dryRun?: boolean; project?: string; list?: boolean }) => {
-      const { updateCommand, listProjects } = await import("./update.js");
-      if (opts.list) {
-        listProjects();
-      } else {
-        await updateCommand(opts);
-      }
-    });
+    .action(
+      async (opts: { dryRun?: boolean; project?: string; list?: boolean }) => {
+        const { updateCommand, listProjects } = await import("./update.js");
+        if (opts.list) {
+          listProjects();
+        } else {
+          await updateCommand(opts);
+        }
+      },
+    );
 
   // --- Restore command ---
   program
     .command("restore [backup]")
-    .description("Restore .wolf from a backup (run in project dir). Without args, lists available backups.")
+    .description(
+      "Restore .wolf from a backup (run in project dir). Without args, lists available backups.",
+    )
     .action(async (backup?: string) => {
       const { restoreCommand } = await import("./update.js");
       restoreCommand(backup);
@@ -141,21 +202,32 @@ export function createProgram(): Command {
   // --- Design QC command ---
   program
     .command("designqc [target]")
-    .description("Capture full-page screenshots for design evaluation by Claude Code")
+    .description(
+      "Capture full-page screenshots for design evaluation by Claude Code",
+    )
     .option("--url <url>", "Dev server URL (auto-starts server if omitted)")
     .option("--routes <routes...>", "Specific routes to check")
     .option("--quality <n>", "JPEG quality 1-100 (lower = fewer tokens)", "70")
     .option("--max-width <n>", "Max capture width in px", "1200")
     .option("--desktop-only", "Skip mobile viewport captures")
-    .action(async (target: string | undefined, opts: { url?: string; routes?: string[]; quality?: string; maxWidth?: string; desktopOnly?: boolean }) => {
-      const { designqcCommand } = await import("./designqc-cmd.js");
-      await designqcCommand(target, opts);
-    });
+    .action(
+      async (
+        target: string | undefined,
+        opts: {
+          url?: string;
+          routes?: string[];
+          quality?: string;
+          maxWidth?: string;
+          desktopOnly?: boolean;
+        },
+      ) => {
+        const { designqcCommand } = await import("./designqc-cmd.js");
+        await designqcCommand(target, opts);
+      },
+    );
 
   // --- Bug command ---
-  const bug = program
-    .command("bug")
-    .description("Bug memory management");
+  const bug = program.command("bug").description("Bug memory management");
 
   bug
     .command("search <term>")

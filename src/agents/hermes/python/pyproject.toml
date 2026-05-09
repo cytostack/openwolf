@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openwolf-hermes"
+version = "0.1.0"
+description = "Hermes plugin: cooperate with OpenWolf .wolf/ project state (anatomy/cerebrum/memory)"
+readme = "README.md"
+license = "AGPL-3.0-only"
+requires-python = ">=3.9"
+authors = [
+    {name = "Chao Liu", email = "gczy504@gmail.com"},
+]
+keywords = ["openwolf", "hermes", "hermes-agent", "llm", "context", "token-savings"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+]
+
+[project.urls]
+Homepage = "https://github.com/ChasLui/openwolf"
+Repository = "https://github.com/ChasLui/openwolf"
+
+# Hermes discovers plugins via this entry-point group.
+# The name "openwolf" goes into ~/.hermes/config.yaml plugins.enabled.
+[project.entry-points."hermes_agent.plugins"]
+openwolf = "openwolf_hermes"
+
+[tool.setuptools.packages.find]
+where = ["src"]

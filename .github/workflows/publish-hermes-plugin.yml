@@ -1,0 +1,65 @@
+name: Publish openwolf-hermes to PyPI
+
+on:
+  push:
+    tags:
+      - "openwolf-hermes-v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build only, do not upload to PyPI"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build sdist + wheel
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/agents/hermes/python
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: python -m pip install --upgrade build twine
+
+      - name: Build distributions
+        run: python -m build
+
+      - name: Verify with twine
+        run: python -m twine check dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openwolf-hermes-dist
+          path: src/agents/hermes/python/dist/*
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    if: ${{ startsWith(github.ref, 'refs/tags/openwolf-hermes-v') && github.event.inputs.dry_run != 'true' }}
+    runs-on: ubuntu-latest
+    # Auth: PyPI Trusted Publishing (OIDC). PyPI must have a publisher
+    # registered for ChasLui/openwolf + this workflow + pypi environment.
+    # First release uses a "pending publisher" since the project does not
+    # yet exist on PyPI; the pending entry auto-promotes on first upload.
+    # See src/agents/hermes/python/RELEASE.md for setup steps.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/openwolf-hermes
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: openwolf-hermes-dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
