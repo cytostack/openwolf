@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { getRegisteredProjects, registerProject, type RegisteredProject } from "./registry.js";
 import { readJSON, writeJSON, readText, writeText } from "../utils/fs-safe.js";
 import { ensureDir } from "../utils/paths.js";
+import { buildHookCommand } from "../utils/hook-command.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,20 +44,31 @@ const BACKUP_FILES = [
   ...USER_DATA_FILES,
 ];
 
-const HOOK_SETTINGS = {
-  hooks: {
-    SessionStart: [{ matcher: "", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/session-start.js"', timeout: 5 }] }],
-    PreToolUse: [
-      { matcher: "Read", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/pre-read.js"', timeout: 5 }] },
-      { matcher: "Write|Edit|MultiEdit", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/pre-write.js"', timeout: 5 }] },
-    ],
-    PostToolUse: [
-      { matcher: "Read", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/post-read.js"', timeout: 5 }] },
-      { matcher: "Write|Edit|MultiEdit", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/post-write.js"', timeout: 10 }] },
-    ],
-    Stop: [{ matcher: "", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/stop.js"', timeout: 10 }] }],
-  },
-};
+type HookEntry = { matcher: string; hooks: Array<{ type: string; command: string; timeout: number }> };
+type HookSettings = { hooks: Record<string, HookEntry[]> };
+
+// On Windows, buildHookCommand wraps `node "..."` in wscript+VBS so Claude Code's
+// spawn doesn't flash a brief console window for each hook fire.
+function buildHookSettings(): HookSettings {
+  return {
+    hooks: {
+      SessionStart: [
+        { matcher: "", hooks: [{ type: "command", command: buildHookCommand("session-start.js"), timeout: 5 }] },
+      ],
+      PreToolUse: [
+        { matcher: "Read", hooks: [{ type: "command", command: buildHookCommand("pre-read.js"), timeout: 5 }] },
+        { matcher: "Write|Edit|MultiEdit", hooks: [{ type: "command", command: buildHookCommand("pre-write.js"), timeout: 5 }] },
+      ],
+      PostToolUse: [
+        { matcher: "Read", hooks: [{ type: "command", command: buildHookCommand("post-read.js"), timeout: 5 }] },
+        { matcher: "Write|Edit|MultiEdit", hooks: [{ type: "command", command: buildHookCommand("post-write.js"), timeout: 10 }] },
+      ],
+      Stop: [
+        { matcher: "", hooks: [{ type: "command", command: buildHookCommand("stop.js"), timeout: 10 }] },
+      ],
+    },
+  };
+}
 
 interface UpdateResult {
   project: RegisteredProject;
@@ -183,12 +195,13 @@ async function updateProject(
     const claudeDir = path.join(root, ".claude");
     ensureDir(claudeDir);
     const settingsPath = path.join(claudeDir, "settings.json");
+    const hookSettings = buildHookSettings();
     if (fs.existsSync(settingsPath)) {
       const existing = readJSON<Record<string, unknown>>(settingsPath, {});
-      const merged = replaceOpenWolfHooks(existing, HOOK_SETTINGS);
+      const merged = replaceOpenWolfHooks(existing, hookSettings);
       writeJSON(settingsPath, merged);
     } else {
-      writeJSON(settingsPath, HOOK_SETTINGS);
+      writeJSON(settingsPath, hookSettings);
     }
     console.log(`    ✓ Claude settings updated`);
 
@@ -354,7 +367,7 @@ function copyHookScripts(wolfDir: string): void {
 
 function replaceOpenWolfHooks(
   existing: Record<string, unknown>,
-  hookSettings: typeof HOOK_SETTINGS
+  hookSettings: HookSettings
 ): Record<string, unknown> {
   const merged = { ...existing };
   if (!merged.hooks) merged.hooks = {};
