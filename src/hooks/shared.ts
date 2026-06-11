@@ -65,7 +65,11 @@ export interface AnatomyEntry {
 export function parseAnatomy(content: string): Map<string, AnatomyEntry[]> {
   const sections = new Map<string, AnatomyEntry[]>();
   let currentSection = "";
-  for (const line of content.split("\n")) {
+  // Split on \r?\n: with CRLF endings (e.g. git autocrlf=true rewriting the
+  // file on checkout) every entry line ends in \r, the $-anchored entry
+  // regex below matches nothing, and the post-write rewrite then drops
+  // every entry — truncating anatomy.md to an empty skeleton.
+  for (const line of content.split(/\r?\n/)) {
     const sm = line.match(/^## (.+)/);
     if (sm) {
       currentSection = sm[1].trim();
