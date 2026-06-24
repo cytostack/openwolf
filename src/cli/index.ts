@@ -29,9 +29,11 @@ export function createProgram(): Command {
     .version(getVersion());
 
   program
-    .command("init")
-    .description("Initialize .wolf/ in current project")
-    .action(initCommand);
+    .command("init [target]")
+    .description("Initialize .wolf/ and install Claude/Codex integration in current project")
+    .action(async (target?: string) => {
+      await initCommand(target);
+    });
 
   program
     .command("status")

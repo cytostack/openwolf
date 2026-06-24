@@ -1,6 +1,6 @@
 {
-  "name": "openwolf",
-  "version": "1.0.4",
+  "name": "@alptech/openwolf",
+  "version": "1.0.6",
   "description": "Token-conscious AI brain for Claude Code projects",
   "type": "module",
   "bin": {
@@ -49,22 +49,24 @@
     "node": ">=20.0.0"
   },
   "license": "AGPL-3.0-only",
-  "author": "Cytostack Pvt Ltd",
+  "author": "Cytostack Pvt Ltd (original) / alptech (fork)",
   "repository": {
     "type": "git",
-    "url": "https://github.com/cytostack/openwolf.git"
+    "url": "https://github.com/nottyjay/openwolf.git"
   },
-  "homepage": "https://github.com/cytostack/openwolf",
+  "homepage": "https://github.com/nottyjay/openwolf",
   "bugs": {
-    "url": "https://github.com/cytostack/openwolf/issues"
+    "url": "https://github.com/nottyjay/openwolf/issues"
   },
   "keywords": [
     "claude",
+    "codex",
     "ai",
     "context",
     "token",
     "openwolf",
     "claude-code",
+    "codex-cli",
     "developer-tools"
   ],
   "files": [

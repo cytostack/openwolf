@@ -2,18 +2,20 @@
   <img src="demo.gif" alt="OpenWolf demo" width="640" />
 </p>
 
-<h1 align="center">OpenWolf</h1>
+<h1 align="center">@alptech/openwolf</h1>
 
 <p align="center">
-  <strong>A second brain for Claude Code.</strong><br />
+  <strong>A second brain for Claude Code and Codex.</strong><br />
   Project intelligence, token tracking, and invisible enforcement through 6 hook scripts. Zero workflow changes.
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/openwolf"><img src="https://img.shields.io/npm/v/openwolf.svg" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/@alptech/openwolf"><img src="https://img.shields.io/npm/v/@alptech/openwolf.svg" alt="npm version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0" /></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/Node.js-20%2B-green.svg" alt="Node.js" /></a>
 </p>
+
+> **This is a fork of [openwolf](https://www.npmjs.com/package/openwolf) by [Cytostack](https://github.com/cytostack).** It preserves all original capabilities and adds native, first-class [Codex](https://github.com/openai/codex) integration alongside the existing Claude Code support. Both agents get equal treatment — dedicated hook scripts, project entry files, and config scaffolding.
 
 ---
 
@@ -40,16 +42,23 @@ Across 20 projects, 132+ sessions: average token reduction of 65.8%, with 71% of
 ## Quick Start
 
 ```bash
-npm install -g openwolf
+npm install -g @alptech/openwolf
 cd your-project
 openwolf init
 ```
 
-That's it. Use `claude` normally. OpenWolf is watching.
+By default, `openwolf init` installs both Claude and Codex integration.
+
+```bash
+openwolf init claude   # only Claude integration
+openwolf init codex    # only Codex integration
+```
+
+That's it. Use `claude` or `codex` normally. OpenWolf is watching.
 
 ## What It Creates
 
-`openwolf init` creates a `.wolf/` directory in your project:
+`openwolf init` creates a `.wolf/` directory in your project and installs agent-specific entry files:
 
 | File | Purpose |
 |------|---------|
@@ -58,10 +67,15 @@ That's it. Use `claude` normally. OpenWolf is watching.
 | `memory.md` | Chronological action log with token estimates |
 | `buglog.json` | Bug fix memory, searchable, prevents re-discovery |
 | `token-ledger.json` | Lifetime token tracking and session history |
-| `hooks/` | 6 Claude Code lifecycle hooks (pure Node.js) |
+| `hooks/` | Provider-specific hook scripts under `.wolf/hooks/claude/` and `.wolf/hooks/codex/` |
 | `config.json` | Configuration with sensible defaults |
 | `identity.md` | Agent persona for this project |
-| `OPENWOLF.md` | Instructions Claude follows every session |
+| `OPENWOLF.md` | Shared OpenWolf operating protocol |
+| `CLAUDE.md` | Claude entry file that points Claude at `.wolf/OPENWOLF.md` |
+| `AGENTS.md` | Codex entry file that points Codex at `.wolf/OPENWOLF.md` |
+
+When Claude integration is enabled, OpenWolf also writes `.claude/settings.json` and `.claude/rules/openwolf.md` to register hooks and rules.
+When Codex integration is enabled, OpenWolf writes `.codex/hooks.json` and `.codex/config.toml` to register Codex hooks.
 
 ## How It Works
 
@@ -178,7 +192,7 @@ Before fixing anything, Claude checks if the fix is already known. After fixing,
 ## Commands
 
 ```
-openwolf init              Initialize .wolf/ and register hooks
+openwolf init [target]     Initialize .wolf/ and install Claude/Codex integration
 openwolf status            Show health, stats, file integrity
 openwolf scan              Refresh the project structure map
 openwolf scan --check      Verify anatomy matches filesystem (exits 1 if stale)
@@ -212,12 +226,12 @@ Ask Claude to help you pick a UI framework. OpenWolf ships a curated knowledge b
 
 ## How OpenWolf Compares
 
-OpenWolf is not an AI wrapper. It is 6 hook scripts and a `.wolf/` directory. It doesn't run your AI for you or change your workflow. It gives Claude Code what it lacks: a project map so it reads less, a memory so it learns faster, and a ledger so you see where tokens go.
+OpenWolf is not an AI wrapper. It is 6 hook scripts and a `.wolf/` directory. It doesn't run your AI for you or change your workflow. It gives Claude Code and Codex what they lack: a project map so they read less, a memory so they learn faster, and a ledger so you see where tokens go.
 
 ## Requirements
 
 - Node.js 20+
-- Claude Code CLI
+- Claude Code CLI or Codex
 - Windows, macOS, or Linux
 - Optional: PM2 for persistent background tasks
 - Optional: `puppeteer-core` for Design QC screenshots
@@ -225,9 +239,10 @@ OpenWolf is not an AI wrapper. It is 6 hook scripts and a `.wolf/` directory. It
 ## Limitations
 
 - Claude Code hooks are a relatively new feature. OpenWolf falls back to `CLAUDE.md` instructions when hooks don't fire.
+- Codex hooks require Codex project hook support via `.codex/hooks.json` and `.codex/config.toml`, plus `AGENTS.md` project instructions.
 - Token tracking is estimation-based (character-to-token ratio), not exact API counts. Accurate to within ~15%.
 - `cerebrum.md` depends on Claude following instructions to update it after corrections. Compliance is ~85-90%, not 100%.
-- This is v1.0.4. Things may break. [File issues](https://github.com/cytostack/openwolf/issues).
+- This is v1.0.5. Things may break. [File issues](https://github.com/nottyjay/openwolf/issues).
 
 ## Origin Story
 
@@ -239,4 +254,4 @@ We were building products with Claude Code at Cytostack when we noticed somethin
 
 ## Author
 
-Built by Farhan Palathinkal Afsal - [Cytostack](https://github.com/cytostack)
+Original project by Farhan Palathinkal Afsal — [Cytostack](https://github.com/cytostack). Forked and extended with first-class Codex integration by [@alptech](https://www.npmjs.com/package/@alptech/openwolf).

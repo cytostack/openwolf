@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { getRegisteredProjects, registerProject, type RegisteredProject } from "./registry.js";
 import { readJSON, writeJSON, readText, writeText } from "../utils/fs-safe.js";
 import { ensureDir } from "../utils/paths.js";
+import { getCodexConfigToml } from "./codex-config.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,18 +44,35 @@ const BACKUP_FILES = [
   ...USER_DATA_FILES,
 ];
 
-const HOOK_SETTINGS = {
+const CLAUDE_HOOK_SETTINGS = {
   hooks: {
-    SessionStart: [{ matcher: "", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/session-start.js"', timeout: 5 }] }],
+    SessionStart: [{ matcher: "", hooks: [{ type: "command", command: "node", args: ["${CLAUDE_PROJECT_DIR}/.wolf/hooks/claude/session-start.js", "${CLAUDE_PROJECT_DIR}"], timeout: 5 }] }],
     PreToolUse: [
-      { matcher: "Read", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/pre-read.js"', timeout: 5 }] },
-      { matcher: "Write|Edit|MultiEdit", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/pre-write.js"', timeout: 5 }] },
+      { matcher: "Read", hooks: [{ type: "command", command: "node", args: ["${CLAUDE_PROJECT_DIR}/.wolf/hooks/claude/pre-read.js", "${CLAUDE_PROJECT_DIR}"], timeout: 5 }] },
+      { matcher: "Write|Edit|MultiEdit", hooks: [{ type: "command", command: "node", args: ["${CLAUDE_PROJECT_DIR}/.wolf/hooks/claude/pre-write.js", "${CLAUDE_PROJECT_DIR}"], timeout: 5 }] },
     ],
     PostToolUse: [
-      { matcher: "Read", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/post-read.js"', timeout: 5 }] },
-      { matcher: "Write|Edit|MultiEdit", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/post-write.js"', timeout: 10 }] },
+      { matcher: "Read", hooks: [{ type: "command", command: "node", args: ["${CLAUDE_PROJECT_DIR}/.wolf/hooks/claude/post-read.js", "${CLAUDE_PROJECT_DIR}"], timeout: 5 }] },
+      { matcher: "Write|Edit|MultiEdit", hooks: [{ type: "command", command: "node", args: ["${CLAUDE_PROJECT_DIR}/.wolf/hooks/claude/post-write.js", "${CLAUDE_PROJECT_DIR}"], timeout: 10 }] },
     ],
-    Stop: [{ matcher: "", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/stop.js"', timeout: 10 }] }],
+    Stop: [{ matcher: "", hooks: [{ type: "command", command: "node", args: ["${CLAUDE_PROJECT_DIR}/.wolf/hooks/claude/stop.js", "${CLAUDE_PROJECT_DIR}"], timeout: 10 }] }],
+  },
+};
+
+const CODEX_PROJECT_ROOT = '$(git rev-parse --show-toplevel 2>/dev/null || pwd)';
+
+const CODEX_HOOK_SETTINGS = {
+  hooks: {
+    SessionStart: [{ matcher: "startup|resume|clear", hooks: [{ type: "command", command: `node "${CODEX_PROJECT_ROOT}/.wolf/hooks/codex/session-start.js"`, timeout: 5, statusMessage: "OpenWolf session bootstrap" }] }],
+    PreToolUse: [
+      { matcher: "Read", hooks: [{ type: "command", command: `node "${CODEX_PROJECT_ROOT}/.wolf/hooks/codex/pre-read.js"`, timeout: 5, statusMessage: "OpenWolf read precheck" }] },
+      { matcher: "Edit|Write|MultiEdit|apply_patch", hooks: [{ type: "command", command: `node "${CODEX_PROJECT_ROOT}/.wolf/hooks/codex/pre-write.js"`, timeout: 5, statusMessage: "OpenWolf write precheck" }] },
+    ],
+    PostToolUse: [
+      { matcher: "Read", hooks: [{ type: "command", command: `node "${CODEX_PROJECT_ROOT}/.wolf/hooks/codex/post-read.js"`, timeout: 5, statusMessage: "OpenWolf read tracking" }] },
+      { matcher: "Edit|Write|MultiEdit|apply_patch", hooks: [{ type: "command", command: `node "${CODEX_PROJECT_ROOT}/.wolf/hooks/codex/post-write.js"`, timeout: 10, statusMessage: "OpenWolf write tracking" }] },
+    ],
+    Stop: [{ hooks: [{ type: "command", command: `node "${CODEX_PROJECT_ROOT}/.wolf/hooks/codex/stop.js"`, timeout: 10, statusMessage: "OpenWolf session finalize" }] }],
   },
 };
 
@@ -185,10 +203,10 @@ async function updateProject(
     const settingsPath = path.join(claudeDir, "settings.json");
     if (fs.existsSync(settingsPath)) {
       const existing = readJSON<Record<string, unknown>>(settingsPath, {});
-      const merged = replaceOpenWolfHooks(existing, HOOK_SETTINGS);
+      const merged = replaceOpenWolfHooks(existing, CLAUDE_HOOK_SETTINGS);
       writeJSON(settingsPath, merged);
     } else {
-      writeJSON(settingsPath, HOOK_SETTINGS);
+      writeJSON(settingsPath, CLAUDE_HOOK_SETTINGS);
     }
     console.log(`    ✓ Claude settings updated`);
 
@@ -208,9 +226,32 @@ async function updateProject(
         writeText(claudeMdPath, snippetContent + "\n\n" + existing);
         console.log(`    ✓ CLAUDE.md updated`);
       }
+    } else {
+      writeText(claudeMdPath, snippetContent);
+      console.log(`    ✓ CLAUDE.md created`);
     }
 
-    // 7. Clean up stale .tmp files
+    // 7. Update Codex hooks + AGENTS.md
+    const codexDir = path.join(root, ".codex");
+    ensureDir(codexDir);
+    writeJSON(path.join(codexDir, "hooks.json"), CODEX_HOOK_SETTINGS);
+    writeText(path.join(codexDir, "config.toml"), getCodexConfigToml());
+    console.log(`    ✓ Codex hooks updated`);
+
+    const agentsPath = path.join(root, "AGENTS.md");
+    const agentsSnippet = readTemplateContent("agents-md-snippet.md", templatesDir);
+    if (fs.existsSync(agentsPath)) {
+      const existing = readText(agentsPath);
+      if (!existing.includes("OpenWolf")) {
+        writeText(agentsPath, agentsSnippet + "\n\n" + existing);
+        console.log(`    ✓ AGENTS.md updated`);
+      }
+    } else {
+      writeText(agentsPath, agentsSnippet);
+      console.log(`    ✓ AGENTS.md created`);
+    }
+
+    // 8. Clean up stale .tmp files
     try {
       const files = fs.readdirSync(wolfDir);
       let cleaned = 0;
@@ -222,7 +263,7 @@ async function updateProject(
       if (cleaned > 0) console.log(`    ✓ Cleaned ${cleaned} stale .tmp file(s)`);
     } catch {}
 
-    // 8. Update registry entry
+    // 9. Update registry entry
     registerProject(root, name, version);
 
     return {
@@ -258,15 +299,8 @@ function createBackup(wolfDir: string): string {
   const hooksDir = path.join(wolfDir, "hooks");
   if (fs.existsSync(hooksDir)) {
     const hooksBackup = path.join(backupDir, "hooks");
-    ensureDir(hooksBackup);
     try {
-      const hookFiles = fs.readdirSync(hooksDir);
-      for (const f of hookFiles) {
-        const src = path.join(hooksDir, f);
-        if (fs.statSync(src).isFile()) {
-          fs.copyFileSync(src, path.join(hooksBackup, f));
-        }
-      }
+      copyDirectoryRecursive(hooksDir, hooksBackup);
     } catch {}
   }
 
@@ -283,6 +317,23 @@ function createBackup(wolfDir: string): string {
     const rulesBackup = path.join(backupDir, ".claude", "rules");
     ensureDir(rulesBackup);
     fs.copyFileSync(claudeRules, path.join(rulesBackup, "openwolf.md"));
+  }
+
+  const codexHooks = path.join(projectRoot, ".codex", "hooks.json");
+  if (fs.existsSync(codexHooks)) {
+    const codexBackup = path.join(backupDir, ".codex");
+    ensureDir(codexBackup);
+    fs.copyFileSync(codexHooks, path.join(codexBackup, "hooks.json"));
+  }
+  const codexConfig = path.join(projectRoot, ".codex", "config.toml");
+  if (fs.existsSync(codexConfig)) {
+    const codexBackup = path.join(backupDir, ".codex");
+    ensureDir(codexBackup);
+    fs.copyFileSync(codexConfig, path.join(codexBackup, "config.toml"));
+  }
+  const agentsPath = path.join(projectRoot, "AGENTS.md");
+  if (fs.existsSync(agentsPath)) {
+    fs.copyFileSync(agentsPath, path.join(backupDir, "AGENTS.md"));
   }
 
   return backupDir;
@@ -310,6 +361,7 @@ function readTemplateContent(filename: string, templatesDir: string): string {
   }
   const templates: Record<string, string> = {
     "claude-md-snippet.md": `# OpenWolf\n\n@.wolf/OPENWOLF.md\n\nThis project uses OpenWolf for context management. Read and follow .wolf/OPENWOLF.md every session. Check .wolf/cerebrum.md before generating code. Check .wolf/anatomy.md before reading files.`,
+    "agents-md-snippet.md": `# OpenWolf\n\n@.wolf/OPENWOLF.md\n\nThis project uses OpenWolf for context management. Read and follow .wolf/OPENWOLF.md every session. Check .wolf/cerebrum.md before generating code. Check .wolf/anatomy.md before reading files.`,
     "claude-rules-openwolf.md": `---\ndescription: OpenWolf protocol enforcement — active on all files\nglobs: **/*\n---\n\n- Check .wolf/anatomy.md before reading any project file\n- Check .wolf/cerebrum.md Do-Not-Repeat list before generating code\n- After writing or editing files, update .wolf/anatomy.md and append to .wolf/memory.md\n- After receiving a user correction, update .wolf/cerebrum.md immediately (Preferences, Learnings, or Do-Not-Repeat)\n- LEARN from every interaction: if you discover a convention, user preference, or project pattern, add it to .wolf/cerebrum.md. Low threshold — when in doubt, log it.\n- BEFORE fixing any bug or error: read .wolf/buglog.json for known fixes\n- AFTER fixing any bug, error, failed test, failed build, or user-reported problem: ALWAYS log to .wolf/buglog.json with error_message, root_cause, fix, and tags\n- If you edit a file more than twice in a session, that likely indicates a bug — log it to .wolf/buglog.json\n- When the user asks to check/evaluate UI design: run \`openwolf designqc\` to capture screenshots, then read them from .wolf/designqc-captures/\n- When the user asks to change/pick/migrate UI framework: read .wolf/reframe-frameworks.md, ask decision questions, recommend a framework, then execute with the framework's prompt`,
   };
   return templates[filename] ?? "";
@@ -339,10 +391,15 @@ function copyHookScripts(wolfDir: string): void {
   ];
 
   if (sourceDir) {
-    for (const file of hookFiles) {
-      const src = path.join(sourceDir, file);
-      if (fs.existsSync(src)) {
-        fs.copyFileSync(src, path.join(hooksDir, file));
+    removeLegacyTopLevelHooks(hooksDir, hookFiles);
+    for (const provider of ["claude", "codex"]) {
+      const providerDir = path.join(hooksDir, provider);
+      ensureDir(providerDir);
+      for (const file of hookFiles) {
+        const src = path.join(sourceDir, file);
+        if (fs.existsSync(src)) {
+          fs.copyFileSync(src, path.join(providerDir, file));
+        }
       }
     }
   }
@@ -352,21 +409,33 @@ function copyHookScripts(wolfDir: string): void {
   fs.writeFileSync(hooksPkgPath, JSON.stringify({ type: "module" }, null, 2) + "\n", "utf-8");
 }
 
+function removeLegacyTopLevelHooks(hooksDir: string, hookFiles: string[]): void {
+  for (const file of hookFiles) {
+    const legacyPath = path.join(hooksDir, file);
+    if (fs.existsSync(legacyPath)) {
+      try {
+        fs.unlinkSync(legacyPath);
+      } catch {}
+    }
+  }
+}
+
 function replaceOpenWolfHooks(
   existing: Record<string, unknown>,
-  hookSettings: typeof HOOK_SETTINGS
+  hookSettings: typeof CLAUDE_HOOK_SETTINGS
 ): Record<string, unknown> {
   const merged = { ...existing };
   if (!merged.hooks) merged.hooks = {};
-  const hooks = merged.hooks as Record<string, Array<{ matcher: string; hooks: Array<{ command?: string; type: string }> }>>;
+  const hooks = merged.hooks as Record<string, Array<{ matcher: string; hooks: Array<{ command?: string; args?: string[]; type: string }> }>>;
 
   for (const [event, newMatchers] of Object.entries(hookSettings.hooks)) {
     if (!hooks[event]) hooks[event] = [];
 
-    // Remove existing OpenWolf hook entries
+    // Remove existing OpenWolf hook entries (match by .wolf/hooks/ in command or args)
     hooks[event] = hooks[event].filter((entry) => {
       const isOpenWolfHook = entry.hooks?.some(
-        (h) => h.command && h.command.includes(".wolf/hooks/")
+        (h) => (h.command && h.command.includes(".wolf/hooks/")) ||
+               (h.args && h.args.some((a: string) => a.includes(".wolf/hooks/")))
       );
       return !isOpenWolfHook;
     });
@@ -449,12 +518,8 @@ export function restoreCommand(backupName?: string): void {
   // Restore hooks if present
   const hooksBackup = path.join(backupDir, "hooks");
   if (fs.existsSync(hooksBackup)) {
-    const hookFiles = fs.readdirSync(hooksBackup);
     const hooksDir = path.join(wolfDir, "hooks");
-    ensureDir(hooksDir);
-    for (const f of hookFiles) {
-      fs.copyFileSync(path.join(hooksBackup, f), path.join(hooksDir, f));
-    }
+    copyDirectoryRecursive(hooksBackup, hooksDir);
   }
 
   // Restore .claude settings if present
@@ -475,5 +540,40 @@ export function restoreCommand(backupName?: string): void {
     }
   }
 
+  const codexBackup = path.join(backupDir, ".codex");
+  if (fs.existsSync(codexBackup)) {
+    const projectRoot = path.dirname(wolfDir);
+    const hooksBackup = path.join(codexBackup, "hooks.json");
+    if (fs.existsSync(hooksBackup)) {
+      const dest = path.join(projectRoot, ".codex", "hooks.json");
+      ensureDir(path.dirname(dest));
+      fs.copyFileSync(hooksBackup, dest);
+    }
+    const configBackup = path.join(codexBackup, "config.toml");
+    if (fs.existsSync(configBackup)) {
+      const dest = path.join(projectRoot, ".codex", "config.toml");
+      ensureDir(path.dirname(dest));
+      fs.copyFileSync(configBackup, dest);
+    }
+  }
+
+  const agentsBackup = path.join(backupDir, "AGENTS.md");
+  if (fs.existsSync(agentsBackup)) {
+    fs.copyFileSync(agentsBackup, path.join(path.dirname(wolfDir), "AGENTS.md"));
+  }
+
   console.log(`Restored ${files.length} files from backup "${backupName}".`);
+}
+
+function copyDirectoryRecursive(srcDir: string, destDir: string): void {
+  ensureDir(destDir);
+  for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+    const src = path.join(srcDir, entry.name);
+    const dest = path.join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      copyDirectoryRecursive(src, dest);
+    } else if (entry.isFile()) {
+      fs.copyFileSync(src, dest);
+    }
+  }
 }

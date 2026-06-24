@@ -5,6 +5,7 @@ import { getWolfDir, ensureWolfDir, writeJSON, appendMarkdown, readJSON, timesta
 async function main(): Promise<void> {
   ensureWolfDir();
   const wolfDir = getWolfDir();
+  const notices: string[] = [];
 
   // Clean up stale .tmp files left from failed atomic writes
   try {
@@ -53,13 +54,9 @@ async function main(): Promise<void> {
     });
 
     if (entryLines.length < 3) {
-      process.stderr.write(
-        `💡 OpenWolf: cerebrum.md has only ${entryLines.length} entries. Learn from this session — record user preferences, project conventions, and mistakes to .wolf/cerebrum.md.\n`
-      );
+      notices.push(`OpenWolf: cerebrum.md has only ${entryLines.length} entries. Learn from this session and record preferences, conventions, and mistakes to .wolf/cerebrum.md.`);
     } else if (daysSinceUpdate > 3) {
-      process.stderr.write(
-        `💡 OpenWolf: cerebrum.md hasn't been updated in ${Math.floor(daysSinceUpdate)} days. Look for opportunities to add learnings this session.\n`
-      );
+      notices.push(`OpenWolf: cerebrum.md hasn't been updated in ${Math.floor(daysSinceUpdate)} days. Look for opportunities to add learnings this session.`);
     }
   } catch {}
 
@@ -68,9 +65,7 @@ async function main(): Promise<void> {
     const buglogPath = path.join(wolfDir, "buglog.json");
     const buglog = readJSON<{ bugs: unknown[] }>(buglogPath, { bugs: [] });
     if (buglog.bugs.length === 0) {
-      process.stderr.write(
-        `📋 OpenWolf: buglog.json is empty. If you encounter or fix any bugs, errors, or failed tests this session, log them to .wolf/buglog.json.\n`
-      );
+      notices.push("OpenWolf: buglog.json is empty. If you encounter or fix bugs, errors, or failed tests this session, log them to .wolf/buglog.json.");
     }
   } catch {}
 
@@ -83,6 +78,15 @@ async function main(): Promise<void> {
   };
   ledger.lifetime.total_sessions++;
   writeJSON(ledgerPath, ledger);
+
+  if (notices.length > 0) {
+    process.stdout.write(JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: "SessionStart",
+        additionalContext: notices.join("\n"),
+      },
+    }));
+  }
 
   process.exit(0);
 }

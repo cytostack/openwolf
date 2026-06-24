@@ -40,14 +40,16 @@ export async function statusCommand(): Promise<void> {
     "post-read.js", "post-write.js", "stop.js", "shared.js",
   ];
   const hooksDir = path.join(wolfDir, "hooks");
-  let hooksMissing = 0;
-  for (const file of hookFiles) {
-    if (!fs.existsSync(path.join(hooksDir, file))) hooksMissing++;
-  }
-  if (hooksMissing === 0) {
-    console.log(`  ✓ All ${hookFiles.length} hook scripts present`);
-  } else {
-    console.log(`  ✗ Missing ${hooksMissing} hook scripts`);
+  for (const provider of ["claude", "codex"]) {
+    let hooksMissing = 0;
+    for (const file of hookFiles) {
+      if (!fs.existsSync(path.join(hooksDir, provider, file))) hooksMissing++;
+    }
+    if (hooksMissing === 0) {
+      console.log(`  ✓ All ${hookFiles.length} ${provider} hook scripts present`);
+    } else {
+      console.log(`  ✗ Missing ${hooksMissing} ${provider} hook scripts`);
+    }
   }
 
   // Claude settings check
@@ -61,6 +63,18 @@ export async function statusCommand(): Promise<void> {
     }
   } else {
     console.log("  ✗ .claude/settings.json not found");
+  }
+
+  const codexHooksPath = path.join(projectRoot, ".codex", "hooks.json");
+  if (fs.existsSync(codexHooksPath)) {
+    const hooks = readJSON<Record<string, unknown>>(codexHooksPath, {});
+    const configured = hooks.hooks as Record<string, unknown[]> | undefined;
+    if (configured) {
+      const hookCount = Object.values(configured).reduce((sum, arr) => sum + arr.length, 0);
+      console.log(`  ✓ Codex hooks registered (${hookCount} matchers)`);
+    }
+  } else {
+    console.log("  ✗ .codex/hooks.json not found");
   }
 
   // Token ledger stats

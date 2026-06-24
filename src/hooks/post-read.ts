@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { getWolfDir, ensureWolfDir, readJSON, writeJSON, readMarkdown, parseAnatomy, estimateTokens, readStdin, normalizePath } from "./shared.js";
+import { getWolfDir, ensureWolfDir, readJSON, writeJSON, readMarkdown, parseAnatomy, estimateTokens, readStdin, normalizePath, getProjectDir } from "./shared.js";
 
 interface SessionData {
   files_read: Record<string, { count: number; tokens: number; first_read: string }>;
@@ -28,7 +28,7 @@ async function main(): Promise<void> {
   const normalizedFile = normalizePath(filePath);
 
   // Skip tracking for .wolf/ internal files — consistent with pre-read
-  const projectDir = normalizePath(process.env.CLAUDE_PROJECT_DIR || process.cwd());
+  const projectDir = normalizePath(getProjectDir());
   const relToProject = normalizedFile.startsWith(projectDir)
     ? normalizedFile.slice(projectDir.length).replace(/^\//, "")
     : "";
