@@ -28,7 +28,7 @@ async function main(): Promise<void> {
   const normalizedFile = normalizePath(filePath);
 
   // Skip tracking for .wolf/ internal files — consistent with pre-read
-  const projectDir = normalizePath(process.env.CLAUDE_PROJECT_DIR || process.cwd());
+  const projectDir = normalizePath(process.env.OPENWOLF_PROJECT_DIR || process.env.CODEX_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd());
   const relToProject = normalizedFile.startsWith(projectDir)
     ? normalizedFile.slice(projectDir.length).replace(/^\//, "")
     : "";

@@ -2,8 +2,8 @@
 
 ## Prerequisites
 
-- **Node.js 20+** -- [download](https://nodejs.org). Required even if you installed Claude Code via the native installer, because OpenWolf's hooks run as Node.js scripts.
-- **Claude Code** -- OpenWolf is middleware for Claude Code. Any installation method works: native installer, npm, Homebrew, or WinGet. The Claude Code desktop app is also supported.
+- **Node.js 20+** -- [download](https://nodejs.org). Required because OpenWolf's hooks run as Node.js scripts.
+- **Claude Code or Codex App** -- OpenWolf supports Claude Code project hooks and Codex App global hooks.
 
 ## Install OpenWolf
 
@@ -32,15 +32,16 @@ You'll see:
   ✓ OpenWolf initialized
   ✓ .wolf/ created with 11 files
   ✓ Claude Code hooks registered (6 hooks)
+  ✓ Codex App hooks registered (6 hooks)
   ✓ CLAUDE.md updated
   ✓ .claude/rules/openwolf.md created
   ✓ Anatomy scan: 47 files indexed
   ✓ Daemon: start manually with: openwolf daemon start
 
-  You're ready. Just use 'claude' as normal. OpenWolf is watching.
+  You're ready. Use Claude Code or Codex App normally. OpenWolf is watching.
 ```
 
-That's it. No configuration needed. Just use `claude` as you normally would.
+That's it. No configuration needed. Use `claude` or Codex App as you normally would.
 
 ## Verify it's working
 
@@ -55,6 +56,7 @@ OpenWolf Status
   ✓ All 11 core files present
   ✓ All 7 hook scripts present
   ✓ Claude Code hooks registered (6 matchers)
+  ✓ Codex App hooks registered (6 hooks)
 
 Token Stats:
   Sessions: 0
@@ -70,7 +72,7 @@ Daemon: initialized
 
 ## What happens next?
 
-Every time you run `claude` in this project:
+Every time you run Claude Code in this project, or use Codex App with this project open:
 
 1. **Session starts** -- OpenWolf creates a session tracker and logs the start to `memory.md`
 2. **Before file reads** -- the hook checks if the file was already read (warns you) and shows the anatomy description
@@ -80,6 +82,12 @@ Every time you run `claude` in this project:
 6. **On stop** -- session totals are written to the token ledger
 
 You don't interact with any of this. It's invisible.
+
+## Codex App hooks
+
+For Codex App, `openwolf init` writes a small adapter to `~/.codex/hooks/openwolf_codex_hook.mjs` and merges OpenWolf entries into `~/.codex/hooks.json`. Existing Codex hooks are preserved. The adapter translates Codex tool names and payloads into OpenWolf's hook format, including `functions.apply_patch`, `functions.shell_command`, and `multi_tool_use.parallel`.
+
+If Codex App was already open, start a new Codex App session after running `openwolf init` so it reloads the hook configuration.
 
 ## View the dashboard
 

@@ -1,8 +1,14 @@
 # Hooks
 
-OpenWolf registers 6 hooks with Claude Code. They fire automatically on every action. No user interaction required.
+OpenWolf registers 6 hooks with Claude Code and installs a Codex App adapter for the same hook lifecycle. They fire automatically on supported actions. No user interaction required.
 
-All hooks are **pure Node.js file I/O**. No network calls, no AI, no external dependencies. They read JSON on stdin from Claude Code and communicate via exit codes and stderr.
+All hooks are **pure Node.js file I/O**. No network calls, no AI, no external dependencies. They read JSON on stdin and communicate via exit codes and stderr.
+
+## Codex App Adapter
+
+Claude Code reads project-local hook commands from `.claude/settings.json`. Codex App reads global hooks from `~/.codex/hooks.json`, so `openwolf init` also installs `~/.codex/hooks/openwolf_codex_hook.mjs`.
+
+The adapter finds the nearest project containing `.wolf/hooks/`, sets `OPENWOLF_PROJECT_DIR`, `CODEX_PROJECT_DIR`, and `CLAUDE_PROJECT_DIR`, then invokes the same hook scripts listed below. It maps Codex tools like `functions.apply_patch`, `functions.shell_command`, and `multi_tool_use.parallel` into Claude-style `Read`, `Write`, `Edit`, or `MultiEdit` payloads.
 
 ## Hook Lifecycle
 

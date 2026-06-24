@@ -15,15 +15,16 @@ openwolf init
 2. Creates `.wolf/` with 10 template files
 3. Copies 7 hook scripts to `.wolf/hooks/`
 4. Registers 6 Claude Code hooks in `.claude/settings.json`
-5. Creates `.claude/rules/openwolf.md`
-6. Prepends the OpenWolf snippet to `CLAUDE.md`
-7. Runs an initial anatomy scan
-8. Populates `cerebrum.md` with detected project name and description
+5. Installs Codex App adapter hooks in `~/.codex/hooks.json`
+6. Creates `.claude/rules/openwolf.md`
+7. Prepends the OpenWolf snippet to `CLAUDE.md`
+8. Runs an initial anatomy scan
+9. Populates `cerebrum.md` with detected project name and description
 
 If `.wolf/` already exists, it reinitializes (overwrites templates, preserves learned data).
 
 ::: info
-If `.claude/settings.json` already has hooks, OpenWolf merges its hooks in -- existing hooks are not overwritten.
+If `.claude/settings.json` or `~/.codex/hooks.json` already has hooks, OpenWolf merges its hooks in -- existing hooks are not overwritten.
 :::
 
 ---
@@ -44,6 +45,7 @@ OpenWolf Status
   ✓ All 10 core files present
   ✓ All 7 hook scripts present
   ✓ Claude Code hooks registered (6 matchers)
+  ✓ Codex App hooks registered (6 hooks)
 
 Token Stats:
   Sessions: 12

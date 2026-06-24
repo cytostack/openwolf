@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { findProjectRoot } from "../scanner/project-root.js";
 import { readJSON, readText } from "../utils/fs-safe.js";
+import { getCodexAppHookStatus } from "../codex/codex-hooks.js";
 
 export async function statusCommand(): Promise<void> {
   const projectRoot = findProjectRoot();
@@ -61,6 +62,16 @@ export async function statusCommand(): Promise<void> {
     }
   } else {
     console.log("  ✗ .claude/settings.json not found");
+  }
+
+  // Codex App global hook check
+  const codexStatus = getCodexAppHookStatus();
+  if (codexStatus.adapterInstalled && codexStatus.missingActions.length === 0) {
+    console.log(`  ✓ Codex App hooks registered (${codexStatus.registeredActions.length} hooks)`);
+  } else if (codexStatus.adapterInstalled) {
+    console.log(`  ✗ Codex App hooks incomplete (missing: ${codexStatus.missingActions.join(", ")})`);
+  } else {
+    console.log("  ✗ Codex App adapter not found. Run: openwolf init");
   }
 
   // Token ledger stats

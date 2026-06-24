@@ -3,7 +3,7 @@
  *
  * For each project:
  * 1. Creates a timestamped backup in .wolf/backups/
- * 2. Updates hooks, templates, protocol files, and claude rules
+ * 2. Updates hooks, templates, protocol files, Claude rules, and Codex App hooks
  * 3. Preserves all user data (cerebrum, memory, anatomy, buglog, ledger)
  * 4. Reports results per project
  */
@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { getRegisteredProjects, registerProject, type RegisteredProject } from "./registry.js";
 import { readJSON, writeJSON, readText, writeText } from "../utils/fs-safe.js";
 import { ensureDir } from "../utils/paths.js";
+import { installCodexAppHooks } from "../codex/codex-hooks.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -192,14 +193,23 @@ async function updateProject(
     }
     console.log(`    ✓ Claude settings updated`);
 
-    // 5. Update .claude/rules/openwolf.md
+    // 5. Update Codex App global hooks
+    try {
+      const codexHooks = installCodexAppHooks();
+      console.log(`    ✓ Codex App hooks updated (${codexHooks.entryCount} hooks)`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(`    ⚠ Codex App hooks not updated: ${msg}`);
+    }
+
+    // 6. Update .claude/rules/openwolf.md
     const rulesDir = path.join(claudeDir, "rules");
     ensureDir(rulesDir);
     const rulesContent = readTemplateContent("claude-rules-openwolf.md", templatesDir);
     writeText(path.join(rulesDir, "openwolf.md"), rulesContent);
     console.log(`    ✓ Claude rules updated`);
 
-    // 6. Update CLAUDE.md snippet if it references OpenWolf
+    // 7. Update CLAUDE.md snippet if it references OpenWolf
     const claudeMdPath = path.join(root, "CLAUDE.md");
     const snippetContent = readTemplateContent("claude-md-snippet.md", templatesDir);
     if (fs.existsSync(claudeMdPath)) {
@@ -210,7 +220,7 @@ async function updateProject(
       }
     }
 
-    // 7. Clean up stale .tmp files
+    // 8. Clean up stale .tmp files
     try {
       const files = fs.readdirSync(wolfDir);
       let cleaned = 0;
@@ -222,7 +232,7 @@ async function updateProject(
       if (cleaned > 0) console.log(`    ✓ Cleaned ${cleaned} stale .tmp file(s)`);
     } catch {}
 
-    // 8. Update registry entry
+    // 9. Update registry entry
     registerProject(root, name, version);
 
     return {

@@ -1,7 +1,7 @@
 {
   "name": "openwolf",
   "version": "1.0.4",
-  "description": "Token-conscious AI brain for Claude Code projects",
+  "description": "Token-conscious AI brain for Claude Code and Codex App projects",
   "type": "module",
   "bin": {
     "openwolf": "./dist/bin/openwolf.js"
@@ -65,6 +65,8 @@
     "token",
     "openwolf",
     "claude-code",
+    "codex",
+    "codex-app",
     "developer-tools"
   ],
   "files": [

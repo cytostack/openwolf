@@ -8,6 +8,7 @@ import { readJSON, writeJSON, readText, writeText } from "../utils/fs-safe.js";
 import { ensureDir } from "../utils/paths.js";
 import { isWindows } from "../utils/platform.js";
 import { registerProject } from "./registry.js";
+import { installCodexAppHooks } from "../codex/codex-hooks.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -195,6 +196,16 @@ export async function initCommand(): Promise<void> {
     writeJSON(settingsPath, HOOK_SETTINGS);
   }
 
+  // --- Codex App global hooks: install adapter and register OpenWolf entries ---
+  let codexHookStatus = "not installed";
+  try {
+    const codexHooks = installCodexAppHooks();
+    codexHookStatus = `registered (${codexHooks.entryCount} hooks)`;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    codexHookStatus = `not installed (${msg})`;
+  }
+
   // --- Claude rules: always update ---
   const rulesDir = path.join(claudeDir, "rules");
   ensureDir(rulesDir);
@@ -272,19 +283,21 @@ export async function initCommand(): Promise<void> {
     console.log(`  ✓ OpenWolf upgraded to v${version}`);
     console.log(`  ✓ All .wolf data preserved (${skippedCount} files: cerebrum, memory, anatomy, buglog, ledger)`);
     console.log(`  ✓ Hook scripts updated (6 hooks)`);
+    console.log(`  ✓ Codex App hooks ${codexHookStatus}`);
     console.log(`  ✓ ${createdCount} config files updated`);
     console.log(`  ✓ Anatomy: ${fileCount} files tracked (unchanged)`);
   } else {
     console.log(`  ✓ OpenWolf v${version} initialized`);
     console.log(`  ✓ .wolf/ created with ${createdCount} files`);
     console.log(`  ✓ Claude Code hooks registered (6 hooks)`);
+    console.log(`  ✓ Codex App hooks ${codexHookStatus}`);
     console.log(`  ✓ CLAUDE.md updated`);
     console.log(`  ✓ .claude/rules/openwolf.md created`);
     console.log(`  ✓ Anatomy scan: ${fileCount} files indexed`);
   }
   console.log(`  ✓ Daemon: ${daemonStatus}`);
   console.log("");
-  console.log("  You're ready. Just use 'claude' as normal — OpenWolf is watching.");
+  console.log("  You're ready. Use Claude Code or Codex App normally — OpenWolf is watching.");
   console.log("");
 }
 

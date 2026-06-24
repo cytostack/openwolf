@@ -3,8 +3,8 @@ import * as path from "node:path";
 import * as crypto from "node:crypto";
 
 export function getWolfDir(): string {
-  // Prefer CLAUDE_PROJECT_DIR so hooks work even if CWD changes during a session
-  const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  // Prefer explicit hook project vars so hooks work even if CWD changes during a session.
+  const projectDir = process.env.OPENWOLF_PROJECT_DIR || process.env.CODEX_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
   return path.join(projectDir, ".wolf");
 }
 

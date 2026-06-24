@@ -25,13 +25,14 @@ openwolf update
    - `reframe-frameworks.md`
    - Hook scripts in `.wolf/hooks/`
    - Claude rules in `.claude/rules/openwolf.md`
+   - Codex App adapter in `~/.codex/hooks/openwolf_codex_hook.mjs`
 3. **Preserves user data** -- these files are never overwritten:
    - `cerebrum.md` (learned preferences and conventions)
    - `memory.md` (session history)
    - `buglog.json` (bug tracking)
    - `anatomy.md` (project file map)
    - Any custom files you added to `.wolf/`
-4. **Updates hooks** registered in `.claude/settings.json`
+4. **Updates hooks** registered in `.claude/settings.json` and `~/.codex/hooks.json`
 
 ### Options
 

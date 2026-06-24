@@ -112,9 +112,9 @@ Or let OpenWolf detect it from your README. The daemon checks (in order):
 
 ## Hooks not firing
 
-**Symptom:** OpenWolf doesn't track tokens or update memory when using Claude.
+**Symptom:** OpenWolf doesn't track tokens or update memory when using Claude Code or Codex App.
 
-**Cause:** Claude Code hooks aren't registered or the hook scripts are missing.
+**Cause:** Claude Code hooks are not registered, Codex App global hooks are not registered, or the hook scripts are missing.
 
 **Fix:** Re-run init to register hooks:
 
@@ -128,7 +128,9 @@ Then verify:
 openwolf status
 ```
 
-Look for `✓ Claude Code hooks registered (6 matchers)`.
+Look for both `✓ Claude Code hooks registered (...)` and `✓ Codex App hooks registered (6 hooks)`.
+
+For Codex App specifically, `openwolf init` installs `~/.codex/hooks/openwolf_codex_hook.mjs` and merges entries into `~/.codex/hooks.json`. Existing Codex hooks are preserved. If Codex App was already open, start a new Codex App session after running `openwolf init` so the app reloads the hook configuration.
 
 ## Anatomy scan finds 0 files
 

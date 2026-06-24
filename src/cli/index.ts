@@ -25,7 +25,7 @@ export function createProgram(): Command {
 
   program
     .name("openwolf")
-    .description("Token-conscious AI brain for Claude Code projects")
+    .description("Token-conscious AI brain for Claude Code and Codex App projects")
     .version(getVersion());
 
   program

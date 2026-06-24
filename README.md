@@ -5,7 +5,7 @@
 <h1 align="center">OpenWolf</h1>
 
 <p align="center">
-  <strong>A second brain for Claude Code.</strong><br />
+  <strong>A second brain for Claude Code and Codex App.</strong><br />
   Project intelligence, token tracking, and invisible enforcement through 6 hook scripts. Zero workflow changes.
 </p>
 
@@ -19,9 +19,9 @@
 
 ## Why OpenWolf Exists
 
-Claude Code is powerful but it works blind. It doesn't know what a file contains until it opens it. It can't tell a 50-token config from a 2,000-token module. It reads the same file multiple times in one session without noticing. It has no index of your project, no memory of your corrections, and no awareness of what it already tried.
+Claude Code and Codex App are powerful, but they work blind. They don't know what a file contains until they open it. They can't tell a 50-token config from a 2,000-token module. They can read the same file multiple times in one session without noticing. They have no index of your project, no memory of your corrections, and no awareness of what they already tried.
 
-OpenWolf gives Claude a second brain: a file index so it knows what files contain before reading them, a learning memory that accumulates your preferences and past mistakes, and a token ledger that tracks everything. All through 6 invisible hook scripts that fire on every Claude action.
+OpenWolf gives your coding agent a second brain: a file index so it knows what files contain before reading them, a learning memory that accumulates your preferences and past mistakes, and a token ledger that tracks everything. Claude Code uses the project hooks directly; Codex App uses an adapter installed into its global hook file.
 
 ## Token Comparison
 
@@ -45,7 +45,7 @@ cd your-project
 openwolf init
 ```
 
-That's it. Use `claude` normally. OpenWolf is watching.
+That's it. Use `claude` or Codex App normally. OpenWolf is watching.
 
 ## What It Creates
 
@@ -58,7 +58,7 @@ That's it. Use `claude` normally. OpenWolf is watching.
 | `memory.md` | Chronological action log with token estimates |
 | `buglog.json` | Bug fix memory, searchable, prevents re-discovery |
 | `token-ledger.json` | Lifetime token tracking and session history |
-| `hooks/` | 6 Claude Code lifecycle hooks (pure Node.js) |
+| `hooks/` | 6 lifecycle hooks (pure Node.js) |
 | `config.json` | Configuration with sensible defaults |
 | `identity.md` | Agent persona for this project |
 | `OPENWOLF.md` | Instructions Claude follows every session |
@@ -66,6 +66,8 @@ That's it. Use `claude` normally. OpenWolf is watching.
 ## How It Works
 
 Before Claude reads a file, OpenWolf tells it what the file contains and how large it is. If Claude already read that file this session, OpenWolf warns it. Before Claude writes code, OpenWolf checks your `cerebrum.md` for known mistakes. After every write, it auto-updates the project map and logs token usage. You see none of this. It just happens.
+
+In Codex App, `openwolf init` also installs `~/.codex/hooks/openwolf_codex_hook.mjs` and merges OpenWolf entries into `~/.codex/hooks.json`. The adapter maps Codex tools such as `functions.apply_patch`, `functions.shell_command`, and `multi_tool_use.parallel` into the same OpenWolf hook payloads used by Claude Code.
 
 ```
 You type a message
@@ -212,19 +214,19 @@ Ask Claude to help you pick a UI framework. OpenWolf ships a curated knowledge b
 
 ## How OpenWolf Compares
 
-OpenWolf is not an AI wrapper. It is 6 hook scripts and a `.wolf/` directory. It doesn't run your AI for you or change your workflow. It gives Claude Code what it lacks: a project map so it reads less, a memory so it learns faster, and a ledger so you see where tokens go.
+OpenWolf is not an AI wrapper. It is 6 hook scripts, a Codex App adapter, and a `.wolf/` directory. It doesn't run your AI for you or change your workflow. It gives coding agents what they lack: a project map so they read less, a memory so they learn faster, and a ledger so you see where tokens go.
 
 ## Requirements
 
 - Node.js 20+
-- Claude Code CLI
+- Claude Code CLI or Codex App
 - Windows, macOS, or Linux
 - Optional: PM2 for persistent background tasks
 - Optional: `puppeteer-core` for Design QC screenshots
 
 ## Limitations
 
-- Claude Code hooks are a relatively new feature. OpenWolf falls back to `CLAUDE.md` instructions when hooks don't fire.
+- Claude Code and Codex App hooks are relatively new. Run `openwolf status` to verify both hook registrations.
 - Token tracking is estimation-based (character-to-token ratio), not exact API counts. Accurate to within ~15%.
 - `cerebrum.md` depends on Claude following instructions to update it after corrections. Compliance is ~85-90%, not 100%.
 - This is v1.0.4. Things may break. [File issues](https://github.com/cytostack/openwolf/issues).
