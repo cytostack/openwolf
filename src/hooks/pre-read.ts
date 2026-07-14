@@ -5,10 +5,11 @@ import {
   estimateTokens, readStdin, normalizePath, getProjectDir
 } from "./shared.js";
 import { lookupEntry } from "./anatomy-store.js";
+import { trackRead, type FileReadEntry } from "./read-tracking.js";
 
 interface SessionData {
   session_id: string;
-  files_read: Record<string, { count: number; tokens: number; first_read: string }>;
+  files_read: Record<string, FileReadEntry>;
   anatomy_hits: number;
   anatomy_misses: number;
   repeated_reads_warned: number;
@@ -51,13 +52,20 @@ async function main(): Promise<void> {
     repeated_reads_warned: 0,
   });
 
-  // Check if already read this session
-  if (session.files_read[normalizedFile]) {
-    const prev = session.files_read[normalizedFile];
+  let currentMtime: number | undefined;
+  try {
+    const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(projectDir, filePath);
+    currentMtime = fs.statSync(absolutePath).mtimeMs;
+  } catch {}
+
+  const previous = session.files_read[normalizedFile];
+  const read = trackRead(previous, currentMtime, new Date().toISOString());
+
+  if (previous && read.repeated) {
     process.stderr.write(
-      `⚡ OpenWolf: ${path.basename(normalizedFile)} was already read this session (~${prev.tokens} tokens). Consider using your existing knowledge of this file.\n`
+      `⚡ OpenWolf: ${path.basename(normalizedFile)} was already read this session (~${previous.tokens} tokens). Consider using your existing knowledge of this file.\n`
     );
-    session.files_read[normalizedFile].count++;
+    session.files_read[normalizedFile] = read.entry;
     session.repeated_reads_warned++;
     writeJSON(sessionFile, session);
     process.exit(0);
@@ -99,11 +107,7 @@ async function main(): Promise<void> {
   }
 
   // Record initial read entry (tokens will be updated in post-read)
-  session.files_read[normalizedFile] = {
-    count: 1,
-    tokens: 0,
-    first_read: new Date().toISOString(),
-  };
+  session.files_read[normalizedFile] = read.entry;
 
   writeJSON(sessionFile, session);
   process.exit(0);
