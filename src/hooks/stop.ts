@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getWolfDir, ensureWolfDir, readJSON, writeJSON, appendMarkdown, timeShort, countSemanticEntries, readStdin, readTranscriptUsage, detectAgent, type RealUsage } from "./shared.js";
+import { getWolfDir, getProjectDir, ensureWolfDir, readJSON, writeJSON, appendMarkdown, timeShort, countSemanticEntries, readStdin, readTranscriptUsage, detectAgent, type RealUsage } from "./shared.js";
 
 interface FileRead {
   count: number;
@@ -97,16 +97,26 @@ async function main(): Promise<void> {
   // Check if STATUS.md is stale relative to this session
   checkStatusFreshness(wolfDir, session);
 
+  // Build session entry for ledger. Convert absolute paths to project-relative
+  // so the ledger is portable across machines / environments.
+  const projectDir = getProjectDir();
+  const toRelative = (absFile: string): string => {
+    const rel = path.relative(projectDir, absFile);
+    // If the file lives outside the project (e.g. global config) keep the
+    // absolute path so we don't lose the information — but mark it clearly.
+    return rel.startsWith("..") || path.isAbsolute(rel) ? absFile : rel;
+  };
+
   // Build session entry for ledger
   const reads = Object.entries(session.files_read).map(([file, data]) => ({
-    file,
+    file: toRelative(file),
     tokens_estimated: data.tokens,
     was_repeated: data.count > 1,
     anatomy_had_description: false, // simplified
   }));
 
   const writes = session.files_written.map((w) => ({
-    file: w.file,
+    file: toRelative(w.file),
     tokens_estimated: w.tokens,
     action: w.action,
   }));
