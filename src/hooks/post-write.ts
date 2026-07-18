@@ -22,6 +22,7 @@ const NON_CODE_EXTS = new Set([
 ]);
 
 interface SessionData {
+  files_read: Record<string, { count: number; tokens: number; first_read: string; read_mtime?: number }>;
   files_written: Array<{ file: string; action: string; tokens: number; at: string }>;
   edit_counts: Record<string, number>;
   [key: string]: unknown;
@@ -157,10 +158,14 @@ async function main(): Promise<void> {
     appendMarkdown(memoryPath, `| ${timeShort()} | ${action} ${relFile} | ${outcome} | ~${writeTokens} |\n`);
   } catch {}
 
-  // 3. Record in session tracker + track edit counts
+  // 3. Record in session tracker + track edit counts.
+  //    Also clear the files_read entry for the written file — the file's
+  //    content just changed, so any cached read_mtime is now stale and a
+  //    subsequent re-read of this file is legitimate (not a repeated read).
   try {
-    const session = readJSON<SessionData>(sessionFile, { files_written: [], edit_counts: {} });
+    const session = readJSON<SessionData>(sessionFile, { files_read: {}, files_written: [], edit_counts: {} });
     if (!session.edit_counts) session.edit_counts = {};
+    if (!session.files_read) session.files_read = {};
 
     const normalizedFile = normalizePath(filePath);
     const action = toolName === "Write" ? "create" : "edit";
@@ -176,6 +181,10 @@ async function main(): Promise<void> {
 
     const editKey = normalizePath(path.relative(projectRoot, absolutePath));
     session.edit_counts[editKey] = (session.edit_counts[editKey] || 0) + 1;
+
+    // Invalidate the read cache for this file so the next read is not
+    // incorrectly flagged as a repeated read (the content just changed).
+    delete session.files_read[normalizedFile];
 
     writeJSON(sessionFile, session);
 
