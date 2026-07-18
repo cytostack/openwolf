@@ -8,7 +8,7 @@ import { lookupEntry } from "./anatomy-store.js";
 
 interface SessionData {
   session_id: string;
-  files_read: Record<string, { count: number; tokens: number; first_read: string }>;
+  files_read: Record<string, { count: number; tokens: number; first_read: string; read_mtime?: number }>;
   anatomy_hits: number;
   anatomy_misses: number;
   repeated_reads_warned: number;
@@ -54,14 +54,36 @@ async function main(): Promise<void> {
   // Check if already read this session
   if (session.files_read[normalizedFile]) {
     const prev = session.files_read[normalizedFile];
-    process.stderr.write(
-      `⚡ OpenWolf: ${path.basename(normalizedFile)} was already read this session (~${prev.tokens} tokens). Consider using your existing knowledge of this file.\n`
-    );
-    session.files_read[normalizedFile].count++;
-    session.repeated_reads_warned++;
-    writeJSON(sessionFile, session);
-    process.exit(0);
-    return;
+
+    // Compare current mtime against stored read_mtime — if the file was
+    // modified since the last read (by Claude or the user externally),
+    // the re-read is legitimate: clear the stale entry and fall through.
+    let fileChanged = false;
+    if (prev.read_mtime !== undefined) {
+      try {
+        const currentMtime = fs.statSync(normalizedFile).mtimeMs;
+        if (currentMtime > prev.read_mtime) {
+          fileChanged = true;
+        }
+      } catch {
+        // statSync failed (file deleted, permission error, etc.);
+        // treat as unchanged so we keep the existing warning behaviour.
+      }
+    }
+
+    if (!fileChanged) {
+      process.stderr.write(
+        `⚡ OpenWolf: ${path.basename(normalizedFile)} was already read this session (~${prev.tokens} tokens). Consider using your existing knowledge of this file.\n`
+      );
+      session.files_read[normalizedFile].count++;
+      session.repeated_reads_warned++;
+      writeJSON(sessionFile, session);
+      process.exit(0);
+      return;
+    }
+
+    // File was modified — reset entry so this read is treated as fresh.
+    delete session.files_read[normalizedFile];
   }
 
   // Anatomy lookup: O(1) against the durable store, legacy md scan fallback.
@@ -98,11 +120,21 @@ async function main(): Promise<void> {
     session.anatomy_misses++;
   }
 
-  // Record initial read entry (tokens will be updated in post-read)
+  // Record initial read entry (tokens will be updated in post-read).
+  // Capture mtime now so future re-reads can detect if the file changed.
+  let readMtime: number | undefined;
+  try {
+    readMtime = fs.statSync(normalizedFile).mtimeMs;
+  } catch {
+    // File may not exist yet (e.g. read of a path about to be created);
+    // leave read_mtime undefined so mtime comparison is skipped next time.
+  }
+
   session.files_read[normalizedFile] = {
     count: 1,
     tokens: 0,
     first_read: new Date().toISOString(),
+    read_mtime: readMtime,
   };
 
   writeJSON(sessionFile, session);
