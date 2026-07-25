@@ -23,7 +23,9 @@ You are working in an OpenWolf-managed project. These rules apply every turn.
 
 **The bar is HIGH for STATUS.md.** Stale STATUS.md = wasted next session. Always treat it as the handoff document.
 
-**Session journal auto-rotation.** If you keep a running session journal at the top of STATUS.md (a leading blockquote of `> **SESSION N ...` / `> **SESSÃO N ...` blocks), the stop hook automatically keeps only the newest `openwolf.status.max_sessions` blocks (default 2) and moves older ones to `.wolf/STATUS-archive.md`. Just prepend a new block per session — you don't trim by hand. Read STATUS-archive.md only when you need older history.
+**Session journal auto-rotation.** If you keep a running session journal at the top of STATUS.md (a leading blockquote of `> **SESSION N ...` / `> **SESSÃO N ...` blocks), the stop hook automatically keeps only the newest `openwolf.status.max_sessions` blocks (default 2) and moves older ones to `.wolf/history.md` (under `## Session Journal`). Just prepend a new block per session — you don't trim by hand. Read `history.md` only when you need older context.
+
+**Big-picture planning lives in ROADMAP.md.** Keep STATUS.md focused on the *current* quest. Anything planned-but-not-active (milestones, backlog, someday ideas) goes in `.wolf/ROADMAP.md`. When you start a backlog item, move it into STATUS.md `🚀 Next phase`.
 
 ## TODO.md — Working Checklist
 
@@ -98,7 +100,7 @@ OpenWolf's value comes from learning across sessions. You MUST update `.wolf/cer
 - You change error handling, try/catch blocks, or validation logic
 - The user says something "doesn't work", "is broken", or "shows wrong X"
 
-**Before fixing:** Read `.wolf/buglog.json` first — the fix may already be known.
+**Before fixing:** scan `.wolf/buglog.md` first — a compact auto-generated index (id · tags · file · message) of every logged bug. Find a candidate by tag/file/message, then open ONLY that entry in `.wolf/buglog.json`. Do NOT read the whole `buglog.json` — it grows large and the index exists precisely to avoid that.
 
 **After fixing:** ALWAYS append to `.wolf/buglog.json` with this structure:
 ```json

@@ -45,6 +45,7 @@ const CREATE_IF_MISSING = [
   "anatomy.md",
   "STATUS.md",
   "TODO.md",
+  "ROADMAP.md",
   "token-ledger.json",
   "buglog.json",
   "cron-manifest.json",
@@ -210,6 +211,11 @@ export async function initCommand(options?: { agent?: string[] }): Promise<void>
   // --- TODO.md: substitute {{PROJECT_NAME}} / {{DATE}} when freshly created ---
   if (newlyCreated.has("TODO.md")) {
     seedTemplateVars(path.join(wolfDir, "TODO.md"), projectRoot);
+  }
+
+  // --- ROADMAP.md: substitute {{PROJECT_NAME}} / {{DATE}} when freshly created ---
+  if (newlyCreated.has("ROADMAP.md")) {
+    seedTemplateVars(path.join(wolfDir, "ROADMAP.md"), projectRoot);
   }
 
   // --- Token ledger: set created_at only if empty ---
@@ -487,6 +493,7 @@ function generateTemplate(destPath: string, file: string): void {
     "anatomy.md": `# anatomy.md\n\n> Project structure index. Pending initial scan.\n`,
     "STATUS.md": `# STATUS\n\n> Single source of truth for resuming work. Read this FIRST when starting a session.\n> Update at the end of every work phase so the next \`/clear\` resumes in 1 read.\n\n---\n\n## ✅ Done\n\n- (nothing yet — fill in as work completes)\n\n---\n\n## 🚀 Next phase\n\n**Goal:** _<what we're building next>_\n\n### Acceptance criteria\n1. _<concrete user-visible outcome>_\n\n### Files to create / edit\n- _<path + purpose>_\n\n### Open decisions\n- _<question to ask before coding>_\n\n---\n\n## 📁 Active architecture\n\n- **Stack:** _<frameworks>_\n\n---\n\n## 🔧 Useful commands\n\n\`\`\`bash\n# add the most-used commands here\n\`\`\`\n`,
     "TODO.md": `# TODO\n\n> Working checklist. STATUS.md = handoff ("why & where we are"); TODO.md = "what's left".\n> Keep items actionable. Check off with [x]; sweep done items into STATUS.md ✅ when a phase closes.\n\n---\n\n## 🔥 Now\n\n- [ ] _<the thing you're actively doing>_\n\n## ⏭️ Next\n\n- [ ] _<queued, ready to pick up>_\n\n## 💡 Later / backlog\n\n- [ ] _<not scheduled; ideas, nice-to-haves>_\n\n## ✅ Recently done\n\n- (checked items land here; sweep into STATUS.md ✅ when a phase closes)\n`,
+    "ROADMAP.md": `# ROADMAP\n\n> Longer-horizon plan and backlog. STATUS.md = the current quest (keep it small); ROADMAP.md = everything planned but not active. Move an item into STATUS.md "🚀 Next phase" when you start it.\n\n---\n\n## 🎯 Milestones\n\n- [ ] _<milestone + what "done" means>_\n\n## 🧭 Backlog (unscheduled)\n\n- _<feature / idea + one-line rationale>_\n\n## 🧊 Someday / maybe\n\n- _<parked ideas>_\n`,
     "config.json": JSON.stringify({
       version: 1,
       openwolf: {
@@ -494,8 +501,8 @@ function generateTemplate(destPath: string, file: string): void {
         anatomy: { auto_scan_on_init: true, rescan_interval_hours: 6, max_description_length: 100, max_files: 500, exclude_patterns: ["node_modules", ".git", "dist", "build", ".wolf", ".next", ".nuxt", "coverage", "__pycache__", ".cache", "target", ".vscode", ".idea", ".turbo", ".vercel", ".netlify", ".output", "*.min.js", "*.min.css"] },
         token_audit: { enabled: true, report_frequency: "weekly", waste_threshold_percent: 15, chars_per_token_code: 3.5, chars_per_token_prose: 4.0 },
         cron: { enabled: true, max_retry_attempts: 3, dead_letter_enabled: true, heartbeat_interval_minutes: 30, use_claude_p: true, api_key_env: null },
-        memory: { consolidation_after_days: 7, max_entries_before_consolidation: 200 },
-        status: { max_sessions: 2 },
+        memory: { consolidation_after_days: 7, max_entries_before_consolidation: 200, max_sessions: 20 },
+        status: { max_sessions: 2, archive_file: "history.md" },
         todo: { enabled: true },
         cerebrum: { max_tokens: 2000, reflection_frequency: "weekly" },
         context: { session_digest_budget_tokens: 1500, budgets: { claude: 1500, codex: 1200, gemini: 1200, opencode: 1200, cursor: 800 } },

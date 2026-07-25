@@ -91,6 +91,7 @@ async function main(): Promise<void> {
   const reminders = [
     checkForMissingBugLogs(wolfDir, session),
     checkCerebrumFreshness(wolfDir, session),
+    checkCerebrumBudget(wolfDir),
     checkSemanticSummaries(wolfDir, session),
     checkTodoFreshness(wolfDir, session),
   ].filter((r): r is string => r !== null);
@@ -98,9 +99,10 @@ async function main(): Promise<void> {
   // Check if STATUS.md is stale relative to this session
   checkStatusFreshness(wolfDir, session);
 
-  // Rotate old session blocks out of STATUS.md into STATUS-archive.md so the
-  // handoff document stays cheap to read at the next session start.
-  trimStatusJournal(wolfDir);
+  // Housekeeping: keep the .wolf handoff files cheap to read.
+  trimStatusJournal(wolfDir);   // STATUS.md journal → history.md (## Session Journal)
+  trimMemoryLog(wolfDir);       // memory.md old sessions → history.md (## Action Log)
+  generateBuglogIndex(wolfDir); // buglog.json → compact buglog.md index
 
   // Build session entry for ledger
   const reads = Object.entries(session.files_read).map(([file, data]) => ({
@@ -298,14 +300,56 @@ function checkTodoFreshness(wolfDir: string, session: SessionData): string | nul
   }
 }
 
+/** Atomic file write (tmp + rename) so a concurrent Stop hook from another
+ * agent/session in the same project can never read a half-written file. */
+function atomicWrite(p: string, data: string): void {
+  const tmp = `${p}.tmp.${process.pid}`;
+  fs.writeFileSync(tmp, data);
+  fs.renameSync(tmp, p);
+}
+
+const HISTORY_HEADER =
+  "# History Archive\n\n> Older content rotated out of STATUS.md / memory.md by the stop hook (newest first). Read only when you need history beyond the live files.\n";
+
+/** Resolve the shared history file (config openwolf.status.archive_file, default history.md). */
+function historyPathOf(wolfDir: string): string {
+  const cfg = readJSON<{ openwolf?: { status?: { archive_file?: string } } }>(
+    path.join(wolfDir, "config.json"),
+    {}
+  );
+  return path.join(wolfDir, cfg.openwolf?.status?.archive_file ?? "history.md");
+}
+
+/**
+ * Prepend `moved` under a `## <section>` heading in the shared history file
+ * (newest first). Creates the file / section as needed. Atomic write.
+ */
+function archiveToHistory(wolfDir: string, section: string, moved: string): void {
+  const historyPath = historyPathOf(wolfDir);
+  let content = fs.existsSync(historyPath) ? fs.readFileSync(historyPath, "utf8") : "";
+  if (!content.startsWith("# History Archive")) {
+    content = HISTORY_HEADER + (content ? "\n" + content : "");
+  }
+  const block = moved.replace(/\s+$/, "") + "\n";
+  const heading = `## ${section}`;
+  const hIdx = content.indexOf(`\n${heading}`);
+  if (hIdx === -1) {
+    content = content.replace(/\s+$/, "") + `\n\n${heading}\n\n${block}`;
+  } else {
+    const lineEnd = content.indexOf("\n", hIdx + 1) + 1;
+    const rest = content.slice(lineEnd).replace(/^\n+/, "");
+    content = content.slice(0, lineEnd) + "\n" + block + "\n" + rest;
+  }
+  atomicWrite(historyPath, content);
+}
+
 /**
  * Keep STATUS.md lean for cheap resumes. The leading blockquote of STATUS.md is
  * a session journal ("> **SESSÃO N ..." / "> **SESSION N ...") that grows every
- * session. This rotates all but the newest N blocks into .wolf/STATUS-archive.md
- * (newest first). N comes from config.json openwolf.status.max_sessions
+ * session. Rotates all but the newest N blocks into the history file under
+ * "## Session Journal" (newest first). N = openwolf.status.max_sessions
  * (default 2). No-op unless there are more than N blocks, so most Stops touch
- * nothing. Writes are atomic (tmp + rename) so a concurrent Stop hook from
- * another agent/session in the same project can never read a half-written file.
+ * nothing.
  */
 function trimStatusJournal(wolfDir: string): void {
   try {
@@ -335,7 +379,7 @@ function trimStatusJournal(wolfDir: string): void {
     }
     const journal = lines.slice(jStart, jEnd);
 
-    // Split into preamble (intro quote lines) + session blocks.
+    // Split into preamble (intro quote lines) + session blocks (newest first).
     const markers = journal
       .map((l, i) => (SESS_RE.test(l) ? i : -1))
       .filter((i) => i >= 0);
@@ -351,43 +395,125 @@ function trimStatusJournal(wolfDir: string): void {
     const keepBlocks = blocks.slice(0, keep);
     const archiveBlocks = blocks.slice(keep);
 
-    // Rebuild STATUS.md with only the newest N blocks.
     const newJournal = [...preamble, ...keepBlocks.flat()];
     while (newJournal.length && newJournal[newJournal.length - 1].trim() === "") {
       newJournal.pop();
     }
-    const newStatus = [
-      ...lines.slice(0, jStart),
-      ...newJournal,
-      "",
-      ...lines.slice(jEnd),
-    ].join("\n");
+    const newStatus = [...lines.slice(0, jStart), ...newJournal, "", ...lines.slice(jEnd)].join("\n");
 
-    // Prepend moved blocks to the archive (newest first), idempotent header.
-    const archivePath = path.join(wolfDir, "STATUS-archive.md");
-    const header =
-      "# STATUS — Journal Archive\n\n> Older session blocks rotated out of STATUS.md (newest first). Auto-managed by the stop hook.\n\n";
-    const moved = archiveBlocks.map((b) => b.join("\n")).join("\n");
-    let archiveOut: string;
-    if (fs.existsSync(archivePath)) {
-      const prev = fs.readFileSync(archivePath, "utf8").replace(header, "");
-      archiveOut = header + moved + "\n" + prev;
-    } else {
-      archiveOut = header + moved + "\n";
-    }
-
-    // Atomic writes. Archive first: a crash between the two renames can only
-    // duplicate a block on the next run, never lose one.
-    const atomicWrite = (p: string, data: string): void => {
-      const tmp = `${p}.tmp.${process.pid}`;
-      fs.writeFileSync(tmp, data);
-      fs.renameSync(tmp, p);
-    };
-    atomicWrite(archivePath, archiveOut);
+    // History first: a crash between writes can only duplicate a block, never lose one.
+    archiveToHistory(wolfDir, "Session Journal", archiveBlocks.map((b) => b.join("\n")).join("\n"));
     atomicWrite(statusPath, newStatus);
   } catch {
     // Never break the Stop hook over housekeeping.
   }
+}
+
+/**
+ * Keep memory.md lean. It is a chronological action log grouped into
+ * "## Session: <date>" blocks, appended oldest→newest (newest at the bottom).
+ * Rotates all but the newest N session blocks into the history file under
+ * "## Action Log" (newest first). N = openwolf.memory.max_sessions (default 20).
+ * No-op unless there are more than N blocks.
+ */
+function trimMemoryLog(wolfDir: string): void {
+  try {
+    const memPath = path.join(wolfDir, "memory.md");
+    if (!fs.existsSync(memPath)) return;
+
+    const cfg = readJSON<{ openwolf?: { memory?: { max_sessions?: number } } }>(
+      path.join(wolfDir, "config.json"),
+      {}
+    );
+    const keep = Math.max(2, cfg.openwolf?.memory?.max_sessions ?? 20);
+    const SESSION_RE = /^##\s+Session:/i;
+
+    const raw = fs.readFileSync(memPath, "utf8");
+    const lines = raw.split("\n");
+    const markers = lines
+      .map((l, i) => (SESSION_RE.test(l) ? i : -1))
+      .filter((i) => i >= 0);
+    if (markers.length <= keep) return;
+
+    const preamble = lines.slice(0, markers[0]);
+    const blocks: string[][] = [];
+    for (let i = 0; i < markers.length; i++) {
+      const s = markers[i];
+      const e = i + 1 < markers.length ? markers[i + 1] : lines.length;
+      blocks.push(lines.slice(s, e));
+    }
+    // memory.md is oldest-first: keep the LAST N blocks, archive the earlier ones.
+    const keepBlocks = blocks.slice(blocks.length - keep);
+    const olderBlocks = blocks.slice(0, blocks.length - keep);
+
+    const newMemory = [...preamble, ...keepBlocks.flat()];
+    while (newMemory.length && newMemory[newMemory.length - 1].trim() === "") newMemory.pop();
+
+    // Reverse so the most recent of the evicted blocks lands on top (newest first).
+    const moved = olderBlocks.reverse().map((b) => b.join("\n")).join("\n");
+    archiveToHistory(wolfDir, "Action Log", moved);
+    atomicWrite(memPath, newMemory.join("\n") + "\n");
+  } catch {
+    // Never break the Stop hook over housekeeping.
+  }
+}
+
+/**
+ * Render a compact buglog.md index from buglog.json so Claude reads a small
+ * index (id · tags · file · truncated message) before a fix, and only opens the
+ * full entry in buglog.json when a candidate matches. Regenerated only when the
+ * source is newer than the index. Non-destructive: buglog.json is untouched.
+ */
+function generateBuglogIndex(wolfDir: string): void {
+  try {
+    const jsonPath = path.join(wolfDir, "buglog.json");
+    const mdPath = path.join(wolfDir, "buglog.md");
+    if (!fs.existsSync(jsonPath)) return;
+    if (fs.existsSync(mdPath) && fs.statSync(mdPath).mtimeMs >= fs.statSync(jsonPath).mtimeMs) return;
+
+    const data = readJSON<{ bugs?: Array<Record<string, unknown>> }>(jsonPath, { bugs: [] });
+    const bugs = Array.isArray(data.bugs) ? data.bugs : [];
+    const esc = (s: string) => s.replace(/\s+/g, " ").replace(/\|/g, "\\|");
+    const rows = bugs.map((b) => {
+      const id = esc(String(b.id ?? ""));
+      const tags = Array.isArray(b.tags) ? esc((b.tags as string[]).join(",")) : "";
+      const file = esc(String(b.file ?? ""));
+      const msg = esc(String(b.error_message ?? "")).slice(0, 80);
+      return `| ${id} | ${tags} | ${file} | ${msg} |`;
+    });
+    const md =
+      `# Buglog Index\n\n> Compact index of .wolf/buglog.json (${bugs.length} bugs). Auto-generated by the stop hook — do not edit.\n` +
+      `> BEFORE fixing a bug, scan this index by tag / file / message, then open ONLY the matching entry in buglog.json. Never read the whole JSON.\n\n` +
+      `| id | tags | file | error (truncated) |\n|---|---|---|---|\n` +
+      rows.join("\n") + "\n";
+    atomicWrite(mdPath, md);
+  } catch {
+    // Index generation is best-effort.
+  }
+}
+
+/**
+ * Warn when cerebrum.md has grown well past its token budget. cerebrum.md is
+ * curated knowledge read before every code-gen, so it is NOT auto-trimmed
+ * (that would risk dropping real learnings); instead Claude is nudged to
+ * consolidate it by hand. Returns a reminder or null.
+ */
+function checkCerebrumBudget(wolfDir: string): string | null {
+  try {
+    const cfg = readJSON<{ openwolf?: { cerebrum?: { max_tokens?: number } } }>(
+      path.join(wolfDir, "config.json"),
+      {}
+    );
+    const budget = cfg.openwolf?.cerebrum?.max_tokens ?? 2000;
+    const bytes = fs.statSync(path.join(wolfDir, "cerebrum.md")).size;
+    const estTokens = Math.round(bytes / 4);
+    if (estTokens > budget * 2) {
+      return `ACTION REQUIRED: cerebrum.md is ~${estTokens} tokens, well over its ${budget}-token budget, and it's read before every code-gen. Consolidate it: merge duplicate learnings, drop stale/one-off entries, and move dated Decision Log items into history. Keep all active User Preferences and Do-Not-Repeat rules.`;
+    }
+  } catch {
+    // no cerebrum.md — fine
+  }
+  return null;
 }
 
 /**

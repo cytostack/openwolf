@@ -6,12 +6,13 @@ globs: **/*
 - Read .wolf/STATUS.md FIRST when resuming a session — it contains current quest, next steps, decisions
 - Update .wolf/STATUS.md (✅ done / 🚀 next quest) when a quest finishes or before suggesting /clear
 - Keep .wolf/TODO.md current — check off completed items and add new tasks as they surface (🔥 Now / ⏭️ Next / 💡 Later)
+- Keep STATUS.md focused on the current quest; put planned-but-not-active work in .wolf/ROADMAP.md
 - Check .wolf/anatomy.md before reading any project file
 - Check .wolf/cerebrum.md Do-Not-Repeat list before generating code
 - After writing or editing files, update .wolf/anatomy.md and append to .wolf/memory.md
 - After receiving a user correction, update .wolf/cerebrum.md immediately (Preferences, Learnings, or Do-Not-Repeat)
 - LEARN from every interaction: if you discover a convention, user preference, or project pattern, add it to .wolf/cerebrum.md. Low threshold — when in doubt, log it.
-- BEFORE fixing any bug or error: read .wolf/buglog.json for known fixes
+- BEFORE fixing any bug or error: scan .wolf/buglog.md (compact index), then open only the matching entry in .wolf/buglog.json — never read the whole JSON
 - AFTER fixing any bug, error, failed test, failed build, or user-reported problem: ALWAYS log to .wolf/buglog.json with error_message, root_cause, fix, and tags
 - If you edit a file more than twice in a session, that likely indicates a bug — log it to .wolf/buglog.json
 - When the user asks to change/pick/migrate UI framework: read .wolf/reframe-frameworks.md, ask decision questions, recommend a framework, then execute with the framework's prompt
