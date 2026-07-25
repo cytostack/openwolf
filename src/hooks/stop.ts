@@ -102,6 +102,7 @@ async function main(): Promise<void> {
   // Housekeeping: keep the .wolf handoff files cheap to read.
   trimStatusJournal(wolfDir);   // STATUS.md journal → history.md (## Session Journal)
   trimMemoryLog(wolfDir);       // memory.md old sessions → history.md (## Action Log)
+  trimBuglog(wolfDir);          // buglog.json old bugs → buglog-archive.json
   generateBuglogIndex(wolfDir); // buglog.json → compact buglog.md index
 
   // Build session entry for ledger
@@ -455,6 +456,41 @@ function trimMemoryLog(wolfDir: string): void {
     atomicWrite(memPath, newMemory.join("\n") + "\n");
   } catch {
     // Never break the Stop hook over housekeeping.
+  }
+}
+
+/**
+ * Cap the live buglog.json at the newest N bugs (openwolf.buglog.max_entries,
+ * default 200); older bugs move to buglog-archive.json (chronological). Keeps
+ * the generated buglog.md index small without ever deleting a logged fix. Bugs
+ * are stored append-order (oldest first), so the newest are at the tail.
+ */
+function trimBuglog(wolfDir: string): void {
+  try {
+    const jsonPath = path.join(wolfDir, "buglog.json");
+    if (!fs.existsSync(jsonPath)) return;
+
+    const cfg = readJSON<{ openwolf?: { buglog?: { max_entries?: number } } }>(
+      path.join(wolfDir, "config.json"),
+      {}
+    );
+    const keep = Math.max(20, cfg.openwolf?.buglog?.max_entries ?? 200);
+
+    const data = readJSON<{ version?: number; bugs?: unknown[] }>(jsonPath, { bugs: [] });
+    const bugs = Array.isArray(data.bugs) ? data.bugs : [];
+    if (bugs.length <= keep) return;
+
+    const kept = bugs.slice(bugs.length - keep);
+    const older = bugs.slice(0, bugs.length - keep);
+
+    const archPath = path.join(wolfDir, "buglog-archive.json");
+    const arch = readJSON<{ version?: number; bugs?: unknown[] }>(archPath, { version: 1, bugs: [] });
+    const archBugs = Array.isArray(arch.bugs) ? arch.bugs : [];
+    // Archive first so a crash can only duplicate, never lose, a bug.
+    atomicWrite(archPath, JSON.stringify({ version: arch.version ?? 1, bugs: [...archBugs, ...older] }, null, 2) + "\n");
+    atomicWrite(jsonPath, JSON.stringify({ version: data.version ?? 1, bugs: kept }, null, 2) + "\n");
+  } catch {
+    // Best-effort — never break the Stop hook.
   }
 }
 

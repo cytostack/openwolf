@@ -508,7 +508,7 @@ function generateTemplate(destPath: string, file: string): void {
         context: { session_digest_budget_tokens: 1500, budgets: { claude: 1500, codex: 1200, gemini: 1200, opencode: 1200, cursor: 800 } },
         daemon: { port: 18790, log_level: "info" },
         dashboard: { enabled: true, port: 18791, host: "127.0.0.1" },
-        buglog: { auto_detect: true },
+        buglog: { auto_detect: true, max_entries: 200 },
       },
     }, null, 2),
     "token-ledger.json": JSON.stringify({ version: 1, created_at: "", lifetime: { total_tokens_estimated: 0, total_reads: 0, total_writes: 0, total_sessions: 0, anatomy_hits: 0, anatomy_misses: 0, repeated_reads_blocked: 0, estimated_savings_vs_bare_cli: 0 }, sessions: [], daemon_usage: [], waste_flags: [], optimization_report: { last_generated: null, patterns: [] } }, null, 2),

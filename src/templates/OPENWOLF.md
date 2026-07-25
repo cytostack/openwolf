@@ -100,7 +100,7 @@ OpenWolf's value comes from learning across sessions. You MUST update `.wolf/cer
 - You change error handling, try/catch blocks, or validation logic
 - The user says something "doesn't work", "is broken", or "shows wrong X"
 
-**Before fixing:** scan `.wolf/buglog.md` first — a compact auto-generated index (id · tags · file · message) of every logged bug. Find a candidate by tag/file/message, then open ONLY that entry in `.wolf/buglog.json`. Do NOT read the whole `buglog.json` — it grows large and the index exists precisely to avoid that.
+**Before fixing:** scan `.wolf/buglog.md` first — a compact auto-generated index (id · tags · file · message) of every recent logged bug. Find a candidate by tag/file/message, then open ONLY that entry in `.wolf/buglog.json`. Do NOT read the whole `buglog.json` — it grows large and the index exists precisely to avoid that. Older bugs beyond `openwolf.buglog.max_entries` are moved to `.wolf/buglog-archive.json` (rarely needed; check it only if the index has no match).
 
 **After fixing:** ALWAYS append to `.wolf/buglog.json` with this structure:
 ```json

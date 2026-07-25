@@ -56,6 +56,10 @@
     "todo": {
       "enabled": true
     },
+    "buglog": {
+      "auto_detect": true,
+      "max_entries": 200
+    },
     "cerebrum": {
       "max_tokens": 2000,
       "reflection_frequency": "weekly"
