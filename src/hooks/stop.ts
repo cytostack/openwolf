@@ -92,10 +92,15 @@ async function main(): Promise<void> {
     checkForMissingBugLogs(wolfDir, session),
     checkCerebrumFreshness(wolfDir, session),
     checkSemanticSummaries(wolfDir, session),
+    checkTodoFreshness(wolfDir, session),
   ].filter((r): r is string => r !== null);
 
   // Check if STATUS.md is stale relative to this session
   checkStatusFreshness(wolfDir, session);
+
+  // Rotate old session blocks out of STATUS.md into STATUS-archive.md so the
+  // handoff document stays cheap to read at the next session start.
+  trimStatusJournal(wolfDir);
 
   // Build session entry for ledger
   const reads = Object.entries(session.files_read).map(([file, data]) => ({
@@ -262,6 +267,126 @@ function checkStatusFreshness(wolfDir: string, session: SessionData): void {
         `📌 OpenWolf: .wolf/STATUS.md missing. Create it with current quest summary + next steps so /clear stays cheap.\n`
       );
     }
+  }
+}
+
+/**
+ * Nudge to keep TODO.md current. If TODO.md exists, still has unchecked items,
+ * and wasn't touched this session despite real code activity (3+ writes outside
+ * .wolf/), remind Claude to update it. Returns a reminder string (surfaced via
+ * additionalContext) or null. TODO.md is optional — absence is never an error.
+ */
+function checkTodoFreshness(wolfDir: string, session: SessionData): string | null {
+  const todoPath = path.join(wolfDir, "TODO.md");
+  const codeWrites = session.files_written.filter(
+    (w) => !w.file.includes("/.wolf/") && !w.file.endsWith(".tmp")
+  );
+  if (codeWrites.length < 3) return null;
+
+  try {
+    const stat = fs.statSync(todoPath);
+    const sessionStartMs = session.started ? Date.parse(session.started) : 0;
+    if (!sessionStartMs) return null;
+    if (stat.mtimeMs >= sessionStartMs) return null; // already updated this session
+
+    const hasOpenItems = /^\s*[-*]\s*\[ \]/m.test(fs.readFileSync(todoPath, "utf8"));
+    if (!hasOpenItems) return null;
+
+    return `ACTION REQUIRED: ${codeWrites.length} files changed but .wolf/TODO.md wasn't updated this session. Check off completed items and add any new tasks so the list stays actionable.`;
+  } catch {
+    return null; // no TODO.md — optional feature
+  }
+}
+
+/**
+ * Keep STATUS.md lean for cheap resumes. The leading blockquote of STATUS.md is
+ * a session journal ("> **SESSÃO N ..." / "> **SESSION N ...") that grows every
+ * session. This rotates all but the newest N blocks into .wolf/STATUS-archive.md
+ * (newest first). N comes from config.json openwolf.status.max_sessions
+ * (default 2). No-op unless there are more than N blocks, so most Stops touch
+ * nothing. Writes are atomic (tmp + rename) so a concurrent Stop hook from
+ * another agent/session in the same project can never read a half-written file.
+ */
+function trimStatusJournal(wolfDir: string): void {
+  try {
+    const statusPath = path.join(wolfDir, "STATUS.md");
+    if (!fs.existsSync(statusPath)) return;
+
+    const cfg = readJSON<{ openwolf?: { status?: { max_sessions?: number } } }>(
+      path.join(wolfDir, "config.json"),
+      {}
+    );
+    const keep = Math.max(1, cfg.openwolf?.status?.max_sessions ?? 2);
+    // Session-block header marker: "> **SESSÃO N" or "> **SESSION N" (any case).
+    const SESS_RE = /^>\s*\*\*(SESS[ÃA]O|SESSION)\b/i;
+
+    const raw = fs.readFileSync(statusPath, "utf8");
+    const lines = raw.split("\n");
+
+    // Leading blockquote region: from the first ">" line until a section boundary.
+    const jStart = lines.findIndex((l) => /^>/.test(l));
+    if (jStart === -1) return;
+    let jEnd = jStart;
+    while (jEnd < lines.length) {
+      const l = lines[jEnd];
+      if (/^---/.test(l) || /^#/.test(l)) break;
+      if (/^>/.test(l) || /^\s*$/.test(l)) { jEnd++; continue; }
+      break;
+    }
+    const journal = lines.slice(jStart, jEnd);
+
+    // Split into preamble (intro quote lines) + session blocks.
+    const markers = journal
+      .map((l, i) => (SESS_RE.test(l) ? i : -1))
+      .filter((i) => i >= 0);
+    if (markers.length <= keep) return; // nothing to rotate
+
+    const preamble = journal.slice(0, markers[0]);
+    const blocks: string[][] = [];
+    for (let i = 0; i < markers.length; i++) {
+      const s = markers[i];
+      const e = i + 1 < markers.length ? markers[i + 1] : journal.length;
+      blocks.push(journal.slice(s, e));
+    }
+    const keepBlocks = blocks.slice(0, keep);
+    const archiveBlocks = blocks.slice(keep);
+
+    // Rebuild STATUS.md with only the newest N blocks.
+    const newJournal = [...preamble, ...keepBlocks.flat()];
+    while (newJournal.length && newJournal[newJournal.length - 1].trim() === "") {
+      newJournal.pop();
+    }
+    const newStatus = [
+      ...lines.slice(0, jStart),
+      ...newJournal,
+      "",
+      ...lines.slice(jEnd),
+    ].join("\n");
+
+    // Prepend moved blocks to the archive (newest first), idempotent header.
+    const archivePath = path.join(wolfDir, "STATUS-archive.md");
+    const header =
+      "# STATUS — Journal Archive\n\n> Older session blocks rotated out of STATUS.md (newest first). Auto-managed by the stop hook.\n\n";
+    const moved = archiveBlocks.map((b) => b.join("\n")).join("\n");
+    let archiveOut: string;
+    if (fs.existsSync(archivePath)) {
+      const prev = fs.readFileSync(archivePath, "utf8").replace(header, "");
+      archiveOut = header + moved + "\n" + prev;
+    } else {
+      archiveOut = header + moved + "\n";
+    }
+
+    // Atomic writes. Archive first: a crash between the two renames can only
+    // duplicate a block on the next run, never lose one.
+    const atomicWrite = (p: string, data: string): void => {
+      const tmp = `${p}.tmp.${process.pid}`;
+      fs.writeFileSync(tmp, data);
+      fs.renameSync(tmp, p);
+    };
+    atomicWrite(archivePath, archiveOut);
+    atomicWrite(statusPath, newStatus);
+  } catch {
+    // Never break the Stop hook over housekeeping.
   }
 }
 

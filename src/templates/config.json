@@ -48,6 +48,12 @@
       "consolidation_after_days": 7,
       "max_entries_before_consolidation": 200
     },
+    "status": {
+      "max_sessions": 2
+    },
+    "todo": {
+      "enabled": true
+    },
     "cerebrum": {
       "max_tokens": 2000,
       "reflection_frequency": "weekly"
