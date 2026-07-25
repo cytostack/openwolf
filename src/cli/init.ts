@@ -44,6 +44,8 @@ const CREATE_IF_MISSING = [
   "memory.md",
   "anatomy.md",
   "STATUS.md",
+  "TODO.md",
+  "ROADMAP.md",
   "token-ledger.json",
   "buglog.json",
   "cron-manifest.json",
@@ -204,6 +206,16 @@ export async function initCommand(options?: { agent?: string[] }): Promise<void>
   // --- STATUS.md: substitute {{PROJECT_NAME}} / {{DATE}} when freshly created ---
   if (newlyCreated.has("STATUS.md")) {
     seedStatus(wolfDir, projectRoot);
+  }
+
+  // --- TODO.md: substitute {{PROJECT_NAME}} / {{DATE}} when freshly created ---
+  if (newlyCreated.has("TODO.md")) {
+    seedTemplateVars(path.join(wolfDir, "TODO.md"), projectRoot);
+  }
+
+  // --- ROADMAP.md: substitute {{PROJECT_NAME}} / {{DATE}} when freshly created ---
+  if (newlyCreated.has("ROADMAP.md")) {
+    seedTemplateVars(path.join(wolfDir, "ROADMAP.md"), projectRoot);
   }
 
   // --- Token ledger: set created_at only if empty ---
@@ -467,7 +479,7 @@ function readTemplateContent(filename: string, templatesDir: string): string {
 function getEmbeddedTemplate(filename: string): string {
   const templates: Record<string, string> = {
     "claude-md-snippet.md": `# OpenWolf\n\n@.wolf/OPENWOLF.md\n\nThis project uses OpenWolf for context management. Read and follow .wolf/OPENWOLF.md every session. Check .wolf/cerebrum.md before generating code. Check .wolf/anatomy.md before reading files.`,
-    "claude-rules-openwolf.md": `---\ndescription: OpenWolf protocol enforcement — active on all files\nglobs: **/*\n---\n\n- Read .wolf/STATUS.md FIRST when resuming a session — it contains current quest, next steps, decisions\n- Update .wolf/STATUS.md (✅ done / 🚀 next quest) when a quest finishes or before suggesting /clear\n- Check .wolf/anatomy.md before reading any project file\n- Check .wolf/cerebrum.md Do-Not-Repeat list before generating code\n- After writing or editing files, update .wolf/anatomy.md and append to .wolf/memory.md\n- After receiving a user correction, update .wolf/cerebrum.md immediately (Preferences, Learnings, or Do-Not-Repeat)\n- LEARN from every interaction: if you discover a convention, user preference, or project pattern, add it to .wolf/cerebrum.md. Low threshold — when in doubt, log it.\n- BEFORE fixing any bug or error: read .wolf/buglog.json for known fixes\n- AFTER fixing any bug, error, failed test, failed build, or user-reported problem: ALWAYS log to .wolf/buglog.json with error_message, root_cause, fix, and tags\n- If you edit a file more than twice in a session, that likely indicates a bug — log it to .wolf/buglog.json\n- When the user asks to change/pick/migrate UI framework: read .wolf/reframe-frameworks.md, ask decision questions, recommend a framework, then execute with the framework's prompt`,
+    "claude-rules-openwolf.md": `---\ndescription: OpenWolf protocol enforcement — active on all files\nglobs: **/*\n---\n\n- Read .wolf/STATUS.md FIRST when resuming a session — it contains current quest, next steps, decisions\n- Update .wolf/STATUS.md (✅ done / 🚀 next quest) when a quest finishes or before suggesting /clear\n- Keep .wolf/TODO.md current — check off completed items and add new tasks as they surface (🔥 Now / ⏭️ Next / 💡 Later)\n- Check .wolf/anatomy.md before reading any project file\n- Check .wolf/cerebrum.md Do-Not-Repeat list before generating code\n- After writing or editing files, update .wolf/anatomy.md and append to .wolf/memory.md\n- After receiving a user correction, update .wolf/cerebrum.md immediately (Preferences, Learnings, or Do-Not-Repeat)\n- LEARN from every interaction: if you discover a convention, user preference, or project pattern, add it to .wolf/cerebrum.md. Low threshold — when in doubt, log it.\n- BEFORE fixing any bug or error: read .wolf/buglog.json for known fixes\n- AFTER fixing any bug, error, failed test, failed build, or user-reported problem: ALWAYS log to .wolf/buglog.json with error_message, root_cause, fix, and tags\n- If you edit a file more than twice in a session, that likely indicates a bug — log it to .wolf/buglog.json\n- When the user asks to change/pick/migrate UI framework: read .wolf/reframe-frameworks.md, ask decision questions, recommend a framework, then execute with the framework's prompt`,
   };
   return templates[filename] ?? "";
 }
@@ -480,6 +492,8 @@ function generateTemplate(destPath: string, file: string): void {
     "memory.md": `# Memory\n\n> Chronological action log.\n`,
     "anatomy.md": `# anatomy.md\n\n> Project structure index. Pending initial scan.\n`,
     "STATUS.md": `# STATUS\n\n> Single source of truth for resuming work. Read this FIRST when starting a session.\n> Update at the end of every work phase so the next \`/clear\` resumes in 1 read.\n\n---\n\n## ✅ Done\n\n- (nothing yet — fill in as work completes)\n\n---\n\n## 🚀 Next phase\n\n**Goal:** _<what we're building next>_\n\n### Acceptance criteria\n1. _<concrete user-visible outcome>_\n\n### Files to create / edit\n- _<path + purpose>_\n\n### Open decisions\n- _<question to ask before coding>_\n\n---\n\n## 📁 Active architecture\n\n- **Stack:** _<frameworks>_\n\n---\n\n## 🔧 Useful commands\n\n\`\`\`bash\n# add the most-used commands here\n\`\`\`\n`,
+    "TODO.md": `# TODO\n\n> Working checklist. STATUS.md = handoff ("why & where we are"); TODO.md = "what's left".\n> Keep items actionable. Check off with [x]; sweep done items into STATUS.md ✅ when a phase closes.\n\n---\n\n## 🔥 Now\n\n- [ ] _<the thing you're actively doing>_\n\n## ⏭️ Next\n\n- [ ] _<queued, ready to pick up>_\n\n## 💡 Later / backlog\n\n- [ ] _<not scheduled; ideas, nice-to-haves>_\n\n## ✅ Recently done\n\n- (checked items land here; sweep into STATUS.md ✅ when a phase closes)\n`,
+    "ROADMAP.md": `# ROADMAP\n\n> Longer-horizon plan and backlog. STATUS.md = the current quest (keep it small); ROADMAP.md = everything planned but not active. Move an item into STATUS.md "🚀 Next phase" when you start it.\n\n---\n\n## 🎯 Milestones\n\n- [ ] _<milestone + what "done" means>_\n\n## 🧭 Backlog (unscheduled)\n\n- _<feature / idea + one-line rationale>_\n\n## 🧊 Someday / maybe\n\n- _<parked ideas>_\n`,
     "config.json": JSON.stringify({
       version: 1,
       openwolf: {
@@ -487,12 +501,14 @@ function generateTemplate(destPath: string, file: string): void {
         anatomy: { auto_scan_on_init: true, rescan_interval_hours: 6, max_description_length: 100, max_files: 500, exclude_patterns: ["node_modules", ".git", "dist", "build", ".wolf", ".next", ".nuxt", "coverage", "__pycache__", ".cache", "target", ".vscode", ".idea", ".turbo", ".vercel", ".netlify", ".output", "*.min.js", "*.min.css"] },
         token_audit: { enabled: true, report_frequency: "weekly", waste_threshold_percent: 15, chars_per_token_code: 3.5, chars_per_token_prose: 4.0 },
         cron: { enabled: true, max_retry_attempts: 3, dead_letter_enabled: true, heartbeat_interval_minutes: 30, use_claude_p: true, api_key_env: null },
-        memory: { consolidation_after_days: 7, max_entries_before_consolidation: 200 },
+        memory: { consolidation_after_days: 7, max_entries_before_consolidation: 200, max_sessions: 20 },
+        status: { max_sessions: 2, archive_file: "history.md" },
+        todo: { enabled: true },
         cerebrum: { max_tokens: 2000, reflection_frequency: "weekly" },
         context: { session_digest_budget_tokens: 1500, budgets: { claude: 1500, codex: 1200, gemini: 1200, opencode: 1200, cursor: 800 } },
         daemon: { port: 18790, log_level: "info" },
         dashboard: { enabled: true, port: 18791, host: "127.0.0.1" },
-        buglog: { auto_detect: true },
+        buglog: { auto_detect: true, max_entries: 200 },
       },
     }, null, 2),
     "token-ledger.json": JSON.stringify({ version: 1, created_at: "", lifetime: { total_tokens_estimated: 0, total_reads: 0, total_writes: 0, total_sessions: 0, anatomy_hits: 0, anatomy_misses: 0, repeated_reads_blocked: 0, estimated_savings_vs_bare_cli: 0 }, sessions: [], daemon_usage: [], waste_flags: [], optimization_report: { last_generated: null, patterns: [] } }, null, 2),
@@ -545,6 +561,17 @@ function seedStatus(wolfDir: string, projectRoot: string): void {
   content = content.replace(/\{\{PROJECT_NAME\}\}/g, projectName);
   content = content.replace(/\{\{DATE\}\}/g, date);
   writeText(statusPath, content);
+}
+
+// Substitute {{PROJECT_NAME}} / {{DATE}} in a freshly created template file.
+function seedTemplateVars(filePath: string, projectRoot: string): void {
+  if (!fs.existsSync(filePath)) return;
+  const projectName = detectProjectName(projectRoot) || path.basename(projectRoot);
+  const date = new Date().toISOString().slice(0, 10);
+  let content = readText(filePath);
+  content = content.replace(/\{\{PROJECT_NAME\}\}/g, projectName);
+  content = content.replace(/\{\{DATE\}\}/g, date);
+  writeText(filePath, content);
 }
 
 function seedIdentity(wolfDir: string, projectRoot: string): void {

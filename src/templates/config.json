@@ -46,7 +46,19 @@
     },
     "memory": {
       "consolidation_after_days": 7,
-      "max_entries_before_consolidation": 200
+      "max_entries_before_consolidation": 200,
+      "max_sessions": 20
+    },
+    "status": {
+      "max_sessions": 2,
+      "archive_file": "history.md"
+    },
+    "todo": {
+      "enabled": true
+    },
+    "buglog": {
+      "auto_detect": true,
+      "max_entries": 200
     },
     "cerebrum": {
       "max_tokens": 2000,

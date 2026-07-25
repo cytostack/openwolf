@@ -23,6 +23,21 @@ You are working in an OpenWolf-managed project. These rules apply every turn.
 
 **The bar is HIGH for STATUS.md.** Stale STATUS.md = wasted next session. Always treat it as the handoff document.
 
+**Session journal auto-rotation.** If you keep a running session journal at the top of STATUS.md (a leading blockquote of `> **SESSION N ...` / `> **SESSÃO N ...` blocks), the stop hook automatically keeps only the newest `openwolf.status.max_sessions` blocks (default 2) and moves older ones to `.wolf/history.md` (under `## Session Journal`). Just prepend a new block per session — you don't trim by hand. Read `history.md` only when you need older context.
+
+**Big-picture planning lives in ROADMAP.md.** Keep STATUS.md focused on the *current* quest. Anything planned-but-not-active (milestones, backlog, someday ideas) goes in `.wolf/ROADMAP.md`. When you start a backlog item, move it into STATUS.md `🚀 Next phase`.
+
+## TODO.md — Working Checklist
+
+`.wolf/TODO.md` is the actionable task list that complements STATUS.md:
+- **STATUS.md** = handoff narrative ("why & where we are", decisions, next quest).
+- **TODO.md** = the checklist ("what's left"), grouped into `🔥 Now`, `⏭️ Next`, `💡 Later`, `✅ Recently done`.
+
+**Keep TODO.md current:**
+1. When you start a task, move it to `🔥 Now`. When you finish one, check it off (`[x]`) into `✅ Recently done`.
+2. When the user asks for new work, add it under `⏭️ Next` or `💡 Later`.
+3. When a phase closes, sweep `✅ Recently done` items into STATUS.md `✅ Done` and clear the TODO list.
+
 ## File Navigation
 
 1. Check `.wolf/anatomy.md` BEFORE reading any file. It has a 2-3 line description and token estimate for every file in the project.
@@ -85,7 +100,7 @@ OpenWolf's value comes from learning across sessions. You MUST update `.wolf/cer
 - You change error handling, try/catch blocks, or validation logic
 - The user says something "doesn't work", "is broken", or "shows wrong X"
 
-**Before fixing:** Read `.wolf/buglog.json` first — the fix may already be known.
+**Before fixing:** scan `.wolf/buglog.md` first — a compact auto-generated index (id · tags · file · message) of every recent logged bug. Find a candidate by tag/file/message, then open ONLY that entry in `.wolf/buglog.json`. Do NOT read the whole `buglog.json` — it grows large and the index exists precisely to avoid that. Older bugs beyond `openwolf.buglog.max_entries` are moved to `.wolf/buglog-archive.json` (rarely needed; check it only if the index has no match).
 
 **After fixing:** ALWAYS append to `.wolf/buglog.json` with this structure:
 ```json
@@ -153,5 +168,6 @@ When the user asks to change, pick, migrate, or "reframe" their project's UI fra
 Before ending or when asked to wrap up:
 
 1. **Update `.wolf/STATUS.md`** — move concluded work to ✅, write next quest in 🚀, bump date. This is the most important step for next session efficiency.
-2. Write a session summary to `.wolf/memory.md`.
-3. Review the session: did you learn anything? Did the user correct you? Did you fix a bug? If yes, update `.wolf/cerebrum.md` and/or `.wolf/buglog.json`.
+2. **Update `.wolf/TODO.md`** — check off what you finished, add anything new that surfaced.
+3. Write a session summary to `.wolf/memory.md`.
+4. Review the session: did you learn anything? Did the user correct you? Did you fix a bug? If yes, update `.wolf/cerebrum.md` and/or `.wolf/buglog.json`.
