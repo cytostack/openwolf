@@ -581,6 +581,13 @@ export function normalizePath(p: string): string {
  * Count non-mechanical semantic entries written to memory.md today.
  * Mechanical entries (auto-generated file ops, session-end lines) don't count.
  * Used by the stop hook to detect whether Claude wrote a meaningful summary.
+ *
+ * Rows are written as `| HH:MM | ... |` — that is the format `OPENWOLF.md` and
+ * the stop-hook reminder both ask for, and the format the hook uses for its own
+ * `Session end:` rows. Sessions are delimited by `## Session: YYYY-MM-DD HH:MM`
+ * headers written by session-start. So "today" is decided by the enclosing
+ * session header, not by the row itself; a `| YYYY-MM-DD | ...` row is still
+ * honoured for anything that writes an explicit date.
  */
 export function countSemanticEntries(wolfDir: string): number {
   const memoryPath = path.join(wolfDir, "memory.md");
@@ -589,9 +596,18 @@ export function countSemanticEntries(wolfDir: string): number {
     const mechanical = /^\|\s*[\d:]+\s*\|\s*(Created|Edited|Multi-edited|Session end:|designqc:)/;
     const today = new Date().toISOString().slice(0, 10);
     const todayPrefix = `| ${today}`;
+    const sessionHeader = /^##\s+Session:\s*(\d{4}-\d{2}-\d{2})/;
+    const timeRow = /^\|\s*\d{1,2}:\d{2}\s*\|/;
     let count = 0;
+    let inTodaySession = false;
     for (const line of content.split("\n")) {
-      if (line.startsWith(todayPrefix) && !mechanical.test(line)) count++;
+      const header = sessionHeader.exec(line);
+      if (header) {
+        inTodaySession = header[1] === today;
+        continue;
+      }
+      if (mechanical.test(line)) continue;
+      if (line.startsWith(todayPrefix) || (inTodaySession && timeRow.test(line))) count++;
     }
     return count;
   } catch {
