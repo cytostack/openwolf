@@ -67,6 +67,29 @@ Controls the daemon's task scheduler.
 | `heartbeat_interval_minutes` | `30` | Daemon health check frequency |
 | `use_claude_p` | `true` | Use `claude -p` (subscription) for AI-powered tasks |
 | `api_key_env` | `null` | Environment variable name for API key override. When `null`, uses `claude -p` OAuth credentials |
+| `provider` | `null` | Selects an inference provider for AI-powered tasks. When `null`, uses `claude -p` OAuth credentials |
+
+### `cron.provider`
+
+When set, AI-powered cron tasks (`ai_task`) run against a configured inference
+provider that exposes an Anthropic-compatible endpoint, instead of the default
+`claude -p` subscription credentials. The `claude` CLI is pointed at the
+provider's regional base URL and asked for the selected model.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `id` | — | Provider registry key. Supported: `minimax` |
+| `region` | `global_en` | Endpoint region. `minimax`: `global_en`, `cn_zh` |
+| `model` | provider default | Model to request. `minimax`: `MiniMax-M3`, `MiniMax-M2.7` |
+
+The provider API key is read from the provider's environment variable
+(`minimax`: `MINIMAX_API_KEY`). Example:
+
+```json
+"cron": {
+  "provider": { "id": "minimax", "region": "global_en", "model": "MiniMax-M3" }
+}
+```
 
 ## `memory`
 

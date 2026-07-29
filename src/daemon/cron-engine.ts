@@ -5,6 +5,7 @@ import cron from "node-cron";
 import { readJSON, writeJSON, readText, writeText, appendText } from "../utils/fs-safe.js";
 import { scanProject } from "../scanner/anatomy-scanner.js";
 import { detectWaste } from "../tracker/waste-detector.js";
+import { resolveProviderConfig, type ProviderConfig } from "./providers.js";
 import type { Logger } from "../utils/logger.js";
 
 interface CronAction {
@@ -104,6 +105,14 @@ export class CronEngine {
       path.join(this.wolfDir, "cron-manifest.json"),
       { version: 1, tasks: [] }
     );
+  }
+
+  private readProviderConfig(): ProviderConfig | null {
+    const config = readJSON<{ openwolf?: { cron?: { provider?: ProviderConfig | null } } }>(
+      path.join(this.wolfDir, "config.json"),
+      {}
+    );
+    return config.openwolf?.cron?.provider ?? null;
   }
 
   private readState(): CronState {
@@ -327,13 +336,31 @@ export class CronEngine {
     try {
       // Use spawnSync to pipe prompt via stdin — avoids command-line length limits on Windows
       // claude -p (no argument) reads prompt from stdin
-      // Strip ANTHROPIC_API_KEY so claude uses OAuth subscription credentials
-      // instead of a potentially depleted API key
       const env = { ...process.env };
-      delete env.ANTHROPIC_API_KEY;
+      const args = ["-p", "--output-format", "text"];
+
+      // A configured provider redirects the CLI at an Anthropic-compatible
+      // endpoint and model; otherwise the runner keeps its default behavior.
+      const resolved = resolveProviderConfig(this.readProviderConfig());
+      if (resolved) {
+        const apiKey = process.env[resolved.provider.apiKeyEnv];
+        if (!apiKey) {
+          throw new Error(
+            `${resolved.provider.name} provider selected but ${resolved.provider.apiKeyEnv} is not set.`
+          );
+        }
+        env.ANTHROPIC_BASE_URL = resolved.endpoint.anthropicBaseUrl;
+        env.ANTHROPIC_AUTH_TOKEN = apiKey;
+        delete env.ANTHROPIC_API_KEY;
+        args.push("--model", resolved.model);
+      } else {
+        // Strip ANTHROPIC_API_KEY so claude uses OAuth subscription credentials
+        // instead of a potentially depleted API key.
+        delete env.ANTHROPIC_API_KEY;
+      }
 
       const claudeBin = process.platform === "win32" ? "claude.cmd" : "claude";
-      const proc = spawnSync(claudeBin, ["-p", "--output-format", "text"], {
+      const proc = spawnSync(claudeBin, args, {
         input: fullPrompt,
         timeout: 120000,
         encoding: "utf-8",
