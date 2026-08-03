@@ -116,12 +116,18 @@ export function parseAnatomy(content: string): Map<string, AnatomyEntry[]> {
       continue;
     }
     if (!currentSection) continue;
-    const em = line.match(/^- `([^`]+)`(?:\s+—\s+(.+?))?\s*\(~(\d+)\s+tok\)$/);
+    // Tolerant on purpose. anatomy.md is re-rendered from what this parses, and
+    // importFromMarkdown() reads hand-edits through it, so an entry this regex cannot
+    // match is invisible: the human's wording is ignored and the line disappears on the
+    // next render. Requiring BOTH an em-dash separator AND a trailing "(~N tok)" meant a
+    // plain hyphen, or an entry written without a token estimate, was silently dropped.
+    // Accept any of — – - : as the separator and treat the token estimate as optional.
+    const em = line.match(/^- `([^`]+)`\s*(?:[—–\-:]\s*(.*?))?\s*(?:\(~(\d+)\s*tok\))?\s*$/);
     if (em) {
       sections.get(currentSection)!.push({
         file: em[1],
-        description: em[2] || "",
-        tokens: parseInt(em[3], 10),
+        description: (em[2] || "").trim(),
+        tokens: em[3] ? parseInt(em[3], 10) : 0,
       });
     }
   }
