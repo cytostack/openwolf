@@ -573,6 +573,22 @@ export function readStdin(): Promise<string> {
   });
 }
 
+/**
+ * Resolve symlinks and junctions so one physical path always has one identity.
+ *
+ * Needed before any path is turned into an anatomy section key or compared against the
+ * project root: on Windows a directory junction can expose the same tree under a second
+ * drive letter, and path.relative() cannot relativise across drives, so it silently returns
+ * an ABSOLUTE path instead. Falls back to the input when the path does not exist yet.
+ */
+export function realPath(p: string): string {
+  try {
+    return fs.realpathSync.native(p);
+  } catch {
+    return p;
+  }
+}
+
 export function normalizePath(p: string): string {
   return p.replace(/\\/g, "/");
 }

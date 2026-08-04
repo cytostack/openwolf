@@ -4,7 +4,8 @@ import * as crypto from "node:crypto";
 import {
   getWolfDir, ensureWolfDir, readJSON, writeJSON, readMarkdown,
   extractDescription, estimateTokens, appendMarkdown, timeShort, readStdin, normalizePath,
-  isSensitiveFile, getProjectDir
+  isSensitiveFile, getProjectDir,
+  realPath,
 } from "./shared.js";
 import { loadStoreReconciled, saveStore, renderToFile, sha256 } from "./anatomy-store.js";
 import { withAnatomyLock, HOOK_LOCK_BUDGET_MS } from "./anatomy-lock.js";
@@ -68,7 +69,17 @@ async function main(): Promise<void> {
   const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(projectRoot, filePath);
 
   // Skip processing for .wolf/ internal files to avoid slow self-referential updates
-  const relPath = normalizePath(path.relative(projectRoot, absolutePath));
+  // Resolve symlinks/junctions FIRST, or the outside-root guard below can be bypassed.
+  // On Windows a directory junction can expose the same tree under a second drive letter
+  // (e.g. C:\project -> D:\project). Reached through the junction, path.relative() cannot
+  // produce a relative path across drives and returns an ABSOLUTE one, which does not start
+  // with ".." — so the guard misses it and an absolute "C:/..." section key is written into
+  // anatomy.md, the very churn that guard exists to prevent. Resolving first makes both
+  // spellings agree. Resolution is also what stops one physical directory being indexed
+  // under several keys, which additionally defeats pre-read's section lookup.
+  const realAbsolute = realPath(absolutePath);
+  const realRoot = realPath(projectRoot);
+  const relPath = normalizePath(path.relative(realRoot, realAbsolute));
   if (relPath.startsWith(".wolf/")) { process.exit(0); return; }
 
   // Never track files outside the project root (e.g. the Claude Code scratchpad under
@@ -88,7 +99,7 @@ async function main(): Promise<void> {
   //    All of this happens under the anatomy lock; if the lock cannot be
   //    acquired within budget we skip — a later writer converges the state.
   try {
-    const relPathLocal = normalizePath(path.relative(projectRoot, absolutePath));
+    const relPathLocal = normalizePath(path.relative(realRoot, realAbsolute));
 
     let fileContent = "";
     try {
