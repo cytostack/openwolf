@@ -24,10 +24,15 @@
     "express": "^5.2.1",
     "node-cron": "^4.2.1",
     "open": "^10.0.0",
-    "ws": "^8.18.0"
+    "ws": "^8.21.2"
   },
   "optionalDependencies": {
     "puppeteer-core": "^24.42.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "qs": "^6.15.3"
+    }
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
