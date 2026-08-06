@@ -10,6 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { shippedHookFiles, verifyHookImports } from "./hook-files.js";
 import { getRegisteredProjects, registerProject, type RegisteredProject } from "./registry.js";
 import { readJSON, writeJSON, readText, writeText, safeCopyFile } from "../utils/fs-safe.js";
 import { ensureDir } from "../utils/paths.js";
@@ -450,11 +451,9 @@ function copyHookScripts(wolfDir: string): void {
     }
   }
 
-  const hookFiles = [
-    "session-start.js", "pre-read.js", "pre-write.js",
-    "post-read.js", "post-write.js", "precompact.js", "stop.js", "shared.js",
-    "anatomy-store.js", "anatomy-lock.js",
-  ];
+  // Derived from what is actually shipped, so the copy list cannot drift from the build
+  // again. It had: this list omitted symbol-extractor.js, which post-write.js imports.
+  const hookFiles = shippedHookFiles(sourceDir);
 
   if (sourceDir) {
     for (const file of hookFiles) {
@@ -468,6 +467,15 @@ function copyHookScripts(wolfDir: string): void {
   // Always ensure package.json with type:module
   const hooksPkgPath = path.join(hooksDir, "package.json");
   fs.writeFileSync(hooksPkgPath, JSON.stringify({ type: "module" }, null, 2) + "\n", "utf-8");
+
+  // A hook with an unresolvable import throws at LOAD time, on every invocation, straight to
+  // stderr — so the failure is both total and invisible. Say so here rather than let a user
+  // discover it weeks later from an empty anatomy.md.
+  const problems = verifyHookImports(hooksDir);
+  if (problems.length > 0) {
+    console.log(`    ✗ ${problems.length} hook dependency problem(s) — hooks will fail to load:`);
+    for (const p of problems) console.log(`      - ${p}`);
+  }
 }
 
 function replaceOpenWolfHooks(
