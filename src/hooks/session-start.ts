@@ -11,6 +11,15 @@ import { loadStore } from "./anatomy-store.js";
 // the SessionStart additionalContext channel — capped to a per-agent token
 // budget so injection cost stays fixed and predictable.
 
+/** One recorded write. `sid` names the owning harness session (see post-write.ts). */
+interface FileWrite {
+  file: string;
+  action: string;
+  tokens: number;
+  at: string;
+  sid?: string;
+}
+
 interface ContextConfig {
   session_digest_budget_tokens?: number;
   budgets?: Record<string, number>;
@@ -122,19 +131,53 @@ async function main(): Promise<void> {
   // still live, and resetting _session.json would wipe read/write tracking
   // mid-flight (Workstream F3: compaction survival).
   let source = "startup";
+  let hookSessionId = "";
   try {
     const hookInput = JSON.parse(await readStdin());
     if (typeof hookInput.source === "string") source = hookInput.source;
+    if (typeof hookInput.session_id === "string") hookSessionId = hookInput.session_id;
   } catch {}
   const continuing = (source === "compact" || source === "resume") && fs.existsSync(sessionFile);
+
+  // `_session.json` is shared by every concurrent session, so resetting it wholesale here
+  // deletes the history of every session that is already running — and with several agents
+  // open at once, that is whenever anyone starts one. Scoping the records by session id is
+  // pointless without this: they would be scoped and then thrown away before being read.
+  //
+  // Only OTHER sessions' records are carried, and the bound on growth is deliberately
+  // generous on both axes, because a bound that exists to cap a file must not become a way
+  // to lose live data: 48h (a session running longer is implausible; 12h is not) and a
+  // count ceiling far above any real concurrent load, applied newest-first.
+  const CARRY_MS = 48 * 60 * 60 * 1000;
+  const CARRY_MAX = 5000;
+  const { carriedWrites, carriedEditCounts } = (() => {
+    try {
+      const prev = readJSON<{ files_written?: FileWrite[]; edit_counts?: Record<string, number> }>(sessionFile, {});
+      const cutoff = Date.now() - CARRY_MS;
+      let writes = (prev.files_written ?? []).filter(
+        (w) => w && w.sid && w.sid !== hookSessionId && Date.parse(w.at || "") >= cutoff
+      );
+      if (writes.length > CARRY_MAX) writes = writes.slice(-CARRY_MAX);
+      // edit_counts keys are `<sid>::<relpath>` and carry no timestamp, so their liveness
+      // comes from the writes above: a session with no recent write has no live count.
+      const live = new Set(writes.map((w) => w.sid));
+      const counts: Record<string, number> = {};
+      for (const [k, v] of Object.entries(prev.edit_counts ?? {})) {
+        if (live.has(String(k).split("::")[0])) counts[k] = v;
+      }
+      return { carriedWrites: writes, carriedEditCounts: counts };
+    } catch {
+      return { carriedWrites: [] as FileWrite[], carriedEditCounts: {} as Record<string, number> };
+    }
+  })();
 
   if (!continuing) {
     writeJSON(sessionFile, {
       session_id: sessionId,
       started: timestamp(),
       files_read: {},
-      files_written: [],
-      edit_counts: {},
+      files_written: carriedWrites,
+      edit_counts: carriedEditCounts,
       anatomy_hits: 0,
       anatomy_misses: 0,
       repeated_reads_warned: 0,

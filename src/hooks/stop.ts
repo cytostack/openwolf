@@ -13,6 +13,8 @@ interface FileWrite {
   action: string;
   tokens: number;
   at: string;
+  /** Owning harness session. Absent on records written before session scoping existed. */
+  sid?: string;
 }
 
 interface SessionData {
@@ -57,7 +59,7 @@ async function main(): Promise<void> {
   const sessionFile = path.join(hooksDir, "_session.json");
 
   // Stop payload → transcript path for real usage measurement (F1)
-  let hookInput: { transcript_path?: string } = {};
+  let hookInput: { transcript_path?: string; session_id?: string } = {};
   try {
     hookInput = JSON.parse(await readStdin());
   } catch {}
@@ -77,9 +79,17 @@ async function main(): Promise<void> {
 
   session.stop_count++;
 
+  // Every question below is "what did THIS session do", and `_session.json` is shared by
+  // every concurrent session — so each was answering with everyone's data. Scope once here
+  // and pass the result down. Never assign it back onto `session`: this object is written
+  // back to the shared file, so narrowing it in place would DELETE the other live sessions'
+  // records, which is the very thing being fixed.
+  const mySid = String(hookInput.session_id || session.session_id || "");
+  const myWrites = writesFor(session, mySid);
+
   // Only write to ledger if there's been activity
   const readCount = Object.keys(session.files_read).length;
-  const writeCount = session.files_written.length;
+  const writeCount = myWrites.length;
 
   if (readCount === 0 && writeCount === 0) {
     writeJSON(sessionFile, session);
@@ -89,13 +99,13 @@ async function main(): Promise<void> {
 
   // Collect end-of-turn reminders — returned as strings, then surfaced via additionalContext
   const reminders = [
-    checkForMissingBugLogs(wolfDir, session),
-    checkCerebrumFreshness(wolfDir, session),
-    checkSemanticSummaries(wolfDir, session),
+    checkForMissingBugLogs(wolfDir, session, myWrites),
+    checkCerebrumFreshness(wolfDir, session, myWrites),
+    checkSemanticSummaries(wolfDir, session, myWrites),
   ].filter((r): r is string => r !== null);
 
   // Check if STATUS.md is stale relative to this session
-  checkStatusFreshness(wolfDir, session);
+  checkStatusFreshness(wolfDir, session, myWrites);
 
   // Build session entry for ledger
   const reads = Object.entries(session.files_read).map(([file, data]) => ({
@@ -105,7 +115,7 @@ async function main(): Promise<void> {
     anatomy_had_description: false, // simplified
   }));
 
-  const writes = session.files_written.map((w) => ({
+  const writes = myWrites.map((w) => ({
     file: w.file,
     tokens_estimated: w.tokens,
     action: w.action,
@@ -191,7 +201,7 @@ async function main(): Promise<void> {
   // Write a session summary line to memory.md if there was meaningful activity
   if (writeCount > 0) {
     try {
-      const uniqueFiles = new Set(session.files_written.map(w => path.basename(w.file)));
+      const uniqueFiles = new Set(myWrites.map(w => path.basename(w.file)));
       const fileList = [...uniqueFiles].slice(0, 5).join(", ");
       const memoryPath = path.join(wolfDir, "memory.md");
       appendMarkdown(memoryPath, `| ${timeShort()} | Session end: ${writeCount} writes across ${uniqueFiles.size} files (${fileList}) | ${readCount} reads | ~${inputTokens + outputTokens} tok |\n`);
@@ -215,7 +225,20 @@ async function main(): Promise<void> {
  * Check if files were edited multiple times but buglog.json wasn't updated.
  * Returns a reminder string if action is needed, otherwise null.
  */
-function checkForMissingBugLogs(wolfDir: string, session: SessionData): string | null {
+/**
+ * This session's writes only.
+ *
+ * Records written before session scoping existed carry no `sid` and are ignored rather than
+ * shared out: attributing an unowned record to every session is precisely the defect. The
+ * population is self-clearing, since post-write now stamps every record.
+ */
+function writesFor(session: SessionData, sid: string): FileWrite[] {
+  const all = Array.isArray(session.files_written) ? session.files_written : [];
+  if (!sid) return all;
+  return all.filter((w) => w && w.sid === sid);
+}
+
+function checkForMissingBugLogs(wolfDir: string, session: SessionData, myWrites: FileWrite[]): string | null {
   if (!session.edit_counts) return null;
 
   const multiEditFiles = Object.entries(session.edit_counts)
@@ -224,7 +247,7 @@ function checkForMissingBugLogs(wolfDir: string, session: SessionData): string |
 
   if (multiEditFiles.length === 0) return null;
 
-  const buglogWritten = session.files_written.some(w =>
+  const buglogWritten = myWrites.some(w =>
     w.file.includes("buglog.json")
   );
 
@@ -239,9 +262,9 @@ function checkForMissingBugLogs(wolfDir: string, session: SessionData): string |
  * code activity (3+ writes outside .wolf/). If so, nudge Claude to update
  * STATUS.md so the next /clear has fresh handoff context.
  */
-function checkStatusFreshness(wolfDir: string, session: SessionData): void {
+function checkStatusFreshness(wolfDir: string, session: SessionData, myWrites: FileWrite[]): void {
   const statusPath = path.join(wolfDir, "STATUS.md");
-  const codeWrites = session.files_written.filter(
+  const codeWrites = myWrites.filter(
     (w) => !w.file.includes("/.wolf/") && !w.file.endsWith(".tmp")
   );
 
@@ -269,14 +292,14 @@ function checkStatusFreshness(wolfDir: string, session: SessionData): void {
  * Check if cerebrum.md was updated recently. If it hasn't been updated in
  * a while and there was significant activity, return a reminder.
  */
-function checkCerebrumFreshness(wolfDir: string, session: SessionData): string | null {
+function checkCerebrumFreshness(wolfDir: string, session: SessionData, myWrites: FileWrite[]): string | null {
   const cerebrumPath = path.join(wolfDir, "cerebrum.md");
   try {
     const stat = fs.statSync(cerebrumPath);
     const hoursSinceUpdate = (Date.now() - stat.mtimeMs) / (1000 * 60 * 60);
 
-    if (hoursSinceUpdate > 24 && session.files_written.length >= 3) {
-      return `ACTION REQUIRED: cerebrum.md hasn't been updated in ${Math.floor(hoursSinceUpdate)}h and ${session.files_written.length} files were modified. Update .wolf/cerebrum.md with any new user preferences, conventions, or gotchas discovered this session.`;
+    if (hoursSinceUpdate > 24 && myWrites.length >= 3) {
+      return `ACTION REQUIRED: cerebrum.md hasn't been updated in ${Math.floor(hoursSinceUpdate)}h and ${myWrites.length} files were modified. Update .wolf/cerebrum.md with any new user preferences, conventions, or gotchas discovered this session.`;
     }
   } catch {
     // cerebrum.md doesn't exist, that's ok
@@ -288,8 +311,8 @@ function checkCerebrumFreshness(wolfDir: string, session: SessionData): string |
  * Check if a semantic summary was written to memory.md this session.
  * Returns a reminder string if action is needed, otherwise null.
  */
-function checkSemanticSummaries(wolfDir: string, session: SessionData): string | null {
-  const writeCount = session.files_written.length;
+function checkSemanticSummaries(wolfDir: string, session: SessionData, myWrites: FileWrite[]): string | null {
+  const writeCount = myWrites.length;
   if (writeCount < 2) return null;
 
   const semanticCount = countSemanticEntries(wolfDir);

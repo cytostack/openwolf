@@ -22,7 +22,7 @@ const NON_CODE_EXTS = new Set([
 ]);
 
 interface SessionData {
-  files_written: Array<{ file: string; action: string; tokens: number; at: string }>;
+  files_written: Array<{ file: string; action: string; tokens: number; at: string; sid?: string }>;
   edit_counts: Record<string, number>;
   [key: string]: unknown;
 }
@@ -53,7 +53,7 @@ async function main(): Promise<void> {
   const projectRoot = getProjectDir();
 
   const raw = await readStdin();
-  let input: { tool_name?: string; tool_input?: { file_path?: string; path?: string; content?: string; old_string?: string; new_string?: string } };
+  let input: { tool_name?: string; session_id?: string; tool_input?: { file_path?: string; path?: string; content?: string; old_string?: string; new_string?: string } };
   try {
     input = JSON.parse(raw);
   } catch {
@@ -167,14 +167,22 @@ async function main(): Promise<void> {
     const fileContent = input.tool_input?.content ?? "";
     const tokens = estimateTokens(fileContent || newStr, "code");
 
+    // `_session.json` is ONE file per project, shared by every concurrent session, so a
+    // record with no owner belongs to everybody: "Session end: N writes across M files"
+    // reported the union of all live sessions, and the 3-edits reminder named files the
+    // current session had never opened. The harness supplies a session_id on every hook
+    // payload; stamping it is the whole fix, and stop.ts filters on it.
+    const sid = String(input.session_id ?? "unknown");
+
     session.files_written.push({
       file: normalizedFile,
       action,
       tokens,
       at: new Date().toISOString(),
+      sid,
     });
 
-    const editKey = normalizePath(path.relative(projectRoot, absolutePath));
+    const editKey = sid + "::" + normalizePath(path.relative(projectRoot, absolutePath));
     session.edit_counts[editKey] = (session.edit_counts[editKey] || 0) + 1;
 
     writeJSON(sessionFile, session);
