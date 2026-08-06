@@ -9,6 +9,7 @@ import {
 import { loadStoreReconciled, saveStore, renderToFile, sha256 } from "./anatomy-store.js";
 import { withAnatomyLock, HOOK_LOCK_BUDGET_MS } from "./anatomy-lock.js";
 import { extractSymbols, symbolsSupported, SYMBOL_MIN_TOKENS } from "./symbol-extractor.js";
+import { nextBugId } from "../utils/bug-id.js";
 
 // File types where a value/string change is normal content editing, not a bug
 // fix — auto bug detection never runs on these (see autoDetectBugFix). Without
@@ -348,7 +349,7 @@ function autoDetectBugFix(wolfDir: string, absolutePath: string, projectRoot: st
     return;
   }
 
-  const nextId = `bug-${String(bugLog.bugs.length + 1).padStart(3, "0")}`;
+  const nextId = nextBugId(bugLog.bugs);
 
   bugLog.bugs.push({
     id: nextId,

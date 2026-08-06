@@ -62,3 +62,25 @@ export function estimateTokens(text: string, type: "code" | "prose" | "mixed" = 
   const ratio = type === "code" ? 3.5 : type === "prose" ? 4.0 : 3.75
   return Math.ceil(text.length / ratio)
 }
+
+/**
+ * Next bug id, from the HIGH-WATER MARK of the ids present - never `bugs.length + 1`.
+ *
+ * Array length is not an id generator: any entry added out of band moves the numbers away
+ * from the count, and `length + 1` then re-issues a live id. It fails silently - two entries
+ * share an id and `related_bugs` pointers stop being decidable.
+ *
+ * Intentionally duplicated from `src/utils/bug-id.ts`: this plugin template is copied into
+ * user projects and must not import outside its own folder (nothing else here does either).
+ */
+export function nextBugId(bugs: ReadonlyArray<{ id?: string }>, prefix = "bug-"): string {
+  const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\d+)$`)
+  let max = 0
+  for (const bug of bugs) {
+    const match = pattern.exec(String(bug?.id ?? ""))
+    if (!match) continue
+    const n = Number(match[1])
+    if (Number.isFinite(n) && n > max) max = n
+  }
+  return `${prefix}${String(max + 1).padStart(3, "0")}`
+}

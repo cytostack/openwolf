@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import { readJSON, writeJSON } from "../utils/fs-safe.js";
+import { nextBugId } from "../utils/bug-id.js";
 
 interface BugEntry {
   id: string;
@@ -55,7 +56,7 @@ export function logBug(
     }
   }
 
-  const id = `bug-${String(bugLog.bugs.length + 1).padStart(3, "0")}`;
+  const id = nextBugId(bugLog.bugs);
   bugLog.bugs.push({
     id,
     timestamp: now,

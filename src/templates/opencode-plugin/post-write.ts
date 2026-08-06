@@ -1,7 +1,7 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 import * as crypto from "node:crypto"
-import { getWolfDir, writeJSON, readJSON, appendMarkdown, timeShort, normalizePath, estimateTokens } from "./fs.js"
+import { getWolfDir, writeJSON, readJSON, appendMarkdown, timeShort, normalizePath, estimateTokens, nextBugId } from "./fs.js"
 import { extractDescription, withAnatomyLock, loadStoreReconciled, saveStore, renderToFile, sha256, LOCK_BUDGET_MS } from "./anatomy.js"
 import type { PartialSessionState, FixDetection } from "./types.js"
 
@@ -210,7 +210,7 @@ export function autoDetectBugFix(wolfDir: string, absolutePath: string, projectR
     return
   }
 
-  const nextId = `bug-${String(bugLog.bugs.length + 1).padStart(3, "0")}`
+  const nextId = nextBugId(bugLog.bugs)
   bugLog.bugs.push({
     id: nextId,
     timestamp: new Date().toISOString(),
