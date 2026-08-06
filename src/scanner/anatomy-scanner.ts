@@ -171,7 +171,10 @@ function walkDir(
 /**
  * Scan the project and return the anatomy content and file count WITHOUT writing to disk.
  */
-export function buildAnatomy(wolfDir: string, projectRoot: string): { content: string; fileCount: number; store: AnatomyStoreData } {
+export function buildAnatomy(
+  wolfDir: string,
+  projectRoot: string
+): { content: string; fileCount: number; store: AnatomyStoreData; truncated: boolean } {
   const configPath = path.join(wolfDir, "config.json");
   const config = readJSON<WolfConfig>(configPath, {
     version: 1,
@@ -186,19 +189,41 @@ export function buildAnatomy(wolfDir: string, projectRoot: string): { content: s
   });
 
   const store = newStore();
-  walkDir(
-    projectRoot,
-    projectRoot,
-    config.openwolf.anatomy.exclude_patterns,
-    config.openwolf.anatomy.max_files,
-    store.files
-  );
+  const maxFiles = config.openwolf.anatomy.max_files;
+  walkDir(projectRoot, projectRoot, config.openwolf.anatomy.exclude_patterns, maxFiles, store.files);
 
-  return { content: renderStore(store), fileCount: Object.keys(store.files).length, store };
+  const fileCount = Object.keys(store.files).length;
+  // `walkDir` returns as soon as the collected set reaches max_files, so a run that ends at
+  // the cap did not survey the tree — it stopped partway through it. `>=` rather than `>`:
+  // a walk that finished exactly at the cap is indistinguishable from one that would have
+  // continued, and the safe reading of an ambiguous signal is the pessimistic one.
+  return { content: renderStore(store), fileCount, store, truncated: fileCount >= maxFiles };
 }
 
 export function scanProject(wolfDir: string, projectRoot: string): number {
-  const { fileCount, store: fresh } = buildAnatomy(wolfDir, projectRoot);
+  const { fileCount, store: fresh, truncated } = buildAnatomy(wolfDir, projectRoot);
+
+  // A capped walk stops partway through the tree in alphabetical order, so it cannot tell
+  // "this file is gone" from "I never got there" — and the full-replace below reads the
+  // second as the first. On a project whose index has outgrown max_files that deletes the
+  // entire alphabetical tail: on one real vault (530 entries indexed, cap 500, 4,969 files
+  // eligible) a scan kept 245 files from an early bulk folder and would have removed every
+  // entry under Strategies/ (1,546 files), 05 Decisions/, 07 Dashboards/ and 09 Coordinator/.
+  // The count only fell 530 -> 500, so nothing looked wrong afterwards.
+  //
+  // This is reachable without anyone typing `openwolf scan`: the daemon's cron engine runs
+  // scan_project on a schedule.
+  //
+  // So a truncated walk is no longer permitted to delete. It merges, and says so. Pruning
+  // stays available on any complete walk, which is every project under its cap.
+  if (truncated) {
+    process.stderr.write(
+      `\n⚠ openwolf: the scan reached anatomy.max_files (${fileCount}) and stopped partway through ` +
+        `the tree. Entries it never reached have been KEPT rather than deleted, so stale entries ` +
+        `cannot be pruned until a scan completes. Raise openwolf.anatomy.max_files in ` +
+        `.wolf/config.json, or add bulk directories to exclude_patterns.\n\n`
+    );
+  }
 
   const result = withAnatomyLock(wolfDir, CLI_LOCK_BUDGET_MS, () => {
     // Absorb md-side edits, then full-replace: the fresh disk walk defines
@@ -212,15 +237,20 @@ export function scanProject(wolfDir: string, projectRoot: string): number {
         if (prev.hash === entry.hash && prev.symbols) entry.symbols = prev.symbols;
       }
     }
-    existing.files = fresh.files;
+    existing.files = truncated ? { ...existing.files, ...fresh.files } : fresh.files;
     existing.meta.lastScanned = new Date().toISOString();
     renderToFile(wolfDir, existing);
     saveStore(wolfDir, existing);
     return true;
   });
-  if (result === null) {
+  if (result === null && !truncated) {
     // Lock contention: fall back to writing the render directly (rare; the
     // next locked writer reconciles via the md import path).
+    //
+    // Skipped when the walk was truncated: `fresh` holds only the part of the tree the walk
+    // reached, so writing it here would gut anatomy.md — the file humans read, and the file
+    // `importFromMarkdown` reads back — even though the store itself was left intact. Losing
+    // the lock is not a reason to publish a partial render; the next complete scan writes it.
     writeText(path.join(wolfDir, "anatomy.md"), renderStore(fresh));
   }
 
