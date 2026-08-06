@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { findProjectRoot } from "../scanner/project-root.js";
 import { readJSON, readText } from "../utils/fs-safe.js";
+import { HOOK_FILES, verifyHookImports } from "./hook-files.js";
 
 export async function statusCommand(): Promise<void> {
   const projectRoot = findProjectRoot();
@@ -35,17 +36,24 @@ export async function statusCommand(): Promise<void> {
   }
 
   // Hook scripts check
-  const hookFiles = [
-    "session-start.js", "pre-read.js", "pre-write.js",
-    "post-read.js", "post-write.js", "stop.js", "shared.js",
-  ];
+  // Was a seven-name subset, so it reported "✓ All 7 hook scripts present" while an
+  // uninstalled dependency made post-write.js fail to load on every invocation.
+  const hookFiles = [...HOOK_FILES];
   const hooksDir = path.join(wolfDir, "hooks");
   let hooksMissing = 0;
   for (const file of hookFiles) {
     if (!fs.existsSync(path.join(hooksDir, file))) hooksMissing++;
   }
   if (hooksMissing === 0) {
-    console.log(`  ✓ All ${hookFiles.length} hook scripts present`);
+    // Present is not the same as loadable: an unresolvable import kills the hook at load
+    // time, silently, and "all present" is exactly the message that hid it.
+    const problems = verifyHookImports(hooksDir);
+    if (problems.length > 0) {
+      console.log(`  ✗ ${problems.length} hook(s) cannot load — unresolved imports:`);
+      for (const p of problems) console.log(`      - ${p}`);
+    } else {
+      console.log(`  ✓ All ${hookFiles.length} hook scripts present and loadable`);
+    }
   } else {
     console.log(`  ✗ Missing ${hooksMissing} hook scripts`);
   }

@@ -11,6 +11,7 @@ import { registerProject, getRegisteredProjects } from "./registry.js";
 import { resolveAgents, detectInstalledAgents } from "../agents/index.js";
 import { installSkills } from "../agents/skills.js";
 import { newStore, importFromMarkdown, saveStore, loadStore, STORE_FILE, sha256 as storeSha256 } from "../hooks/anatomy-store.js";
+import { shippedHookFiles, verifyHookImports } from "./hook-files.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -582,18 +583,8 @@ function copyHookScripts(wolfDir: string): void {
     }
   }
 
-  const hookFiles = [
-    "session-start.js",
-    "pre-read.js",
-    "pre-write.js",
-    "post-read.js",
-    "post-write.js",
-    "precompact.js",
-    "stop.js",
-    "shared.js",
-    "anatomy-store.js",
-    "anatomy-lock.js",
-  ];
+  // Derived from what is actually shipped, so a new hook dependency cannot be left behind.
+  const hookFiles = shippedHookFiles(sourceDir);
 
   let copiedAny = false;
   if (sourceDir) {
