@@ -36,59 +36,60 @@ onUnmounted(() => observer?.disconnect());
 
 const features = [
   {
-    icon: "lightbulb",
-    title: "Invisible Enforcement",
-    desc: "You type claude and work normally. Hooks fire automatically, tracking tokens, updating project maps, enforcing learned preferences.",
+    icon: "grid",
+    title: "Every Agent, One Brain",
+    desc: "Codex, OpenCode, and Claude Code share one project memory, with Cursor and Antigravity in beta. init auto-detects what you have installed and wires it. Learn once, apply everywhere.",
     accent: "var(--ow-accent)",
   },
   {
     icon: "chart",
-    title: "Token Intelligence",
-    desc: "Claude reads blind. OpenWolf gives it a file index with descriptions and token estimates before every read. If the description is enough, Claude skips the full file. Repeated reads are caught and flagged.",
+    title: "Measured Tokens",
+    desc: "Real usage is read from harness transcripts at session end: input, output, cache, per agent. openwolf report shows measured numbers next to the estimates. Verify, don't trust.",
     accent: "#818cf8",
   },
   {
-    icon: "bolt",
-    title: "Zero Overhead",
-    desc: "All hooks are pure Node.js file I/O. No network requests, no external APIs, no extra cost. OpenWolf runs entirely on your machine.",
-    accent: "#fbbf24",
-  },
-  {
     icon: "loop",
-    title: "Self-Learning",
-    desc: "Every correction you make gets logged. Every bug fix gets remembered. Every preference gets enforced. Claude gets smarter with every session -- without you repeating yourself.",
+    title: "Context That Survives",
+    desc: "A token-budgeted digest of your project's state is injected at every session start. Compaction is snapshotted and restored. Sessions stop starting from zero.",
     accent: "#f472b6",
   },
   {
-    icon: "eye",
-    title: "Design QC",
-    desc: "Capture full-page sectioned screenshots with one command. Claude evaluates the design inline. No external services, no extra cost.",
+    icon: "bolt",
+    title: "Symbol-Level Reads",
+    desc: "Big files index their functions and classes with line ranges. Agents fetch one function with offset/limit instead of the whole file. Stale ranges are suppressed automatically.",
+    accent: "#fbbf24",
+  },
+  {
+    icon: "lightbulb",
+    title: "Self-Learning",
+    desc: "Every correction gets logged. Every bug fix gets remembered. Every preference gets enforced. Your agents get smarter with every session, without you repeating yourself.",
     accent: "#fb923c",
   },
   {
-    icon: "grid",
-    title: "Reframe",
-    desc: "Ask Claude to help pick a UI framework. Built-in knowledge base covers 12 component libraries, from shadcn/ui to Aceternity UI to DaisyUI.",
+    icon: "eye",
+    title: "Secure by Default",
+    desc: "Loopback-only dashboard with token auth, zero shell interpolation, path traversal guards, and secret files excluded from every index. Plus bundled /security-audit and /reframe skills.",
     accent: "#38bdf8",
   },
 ];
 
 const hooks = [
-  { event: "SessionStart", script: "session-start.js", desc: "Creates session tracker, logs to memory" },
-  { event: "PreToolUse", script: "pre-read.js", desc: "Warns on repeated reads, shows anatomy info" },
+  { event: "SessionStart", script: "session-start.js", desc: "Injects the budgeted context digest, detects stale anatomy" },
+  { event: "PreToolUse", script: "pre-read.js", desc: "Warns on repeated reads, shows anatomy and symbol hints" },
   { event: "PreToolUse", script: "pre-write.js", desc: "Checks cerebrum Do-Not-Repeat patterns" },
   { event: "PostToolUse", script: "post-read.js", desc: "Estimates and records token usage" },
-  { event: "PostToolUse", script: "post-write.js", desc: "Updates anatomy, appends to memory" },
-  { event: "Stop", script: "stop.js", desc: "Writes session summary to token ledger" },
+  { event: "PostToolUse", script: "post-write.js", desc: "Updates the anatomy store under a cross-process lock" },
+  { event: "PreCompact", script: "precompact.js", desc: "Snapshots session state before context compaction" },
+  { event: "Stop", script: "stop.js", desc: "Reads measured usage from the transcript; surfaces end-of-turn reminders" },
 ];
 
 const archFiles = [
-  { name: "anatomy.md", desc: "File index with descriptions and token estimates. Prevents unnecessary full-file reads.", icon: "file" },
+  { name: "anatomy-index.json", desc: "Durable project index: descriptions, token estimates, content hashes, and per-file symbols. Rendered to anatomy.md.", icon: "file" },
   { name: "cerebrum.md", desc: "Learned preferences, conventions, Do-Not-Repeat mistakes. Gets smarter every session.", icon: "brain" },
-  { name: "memory.md", desc: "Chronological action log. Every read, write, and decision recorded per session.", icon: "clock" },
+  { name: "STATUS.md", desc: "Session handoff. The next session reaches productive context in one small read.", icon: "clock" },
   { name: "buglog.json", desc: "Bug encounter and resolution memory. Searchable. Prevents re-discovering the same fix.", icon: "bug" },
-  { name: "hooks/", desc: "6 Node.js hooks that fire on every Claude action. Pure file I/O, no network, no AI calls.", icon: "code" },
-  { name: "config.json", desc: "All settings with sensible defaults. Token ratios, cron schedules, dashboard port, exclude patterns.", icon: "gear" },
+  { name: "hooks/", desc: "7 Node.js lifecycle hooks shared by all wired agents. Pure file I/O, no network, no AI calls.", icon: "code" },
+  { name: "token-ledger.json", desc: "Estimated and measured usage per session and per agent, straight from harness transcripts.", icon: "gear" },
 ];
 </script>
 
@@ -113,12 +114,12 @@ const archFiles = [
           <!-- Left -->
           <div class="ow-hero__copy">
             <h1 class="ow-hero__title">
-              A second brain
-              <span class="ow-hero__title-accent">for Claude Code.</span>
+              A second brain for Claude Code.
+              <span class="ow-hero__title-accent">Now for every AI coding assistant.</span>
             </h1>
 
             <p class="ow-hero__desc">
-              Claude re-reads files it already saw. It scans entire directories to find one function. It doesn't know your conventions until you tell it again. OpenWolf gives it persistent project intelligence through invisible hooks. No workflow changes.
+              Coding agents re-read files they already saw, scan whole directories to find one function, and forget your conventions between sessions. OpenWolf gives Codex, OpenCode, Claude Code, and other agentic systems one persistent project brain: improved context management, optimized architecture scaffolding, and smarter token utilization. No workflow changes.
             </p>
 
             <div class="ow-hero__actions">
@@ -153,14 +154,13 @@ const archFiles = [
               </div>
               <div class="ow-terminal__body">
                 <div class="ow-terminal__line"><span class="ow-terminal__ps">$</span> <span class="ow-terminal__cmd">openwolf init</span></div>
-                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> OpenWolf v1.0.4 initialized</div>
-                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> .wolf/ created with 13 files</div>
-                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> Claude Code hooks registered (6 hooks)</div>
-                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> CLAUDE.md updated</div>
-                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> .claude/rules/openwolf.md created</div>
+                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> Agents detected: codex, gemini (auto-wiring)</div>
+                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> Codex hooks registered (.codex/hooks.json)</div>
+                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> Skills installed: /security-audit, /reframe</div>
+                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> OpenWolf v2.0.0 initialized</div>
+                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> Claude Code hooks registered (7 hooks)</div>
                 <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> Anatomy scan: 24 files indexed</div>
-                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> Daemon: running via pm2</div>
-                <div class="ow-terminal__line ow-terminal__line--hint">You're ready. Just use <span class="ow-terminal__hl">'claude'</span> as normal -- OpenWolf is watching.</div>
+                <div class="ow-terminal__line ow-terminal__line--hint">You're ready. Use your agents as normal. OpenWolf is watching.</div>
               </div>
             </div>
           </div>
@@ -179,17 +179,17 @@ const archFiles = [
     <section class="ow-section ow-section--alt ow-why">
       <div class="ow-container ow-container--narrow">
         <div class="ow-why__content reveal">
-          <h2 class="ow-why__title">Claude is powerful. But it works blind.</h2>
+          <h2 class="ow-why__title">Coding agents are powerful. But they work blind.</h2>
           <p class="ow-why__text">
-            Claude doesn't know what a file contains until it opens it. It can't tell a 50-token config from a 2,000-token module. It reads the same file three times in one session without noticing. It has no map of your project, no memory of past corrections, no awareness of what it already tried.
+            An agent does not know what a file contains until it opens it. It cannot tell a 50-token config from a 2,000-token module. It reads the same file three times in one session without noticing. It has no map of your project, no memory of past corrections, no awareness of what it already tried.
           </p>
           <p class="ow-why__text">
-            OpenWolf gives Claude a project index, a learning memory, and a token-aware read layer. It makes every session sharper from the first prompt.
+            OpenWolf gives every agent a project index, a learning memory, and a token-aware read layer. And in 2.0 it measures real usage from harness transcripts, so the savings are verified rather than estimated.
           </p>
           <div class="ow-why__stats">
             <div class="ow-why__stat">
-              <span class="ow-why__stat-num">~80%</span>
-              <span class="ow-why__stat-label">token reduction on real projects</span>
+              <span class="ow-why__stat-num">~66%</span>
+              <span class="ow-why__stat-label">average estimated token reduction (1.x field use)</span>
             </div>
             <div class="ow-why__stat">
               <span class="ow-why__stat-num">71%</span>
@@ -206,28 +206,21 @@ const archFiles = [
             <h3 class="ow-why__comparison-title">Same project. Same prompts. Different setups.</h3>
             <div class="ow-why__bar-group">
               <div class="ow-why__bar-row">
-                <span class="ow-why__bar-label">OpenClaw + Claude</span>
+                <span class="ow-why__bar-label">Bare agent (no OpenWolf)</span>
                 <div class="ow-why__bar-track">
-                  <div class="ow-why__bar ow-why__bar--red" style="width: 100%"></div>
-                </div>
-                <span class="ow-why__bar-val">~3.4M</span>
-              </div>
-              <div class="ow-why__bar-row">
-                <span class="ow-why__bar-label">Claude CLI (no OpenWolf)</span>
-                <div class="ow-why__bar-track">
-                  <div class="ow-why__bar ow-why__bar--yellow" style="width: 73%"></div>
+                  <div class="ow-why__bar ow-why__bar--yellow" style="width: 100%"></div>
                 </div>
                 <span class="ow-why__bar-val">~2.5M</span>
               </div>
               <div class="ow-why__bar-row">
-                <span class="ow-why__bar-label">OpenWolf + Claude CLI</span>
+                <span class="ow-why__bar-label">Same project with OpenWolf</span>
                 <div class="ow-why__bar-track">
-                  <div class="ow-why__bar ow-why__bar--green" style="width: 12.5%"></div>
+                  <div class="ow-why__bar ow-why__bar--green" style="width: 17%"></div>
                 </div>
                 <span class="ow-why__bar-val">~425K</span>
               </div>
             </div>
-            <p class="ow-why__bar-note">Estimates based on project size and average session patterns.</p>
+            <p class="ow-why__bar-note">Heuristic estimates from 1.x field use. OpenWolf 2.0 measures your own numbers from harness transcripts: run openwolf report.</p>
           </div>
         </div>
       </div>
@@ -241,7 +234,7 @@ const archFiles = [
         <div class="ow-section__header reveal">
           <span class="ow-label">Features</span>
           <h2 class="ow-heading">Everything works invisibly</h2>
-          <p class="ow-subheading">OpenWolf hooks into Claude Code's lifecycle. No commands to remember. It just makes every session smarter.</p>
+          <p class="ow-subheading">OpenWolf hooks into your agent's lifecycle. No commands to remember. It just makes every session smarter.</p>
         </div>
 
         <div class="ow-features-grid">
@@ -340,7 +333,7 @@ const archFiles = [
         <div class="ow-section__header reveal">
           <span class="ow-label ow-label--warn">Hooks</span>
           <h2 class="ow-heading">The enforcement layer</h2>
-          <p class="ow-subheading">Six hooks fire on every Claude action. They warn but never block. Pure Node.js. No network, no AI, no extra cost.</p>
+          <p class="ow-subheading">Seven hooks fire on every agent action. They warn but never block. Pure Node.js. No network, no AI, no extra cost.</p>
         </div>
 
         <div class="ow-hooks reveal">
@@ -359,7 +352,7 @@ const archFiles = [
     <!-- ============================================================ -->
     <section class="ow-section ow-cta">
       <div class="ow-container ow-container--narrow reveal">
-        <h2 class="ow-heading" style="text-align: center">Make Claude Code smarter</h2>
+        <h2 class="ow-heading" style="text-align: center">Make your coding agent smarter</h2>
         <p class="ow-subheading" style="text-align: center">One install. One init. Then it's invisible.</p>
 
         <div class="ow-cta__actions">
@@ -387,7 +380,7 @@ const archFiles = [
               <img src="/wolf.svg" alt="OpenWolf" width="24" height="24" />
               <span class="ow-footer__name">OpenWolf</span>
             </div>
-            <p class="ow-footer__tagline">A second brain for Claude Code.<br />Created by Dr. Farhan Palathinkal at <a href="https://github.com/cytostack" target="_blank" class="ow-footer__link">Cytostack</a>.</p>
+            <p class="ow-footer__tagline">A second brain for AI coding agents.<br />Created by Dr. Farhan Palathinkal at <a href="https://github.com/cytostack" target="_blank" class="ow-footer__link">Cytostack</a>.</p>
           </div>
 
           <div class="ow-footer__col">
@@ -401,7 +394,6 @@ const archFiles = [
           <div class="ow-footer__col">
             <h4 class="ow-footer__col-title">Features</h4>
             <a href="/hooks" class="ow-footer__link">Hooks</a>
-            <a href="/designqc" class="ow-footer__link">Design QC</a>
             <a href="/reframe" class="ow-footer__link">Reframe</a>
             <a href="/configuration" class="ow-footer__link">Configuration</a>
           </div>

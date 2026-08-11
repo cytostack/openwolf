@@ -6,7 +6,7 @@ interface TreeNode {
   name: string;
   path: string;
   children: TreeNode[];
-  files: Array<{ file: string; description: string; tokens: number }>;
+  files: Array<{ file: string; description: string; tokens: number; symbols?: Array<{ name: string; kind: string; startLine: number; endLine: number; tokens: number }> }>;
 }
 
 function buildTree(entries: WolfData["anatomy"]["entries"]): TreeNode {
@@ -31,7 +31,7 @@ function buildTree(entries: WolfData["anatomy"]["entries"]): TreeNode {
         current = sectionMap.get(key)!;
       }
     }
-    sectionMap.get(section)!.files.push({ file: entry.file, description: entry.description, tokens: entry.tokens });
+    sectionMap.get(section)!.files.push({ file: entry.file, description: entry.description, tokens: entry.tokens, symbols: entry.symbols });
   }
 
   return root;
@@ -53,7 +53,7 @@ function DirNode({ node, search, depth = 0 }: { node: TreeNode; search: string; 
         <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-1.5 py-1 text-sm transition-colors"
           style={{ color: "var(--text-secondary)" }}>
           <span className="w-4 text-center" style={{ color: "var(--text-faint)" }}>{expanded ? "▼" : "▶"}</span>
-          <span className="text-amber-400">📁</span>
+          <span style={{ color: "var(--text-muted)" }}>▸</span>
           <span>{node.name}/</span>
           <span className="text-xs" style={{ color: "var(--text-faint)" }}>{countFiles(node)} files</span>
         </button>
@@ -61,11 +61,25 @@ function DirNode({ node, search, depth = 0 }: { node: TreeNode; search: string; 
       {(expanded || node.name === ".") && (
         <div className={node.name !== "." ? "ml-4" : ""}>
           {matchedFiles.sort((a, b) => a.file.localeCompare(b.file)).map((f) => (
-            <div key={f.file} className="flex items-center gap-2 py-1 pl-5">
-              <span style={{ color: "var(--text-faint)" }}>📄</span>
-              <span className="text-sm font-mono" style={{ color: "var(--text-primary)" }}>{f.file}</span>
-              {f.description && <span className="text-xs truncate max-w-xs" style={{ color: "var(--text-faint)" }}>— {f.description}</span>}
-              <TokenBadge tokens={f.tokens} className="ml-auto shrink-0" />
+            <div key={f.file} className="py-1 pl-5">
+              <div className="flex items-center gap-2">
+                <span style={{ color: "var(--text-faint)" }}>▪</span>
+                <span className="text-sm font-mono" style={{ color: "var(--text-primary)" }}>{f.file}</span>
+                {f.description && <span className="text-xs truncate max-w-xs" style={{ color: "var(--text-faint)" }}>— {f.description}</span>}
+                <TokenBadge tokens={f.tokens} className="ml-auto shrink-0" />
+              </div>
+              {f.symbols && f.symbols.length > 0 && (
+                <div className="pl-6 pt-0.5 flex flex-wrap gap-x-3">
+                  {f.symbols.slice(0, 8).map((s) => (
+                    <span key={`${s.name}-${s.startLine}`} className="wd-label" style={{ color: "var(--text-faint)", fontSize: "0.6rem" }}>
+                      {s.kind} {s.name} L{s.startLine}-{s.endLine}
+                    </span>
+                  ))}
+                  {f.symbols.length > 8 && (
+                    <span className="wd-label" style={{ color: "var(--text-faint)", fontSize: "0.6rem" }}>+{f.symbols.length - 8} more</span>
+                  )}
+                </div>
+              )}
             </div>
           ))}
           {node.children.sort((a, b) => a.name.localeCompare(b.name)).map((child) => (

@@ -1,57 +1,81 @@
 @import "tailwindcss";
 
-:root {
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+/* ─────────────────────────────────────────────────────────────────────────
+   OpenWolf Dashboard 2.0 — dot-matrix design system
+   Monochrome surfaces, one signal-red accent, dot-display numerals.
+   Red is reserved for live/attention/over-limit — never decoration.
+   ───────────────────────────────────────────────────────────────────────── */
 
-  /* Theme variables — light mode defaults */
-  --bg-base: #ffffff;
-  --bg-surface: #f4f4f5;
-  --bg-surface-hover: #e4e4e7;
+:root {
+  --font-sans: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --font-mono: "Space Mono", "JetBrains Mono", monospace;
+  --font-dot: "Doto", "Space Mono", monospace;
+
+  /* Light theme */
+  --bg-base: #e9e9e6;
+  --bg-surface: #f6f6f4;
+  --bg-surface-hover: #ededea;
   --bg-elevated: #ffffff;
-  --border: #d4d4d8;
-  --border-subtle: #e4e4e7;
-  --text-primary: #09090b;
-  --text-secondary: #3f3f46;
-  --text-muted: #71717a;
-  --text-faint: #a1a1aa;
-  --accent: #059669;
-  --accent-subtle: rgba(5, 150, 105, 0.1);
-  --danger: #dc2626;
-  --danger-subtle: rgba(220, 38, 38, 0.05);
-  --warning: #d97706;
-  --warning-subtle: rgba(217, 119, 6, 0.05);
-  --scrollbar-track: #f4f4f5;
-  --scrollbar-thumb: #d4d4d8;
-  --scrollbar-thumb-hover: #a1a1aa;
+  --border: #cfcfca;
+  --border-subtle: #dededa;
+  --text-primary: #101010;
+  --text-secondary: #3c3c3a;
+  --text-muted: #6f6f6c;
+  --text-faint: #9d9d99;
+  --accent: #d71921;            /* signal red */
+  --accent-subtle: rgba(215, 25, 33, 0.08);
+  --danger: #d71921;
+  --danger-subtle: rgba(215, 25, 33, 0.06);
+  --warning: #8a6d00;
+  --warning-subtle: rgba(138, 109, 0, 0.08);
+  --ok: #101010;                /* status-ok is neutral ink, not green */
+  --invert-bg: #111110;         /* the single inverted tile */
+  --invert-text: #f4f3ef;
+  --scrollbar-track: #e9e9e6;
+  --scrollbar-thumb: #cfcfca;
+  --scrollbar-thumb-hover: #9d9d99;
   --chart-tooltip-bg: #ffffff;
-  --chart-tooltip-border: #d4d4d8;
-  --chart-grid: #e4e4e7;
+  --chart-tooltip-border: #cfcfca;
+  --chart-grid: #dededa;
+  /* chart series: lightness-separated monochrome; red = highlight only */
+  --series-1: #101010;
+  --series-2: #6f6f6c;
+  --series-3: #b3b3af;
+  --series-red: #d71921;
+  --dot-off: #d8d8d4;
 }
 
 [data-theme="dark"] {
-  --bg-base: #09090b;
-  --bg-surface: #18181b;
-  --bg-surface-hover: #27272a;
-  --bg-elevated: #18181b;
-  --border: #27272a;
-  --border-subtle: #3f3f46;
-  --text-primary: #fafafa;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --text-faint: #52525b;
-  --accent: #34d399;
-  --accent-subtle: rgba(52, 211, 153, 0.1);
-  --danger: #f87171;
-  --danger-subtle: rgba(248, 113, 113, 0.05);
-  --warning: #fbbf24;
-  --warning-subtle: rgba(251, 191, 36, 0.05);
-  --scrollbar-track: #18181b;
-  --scrollbar-thumb: #3f3f46;
-  --scrollbar-thumb-hover: #52525b;
-  --chart-tooltip-bg: #18181b;
-  --chart-tooltip-border: #3f3f46;
-  --chart-grid: #27272a;
+  --bg-base: #0a0a0a;
+  --bg-surface: #151514;
+  --bg-surface-hover: #1e1e1d;
+  --bg-elevated: #191918;
+  --border: #2a2a28;
+  --border-subtle: #202020;
+  --text-primary: #f2f1ed;
+  --text-secondary: #b9b8b3;
+  --text-muted: #7d7c78;
+  --text-faint: #4e4e4b;
+  --accent: #ff4438;
+  --accent-subtle: rgba(255, 68, 56, 0.1);
+  --danger: #ff4438;
+  --danger-subtle: rgba(255, 68, 56, 0.08);
+  --warning: #e0b429;
+  --warning-subtle: rgba(224, 180, 41, 0.08);
+  --ok: #f2f1ed;
+  --invert-bg: #eceae2;         /* pale card floating on black */
+  --invert-text: #121210;
+  --scrollbar-track: #0a0a0a;
+  --scrollbar-thumb: #2a2a28;
+  --scrollbar-thumb-hover: #4e4e4b;
+  --chart-tooltip-bg: #191918;
+  --chart-tooltip-border: #2a2a28;
+  --chart-grid: #202020;
+  --series-1: #f2f1ed;
+  --series-2: #9c9b96;
+  --series-3: #55554f;
+  --series-red: #ff4438;
+  --dot-off: #242422;
 }
 
 body {
@@ -67,35 +91,60 @@ code, pre, .font-mono {
   font-family: var(--font-mono);
 }
 
-* {
-  box-sizing: border-box;
+* { box-sizing: border-box; }
+
+/* Display numerals — the dot-matrix signature */
+.dot-display {
+  font-family: var(--font-dot);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  line-height: 0.95;
 }
 
-::-webkit-scrollbar {
-  width: 8px;
+/* Small uppercase mono labels — widget captions */
+.wd-label {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
 }
 
-::-webkit-scrollbar-track {
-  background: var(--scrollbar-track);
+/* Card primitives */
+.wd-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+}
+.wd-card-inverted {
+  background: var(--invert-bg);
+  color: var(--invert-text);
+  border: 1px solid transparent;
+  border-radius: 20px;
+}
+.wd-pill {
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
 }
 
-::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-  border-radius: 4px;
-}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--scrollbar-thumb-hover);
-}
-
-@keyframes pulse-green {
+@keyframes rec-pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  50% { opacity: 0.35; }
 }
+.rec-pulse { animation: rec-pulse 1.6s ease-in-out infinite; }
 
-.pulse-green {
-  animation: pulse-green 2s ease-in-out infinite;
-}
+/* legacy alias kept for panels not yet migrated */
+.pulse-green { animation: rec-pulse 2s ease-in-out infinite; }
 
 /* Theme-aware utility classes */
 .bg-base { background-color: var(--bg-base); }

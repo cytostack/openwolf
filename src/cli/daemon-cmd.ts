@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as net from "node:net";
 import * as path from "node:path";
@@ -17,18 +17,22 @@ function getDashboardPort(): number {
     path.join(wolfDir, "config.json"),
     { openwolf: { dashboard: { port: 18791 } } }
   );
-  return config.openwolf.dashboard.port;
+  const port = Number(config.openwolf.dashboard.port);
+  return Number.isInteger(port) && port > 0 && port <= 65535 ? port : 18791;
 }
 
 function getPm2Name(): string {
   const projectRoot = findProjectRoot();
-  return `openwolf-${path.basename(projectRoot)}`;
+  return `openwolf-${path.basename(projectRoot).replace(/[^a-zA-Z0-9._-]/g, "-")}`;
+}
+
+function pm2Bin(): string {
+  return isWindows() ? "pm2.cmd" : "pm2";
 }
 
 function hasPm2(): boolean {
   try {
-    const cmd = isWindows() ? "where pm2" : "which pm2";
-    execSync(cmd, { stdio: "ignore" });
+    execFileSync(isWindows() ? "where" : "which", ["pm2"], { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -38,7 +42,7 @@ function hasPm2(): boolean {
 function findPidOnPort(port: number): number | null {
   try {
     if (isWindows()) {
-      const output = execSync(`netstat -ano -p tcp`, { encoding: "utf-8" });
+      const output = execFileSync("netstat", ["-ano", "-p", "tcp"], { encoding: "utf-8" });
       for (const line of output.split("\n")) {
         if (line.includes(`:${port}`) && line.includes("LISTENING")) {
           const parts = line.trim().split(/\s+/);
@@ -47,7 +51,7 @@ function findPidOnPort(port: number): number | null {
         }
       }
     } else {
-      const output = execSync(`lsof -ti :${port}`, { encoding: "utf-8" });
+      const output = execFileSync("lsof", ["-ti", `:${port}`], { encoding: "utf-8" });
       const pid = parseInt(output.trim(), 10);
       if (pid > 0) return pid;
     }
@@ -58,7 +62,7 @@ function findPidOnPort(port: number): number | null {
 function killPid(pid: number): boolean {
   try {
     if (isWindows()) {
-      execSync(`taskkill /PID ${pid} /F`, { stdio: "ignore" });
+      execFileSync("taskkill", ["/PID", String(pid), "/F"], { stdio: "ignore" });
     } else {
       process.kill(pid, "SIGTERM");
     }
@@ -86,11 +90,11 @@ export function daemonStart(): void {
   const daemonScript = path.resolve(__dirname, "..", "daemon", "wolf-daemon.js");
 
   try {
-    execSync(`pm2 start "${daemonScript}" --name ${name} --cwd "${projectRoot}" -- --env OPENWOLF_PROJECT_ROOT="${projectRoot}"`, {
+    execFileSync(pm2Bin(), ["start", daemonScript, "--name", name, "--cwd", projectRoot], {
       stdio: "inherit",
       env: { ...process.env, OPENWOLF_PROJECT_ROOT: projectRoot },
     });
-    execSync("pm2 save", { stdio: "ignore" });
+    execFileSync(pm2Bin(), ["save"], { stdio: "ignore" });
     console.log(`\n  ✓ Daemon started: ${name}`);
     if (isWindows()) {
       console.log("  Tip: Run 'pm2-windows-startup' for boot persistence.");
@@ -113,7 +117,7 @@ export function daemonStop(): void {
   if (hasPm2()) {
     const name = getPm2Name();
     try {
-      execSync(`pm2 stop ${name}`, { stdio: "ignore" });
+      execFileSync(pm2Bin(), ["stop", name], { stdio: "ignore" });
       console.log(`  ✓ Daemon stopped (PM2): ${name}`);
       return;
     } catch {
@@ -148,7 +152,7 @@ export function daemonRestart(): void {
   if (hasPm2()) {
     const name = getPm2Name();
     try {
-      execSync(`pm2 restart ${name}`, { stdio: "ignore" });
+      execFileSync(pm2Bin(), ["restart", name], { stdio: "ignore" });
       console.log(`  ✓ Daemon restarted (PM2): ${name}`);
       return;
     } catch {
@@ -182,7 +186,7 @@ export function daemonLogs(): void {
 
   const name = getPm2Name();
   try {
-    execSync(`pm2 logs ${name} --lines 50 --nostream`, { stdio: "inherit" });
+    execFileSync(pm2Bin(), ["logs", name, "--lines", "50", "--nostream"], { stdio: "inherit" });
   } catch {
     console.error("Failed to get daemon logs.");
   }

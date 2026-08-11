@@ -1,13 +1,16 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { findProjectRoot } from "../scanner/project-root.js";
 import { scanProject } from "../scanner/anatomy-scanner.js";
-import { readJSON, writeJSON, readText, writeText } from "../utils/fs-safe.js";
+import { readJSON, writeJSON, readText, writeText, safeCopyFile } from "../utils/fs-safe.js";
 import { ensureDir } from "../utils/paths.js";
 import { isWindows } from "../utils/platform.js";
-import { registerProject } from "./registry.js";
+import { registerProject, getRegisteredProjects } from "./registry.js";
+import { resolveAgents, detectInstalledAgents } from "../agents/index.js";
+import { installSkills } from "../agents/skills.js";
+import { newStore, importFromMarkdown, saveStore, loadStore, STORE_FILE, sha256 as storeSha256 } from "../hooks/anatomy-store.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,10 +26,14 @@ function getVersion(): string {
   }
 }
 
-// Files that are safe to overwrite on upgrade (config/protocol, not user data)
+// Files that are safe to overwrite on upgrade (protocol docs only, not user data).
+// NOTE: config.json is deliberately NOT here. It holds per-project port
+// assignments (openwolf.daemon.port / openwolf.dashboard.port) and other
+// user tunables; overwriting it on re-init resets every project to the same
+// default ports (18790 / 18791), so only the first daemon to start can bind
+// and the rest crash-loop on EADDRINUSE. It is handled by reconcileConfig().
 const ALWAYS_OVERWRITE = [
   "OPENWOLF.md",
-  "config.json",
   "reframe-frameworks.md",
 ];
 
@@ -36,15 +43,17 @@ const CREATE_IF_MISSING = [
   "cerebrum.md",
   "memory.md",
   "anatomy.md",
+  "STATUS.md",
   "token-ledger.json",
   "buglog.json",
   "cron-manifest.json",
   "cron-state.json",
-  "designqc-report.json",
   "suggestions.json",
   "hippocampus.json",
   "cue-index.json",
   "neocortex.json",
+  "claims.json",
+  "claim-index.json",
 ];
 
 // Use $CLAUDE_PROJECT_DIR so hooks resolve correctly even if CWD changes during a session
@@ -106,6 +115,18 @@ const HOOK_SETTINGS = {
         ],
       },
     ],
+    PreCompact: [
+      {
+        matcher: "",
+        hooks: [
+          {
+            type: "command",
+            command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/precompact.js"',
+            timeout: 5,
+          },
+        ],
+      },
+    ],
     Stop: [
       {
         matcher: "",
@@ -121,7 +142,7 @@ const HOOK_SETTINGS = {
   },
 };
 
-export async function initCommand(): Promise<void> {
+export async function initCommand(options?: { agent?: string[] }): Promise<void> {
   // Check Node.js version
   const nodeVersion = parseInt(process.version.slice(1), 10);
   if (nodeVersion < 20) {
@@ -158,6 +179,7 @@ export async function initCommand(): Promise<void> {
     createdCount++;
   }
 
+  const newlyCreated = new Set<string>();
   for (const file of CREATE_IF_MISSING) {
     const destPath = path.join(wolfDir, file);
     if (fs.existsSync(destPath)) {
@@ -165,13 +187,28 @@ export async function initCommand(): Promise<void> {
     } else {
       writeTemplateFile(actualTemplatesDir, wolfDir, file);
       createdCount++;
+      newlyCreated.add(file);
     }
+  }
+
+  // config.json: create-if-missing, and on a fresh create allocate a port
+  // pair that no other registered project is using. Existing configs keep
+  // their ports untouched so a re-init never resets them.
+  if (reconcileConfig(actualTemplatesDir, wolfDir, projectRoot)) {
+    createdCount++;
+  } else {
+    skippedCount++;
   }
 
   // --- Cerebrum: seed project info only if fresh ---
   if (!isUpgrade) {
     seedCerebrum(wolfDir, projectRoot);
     seedIdentity(wolfDir, projectRoot);
+  }
+
+  // --- STATUS.md: substitute {{PROJECT_NAME}} / {{DATE}} when freshly created ---
+  if (newlyCreated.has("STATUS.md")) {
+    seedStatus(wolfDir, projectRoot);
   }
 
   // --- Token ledger: set created_at only if empty ---
@@ -198,6 +235,20 @@ export async function initCommand(): Promise<void> {
   if (!neocortex.created_at) { neocortex.created_at = now; }
   if (!neocortex.last_updated) { neocortex.last_updated = now; }
   writeJSON(neocortexPath, neocortex);
+
+  // --- Claim projection: fill project_root and timestamps ---
+  const claimsPath = path.join(wolfDir, "claims.json");
+  const claims = readJSON<Record<string, unknown>>(claimsPath, {});
+  if (!claims.project_root) { claims.project_root = projectRoot; }
+  if (!claims.created_at) { claims.created_at = now; }
+  if (!claims.last_updated) { claims.last_updated = now; }
+  writeJSON(claimsPath, claims);
+
+  // --- Derived claim index: fill initial timestamp ---
+  const claimIndexPath = path.join(wolfDir, "claim-index.json");
+  const claimIndex = readJSON<Record<string, unknown>>(claimIndexPath, {});
+  if (!claimIndex.last_updated) { claimIndex.last_updated = now; }
+  writeJSON(claimIndexPath, claimIndex);
 
   // --- Hook scripts: always update (bug fixes, new features) ---
   copyHookScripts(wolfDir);
@@ -233,39 +284,35 @@ export async function initCommand(): Promise<void> {
     writeText(claudeMdPath, snippetContent);
   }
 
-  // --- Anatomy scan: only on fresh init ---
-  let fileCount = 0;
-  if (!isUpgrade) {
+  // --- One-time anatomy store migration for upgrades (F2b) ---
+  if (isUpgrade) {
     try {
-      fileCount = scanProject(wolfDir, projectRoot);
-    } catch {
-      console.log("  Anatomy scan deferred — will run on first session.");
-    }
-  } else {
-    // On upgrade, read existing count
-    try {
-      const anatomyContent = readText(path.join(wolfDir, "anatomy.md"));
-      const m = anatomyContent.match(/Files:\s*(\d+)/);
-      fileCount = m ? parseInt(m[1], 10) : 0;
-    } catch {
-      fileCount = 0;
-    }
+      if (!fs.existsSync(path.join(wolfDir, STORE_FILE))) {
+        const md = readText(path.join(wolfDir, "anatomy.md"));
+        if (md) {
+          const store = newStore();
+          importFromMarkdown(store, md, projectRoot);
+          store.meta.renderedHash = storeSha256(md);
+          saveStore(wolfDir, store);
+          console.log(`  ✓ anatomy-index.json created (migrated from anatomy.md)`);
+        }
+      }
+    } catch {}
   }
 
   // --- Daemon ---
   let daemonStatus = "start manually with: openwolf daemon start";
   try {
-    const pm2Cmd = isWindows() ? "where pm2" : "which pm2";
-    execSync(pm2Cmd, { stdio: "ignore" });
-    const name = `openwolf-${path.basename(projectRoot)}`;
+    execFileSync(isWindows() ? "where" : "which", ["pm2"], { stdio: "ignore" });
+    const name = `openwolf-${path.basename(projectRoot).replace(/[^a-zA-Z0-9._-]/g, "-")}`;
     // Resolve daemon script relative to openwolf's install dir, not the target project
     const daemonScript = path.resolve(__dirname, "..", "daemon", "wolf-daemon.js");
     try {
-      execSync(`pm2 start "${daemonScript}" --name ${name} --cwd "${projectRoot}"`, {
+      execFileSync(isWindows() ? "pm2.cmd" : "pm2", ["start", daemonScript, "--name", name, "--cwd", projectRoot], {
         stdio: "ignore",
         env: { ...process.env, OPENWOLF_PROJECT_ROOT: projectRoot },
       });
-      execSync("pm2 save", { stdio: "ignore" });
+      execFileSync(isWindows() ? "pm2.cmd" : "pm2", ["save"], { stdio: "ignore" });
       daemonStatus = "running via pm2";
     } catch {
       daemonStatus = "pm2 found but daemon start failed. Try: openwolf daemon start";
@@ -286,18 +333,76 @@ export async function initCommand(): Promise<void> {
     // Non-fatal — registry is a convenience feature
   }
 
+  // --- Additional agents (Workstream C): codex / opencode / gemini / cursor ---
+  // No --agent flag → auto-detect what's installed on this machine and wire
+  // only that. `--agent claude` opts out; explicit names override detection.
+  let agentNames = options?.agent ?? [];
+  let autoDetected = false;
+  if (agentNames.length === 0) {
+    agentNames = detectInstalledAgents();
+    autoDetected = agentNames.length > 0;
+  }
+  const installedAgents: string[] = ["claude"];
+  if (agentNames.length > 0) {
+    if (autoDetected) {
+      console.log(`  ✓ Agents detected on this machine: ${agentNames.join(", ")} (auto-wiring; use --agent claude to skip)`);
+    }
+    const adapters = resolveAgents(agentNames); // throws on unknown names
+    const ctx = { projectRoot, wolfDir, templatesDir: actualTemplatesDir };
+    for (const adapter of adapters) {
+      const result = adapter.install(ctx);
+      installedAgents.push(adapter.name);
+      for (const line of result.actions) console.log(`  ✓ ${line}`);
+      for (const warn of result.warnings) console.log(`  ⚠ ${adapter.displayName}: ${warn}`);
+    }
+  }
+  // Record which agents are wired up so `openwolf update`/dashboard know.
+  try {
+    const cfgPath = path.join(wolfDir, "config.json");
+    const cfg = readJSON<any>(cfgPath, null as any);
+    if (cfg && cfg.openwolf) {
+      cfg.openwolf.agents = installedAgents;
+      writeJSON(cfgPath, cfg);
+    }
+  } catch {}
+
+  // --- Bundled skills (Workstream H): /security-audit, /reframe ---
+  try {
+    for (const line of installSkills(projectRoot, actualTemplatesDir, installedAgents)) {
+      console.log(`  ✓ ${line}`);
+    }
+  } catch {}
+
+  // --- Anatomy scan: runs LAST so the index reflects everything init created ---
+  let fileCount = 0;
+  if (!isUpgrade) {
+    try {
+      fileCount = scanProject(wolfDir, projectRoot);
+    } catch {
+      console.log("  Anatomy scan deferred — will run on first session.");
+    }
+  } else {
+    const store = loadStore(wolfDir);
+    if (store) {
+      fileCount = Object.keys(store.files).length;
+    } else {
+      const m = readText(path.join(wolfDir, "anatomy.md")).match(/Files:\s*(\d+)/);
+      if (m) fileCount = parseInt(m[1], 10);
+    }
+  }
+
   // --- Summary ---
   console.log("");
   if (isUpgrade) {
     console.log(`  ✓ OpenWolf upgraded to v${version}`);
     console.log(`  ✓ All .wolf data preserved (${skippedCount} files: cerebrum, memory, anatomy, buglog, ledger)`);
-    console.log(`  ✓ Hook scripts updated (6 hooks)`);
+    console.log(`  ✓ Hook scripts updated (7 hooks)`);
     console.log(`  ✓ ${createdCount} config files updated`);
     console.log(`  ✓ Anatomy: ${fileCount} files tracked (unchanged)`);
   } else {
     console.log(`  ✓ OpenWolf v${version} initialized`);
     console.log(`  ✓ .wolf/ created with ${createdCount} files`);
-    console.log(`  ✓ Claude Code hooks registered (6 hooks)`);
+    console.log(`  ✓ Claude Code hooks registered (7 hooks)`);
     console.log(`  ✓ CLAUDE.md updated`);
     console.log(`  ✓ .claude/rules/openwolf.md created`);
     console.log(`  ✓ Anatomy scan: ${fileCount} files indexed`);
@@ -327,10 +432,64 @@ function writeTemplateFile(templatesDir: string, wolfDir: string, file: string):
   const srcPath = path.join(templatesDir, file);
   const destPath = path.join(wolfDir, file);
   if (fs.existsSync(srcPath)) {
-    fs.copyFileSync(srcPath, destPath);
+    safeCopyFile(srcPath, destPath);
   } else {
     generateTemplate(destPath, file);
   }
+}
+
+// Default daemon/dashboard ports. A fresh project is allocated the next free
+// pair so multiple projects' daemons never collide on the same port.
+const DEFAULT_DAEMON_PORT = 18790;
+const DEFAULT_DASHBOARD_PORT = 18791;
+
+function normalizeRoot(p: string): string {
+  const resolved = path.resolve(p);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+// Ports already claimed by OTHER registered projects' config.json files.
+function collectUsedPorts(excludeRoot: string): Set<number> {
+  const used = new Set<number>();
+  const exclude = normalizeRoot(excludeRoot);
+  for (const proj of getRegisteredProjects(false)) {
+    if (normalizeRoot(proj.root) === exclude) continue;
+    const cfg = readJSON<any>(path.join(proj.root, ".wolf", "config.json"), null as any);
+    const ow = cfg && cfg.openwolf;
+    if (ow) {
+      if (ow.daemon && typeof ow.daemon.port === "number") used.add(ow.daemon.port);
+      if (ow.dashboard && typeof ow.dashboard.port === "number") used.add(ow.dashboard.port);
+    }
+  }
+  return used;
+}
+
+// config.json is user data: created from template only when absent, and on
+// that fresh create it is stamped with a port pair no other registered
+// project uses. An existing config is left completely untouched so a re-init
+// never resets its ports. Returns true if a new file was written.
+function reconcileConfig(templatesDir: string, wolfDir: string, projectRoot: string): boolean {
+  const cfgPath = path.join(wolfDir, "config.json");
+  if (fs.existsSync(cfgPath)) {
+    return false; // preserve existing ports + user tunables
+  }
+  writeTemplateFile(templatesDir, wolfDir, "config.json");
+  const cfg = readJSON<any>(cfgPath, null as any);
+  if (cfg && cfg.openwolf && cfg.openwolf.dashboard) {
+    const used = collectUsedPorts(projectRoot);
+    const nextFree = (base: number): number => {
+      let p = base;
+      while (used.has(p)) p++;
+      used.add(p);
+      return p;
+    };
+    cfg.openwolf.daemon = cfg.openwolf.daemon || {};
+    cfg.openwolf.dashboard = cfg.openwolf.dashboard || {};
+    cfg.openwolf.daemon.port = nextFree(DEFAULT_DAEMON_PORT);
+    cfg.openwolf.dashboard.port = nextFree(DEFAULT_DASHBOARD_PORT);
+    writeJSON(cfgPath, cfg);
+  }
+  return true;
 }
 
 function readTemplateContent(filename: string, templatesDir: string): string {
@@ -344,7 +503,7 @@ function readTemplateContent(filename: string, templatesDir: string): string {
 function getEmbeddedTemplate(filename: string): string {
   const templates: Record<string, string> = {
     "claude-md-snippet.md": `# OpenWolf\n\n@.wolf/OPENWOLF.md\n\nThis project uses OpenWolf for context management. Read and follow .wolf/OPENWOLF.md every session. Check .wolf/cerebrum.md before generating code. Check .wolf/anatomy.md before reading files.`,
-    "claude-rules-openwolf.md": `---\ndescription: OpenWolf protocol enforcement — active on all files\nglobs: **/*\n---\n\n- Check .wolf/anatomy.md before reading any project file\n- Check .wolf/cerebrum.md Do-Not-Repeat list before generating code\n- After writing or editing files, update .wolf/anatomy.md and append to .wolf/memory.md\n- After receiving a user correction, update .wolf/cerebrum.md immediately (Preferences, Learnings, or Do-Not-Repeat)\n- LEARN from every interaction: if you discover a convention, user preference, or project pattern, add it to .wolf/cerebrum.md. Low threshold — when in doubt, log it.\n- BEFORE fixing any bug or error: read .wolf/buglog.json for known fixes\n- AFTER fixing any bug, error, failed test, failed build, or user-reported problem: ALWAYS log to .wolf/buglog.json with error_message, root_cause, fix, and tags\n- If you edit a file more than twice in a session, that likely indicates a bug — log it to .wolf/buglog.json\n- When the user asks to check/evaluate UI design: run \`openwolf designqc\` to capture screenshots, then read them from .wolf/designqc-captures/\n- When the user asks to change/pick/migrate UI framework: read .wolf/reframe-frameworks.md, ask decision questions, recommend a framework, then execute with the framework's prompt`,
+    "claude-rules-openwolf.md": `---\ndescription: OpenWolf protocol enforcement — active on all files\nglobs: **/*\n---\n\n- Read .wolf/STATUS.md FIRST when resuming a session — it contains current quest, next steps, decisions\n- Update .wolf/STATUS.md (✅ done / 🚀 next quest) when a quest finishes or before suggesting /clear\n- Check .wolf/anatomy.md before reading any project file\n- Check .wolf/cerebrum.md Do-Not-Repeat list before generating code\n- After writing or editing files, update .wolf/anatomy.md and append to .wolf/memory.md\n- After receiving a user correction, update .wolf/cerebrum.md immediately (Preferences, Learnings, or Do-Not-Repeat)\n- LEARN from every interaction: if you discover a convention, user preference, or project pattern, add it to .wolf/cerebrum.md. Low threshold — when in doubt, log it.\n- BEFORE fixing any bug or error: read .wolf/buglog.json for known fixes\n- AFTER fixing any bug, error, failed test, failed build, or user-reported problem: ALWAYS log to .wolf/buglog.json with error_message, root_cause, fix, and tags\n- If you edit a file more than twice in a session, that likely indicates a bug — log it to .wolf/buglog.json\n- When the user asks to change/pick/migrate UI framework: read .wolf/reframe-frameworks.md, ask decision questions, recommend a framework, then execute with the framework's prompt`,
   };
   return templates[filename] ?? "";
 }
@@ -356,6 +515,7 @@ function generateTemplate(destPath: string, file: string): void {
     "cerebrum.md": `# Cerebrum\n\n> OpenWolf's learning memory.\n\n## User Preferences\n\n## Key Learnings\n\n## Do-Not-Repeat\n\n## Decision Log\n`,
     "memory.md": `# Memory\n\n> Chronological action log.\n`,
     "anatomy.md": `# anatomy.md\n\n> Project structure index. Pending initial scan.\n`,
+    "STATUS.md": `# STATUS\n\n> Single source of truth for resuming work. Read this FIRST when starting a session.\n> Update at the end of every work phase so the next \`/clear\` resumes in 1 read.\n\n---\n\n## ✅ Done\n\n- (nothing yet — fill in as work completes)\n\n---\n\n## 🚀 Next phase\n\n**Goal:** _<what we're building next>_\n\n### Acceptance criteria\n1. _<concrete user-visible outcome>_\n\n### Files to create / edit\n- _<path + purpose>_\n\n### Open decisions\n- _<question to ask before coding>_\n\n---\n\n## 📁 Active architecture\n\n- **Stack:** _<frameworks>_\n\n---\n\n## 🔧 Useful commands\n\n\`\`\`bash\n# add the most-used commands here\n\`\`\`\n`,
     "config.json": JSON.stringify({
       version: 1,
       openwolf: {
@@ -365,16 +525,16 @@ function generateTemplate(destPath: string, file: string): void {
         cron: { enabled: true, max_retry_attempts: 3, dead_letter_enabled: true, heartbeat_interval_minutes: 30, use_claude_p: true, api_key_env: null },
         memory: { consolidation_after_days: 7, max_entries_before_consolidation: 200 },
         cerebrum: { max_tokens: 2000, reflection_frequency: "weekly" },
+        context: { session_digest_budget_tokens: 1500, budgets: { claude: 1500, codex: 1200, gemini: 1200, opencode: 1200, cursor: 800 } },
         daemon: { port: 18790, log_level: "info" },
-        dashboard: { enabled: true, port: 18791 },
-        designqc: { enabled: true, viewports: [{ name: "desktop", width: 1440, height: 900 }, { name: "mobile", width: 375, height: 812 }], max_screenshots: 6, chrome_path: null },
+        dashboard: { enabled: true, port: 18791, host: "127.0.0.1" },
+        buglog: { auto_detect: true },
       },
     }, null, 2),
     "token-ledger.json": JSON.stringify({ version: 1, created_at: "", lifetime: { total_tokens_estimated: 0, total_reads: 0, total_writes: 0, total_sessions: 0, anatomy_hits: 0, anatomy_misses: 0, repeated_reads_blocked: 0, estimated_savings_vs_bare_cli: 0 }, sessions: [], daemon_usage: [], waste_flags: [], optimization_report: { last_generated: null, patterns: [] } }, null, 2),
     "buglog.json": JSON.stringify({ version: 1, bugs: [] }, null, 2),
     "cron-manifest.json": JSON.stringify({ version: 1, tasks: [] }, null, 2),
     "cron-state.json": JSON.stringify({ last_heartbeat: null, engine_status: "initialized", execution_log: [], dead_letter_queue: [], upcoming: [] }, null, 2),
-    "designqc-report.json": JSON.stringify({ captured_at: null, captures: [], total_size_kb: 0, estimated_tokens: 0 }, null, 2),
     "suggestions.json": JSON.stringify({ suggestions: [], generated_at: null }, null, 2),
   };
 
@@ -408,6 +568,19 @@ function seedCerebrum(wolfDir: string, projectRoot: string): void {
   }
   cerebrum = cerebrum.replace(/Last updated: —/, `Last updated: ${new Date().toISOString().slice(0, 10)}`);
   writeText(cerebrumPath, cerebrum);
+}
+
+function seedStatus(wolfDir: string, projectRoot: string): void {
+  const statusPath = path.join(wolfDir, "STATUS.md");
+  if (!fs.existsSync(statusPath)) return;
+
+  const projectName = detectProjectName(projectRoot) || path.basename(projectRoot);
+  const date = new Date().toISOString().slice(0, 10);
+
+  let content = readText(statusPath);
+  content = content.replace(/\{\{PROJECT_NAME\}\}/g, projectName);
+  content = content.replace(/\{\{DATE\}\}/g, date);
+  writeText(statusPath, content);
 }
 
 function seedIdentity(wolfDir: string, projectRoot: string): void {
@@ -451,8 +624,12 @@ function copyHookScripts(wolfDir: string): void {
     "pre-write.js",
     "post-read.js",
     "post-write.js",
+    "precompact.js",
     "stop.js",
     "shared.js",
+    "anatomy-store.js",
+    "anatomy-lock.js",
+    "symbol-extractor.js",
   ];
 
   let copiedAny = false;
@@ -460,7 +637,7 @@ function copyHookScripts(wolfDir: string): void {
     for (const file of hookFiles) {
       const src = path.join(sourceDir, file);
       if (fs.existsSync(src)) {
-        fs.copyFileSync(src, path.join(hooksDir, file));
+        safeCopyFile(src, path.join(hooksDir, file));
         copiedAny = true;
       }
     }

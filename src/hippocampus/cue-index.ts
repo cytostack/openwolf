@@ -1,28 +1,25 @@
 // Hippocampus Memory System — Cue Index
-// Phase 2: Fast lookup index for recall
 
-import * as fs from "fs";
-import * as path from "path";
+import * as path from "node:path";
 import type { WolfEvent, CueIndex } from "./types.js";
-
-// ============================================================
-// Constants
-// ============================================================
+import { normalizeRecallPath } from "./cue-recall.js";
+import { backupCorruptFile, readJsonFile, writeJsonAtomic } from "./persistence.js";
 
 const CUE_INDEX_FILENAME = "cue-index.json";
 
-// ============================================================
-// Index Building
-// ============================================================
+function normalizeIndexedPath(filePath: string): string {
+  return normalizeRecallPath(filePath);
+}
 
-/**
- * Build a new CueIndex from an array of WolfEvents.
- * Events are sorted by recency (most recent first) within each index.
- */
+/** Build a complete cue index from the current hippocampus buffer. */
 export function buildIndex(events: WolfEvent[]): CueIndex {
+  const sorted = [...events].sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  );
   const index: CueIndex = {
     version: 1,
     last_updated: new Date().toISOString(),
+    event_ids: sorted.map((event) => event.id),
     location_index: {},
     tag_index: {},
     trauma_index: {
@@ -31,57 +28,10 @@ export function buildIndex(events: WolfEvent[]): CueIndex {
     },
   };
 
-  // Sort events by timestamp desc (most recent first)
-  const sorted = [...events].sort(
-    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-  );
-
-  for (const event of sorted) {
-    // Location index - index each file involved
-    for (const file of event.context.files_involved) {
-      if (!index.location_index[file]) {
-        index.location_index[file] = [];
-      }
-      // Avoid duplicates
-      if (!index.location_index[file].includes(event.id)) {
-        index.location_index[file].push(event.id);
-      }
-    }
-
-    // Tag index
-    for (const tag of event.tags) {
-      if (!index.tag_index[tag]) {
-        index.tag_index[tag] = [];
-      }
-      if (!index.tag_index[tag].includes(event.id)) {
-        index.tag_index[tag].push(event.id);
-      }
-    }
-
-    // Trauma index - special fast track for warnings
-    if (event.outcome.valence === "trauma") {
-      index.trauma_index.all_trauma_ids.push(event.id);
-      for (const file of event.context.files_involved) {
-        if (!index.trauma_index.by_path[file]) {
-          index.trauma_index.by_path[file] = [];
-        }
-        if (!index.trauma_index.by_path[file].includes(event.id)) {
-          index.trauma_index.by_path[file].push(event.id);
-        }
-      }
-    }
-  }
-
-  // Sort trauma IDs by intensity desc
-  // We'll need the actual events to sort by intensity, so we do a second pass
-  // For now, we'll sort when loading
+  for (const event of sorted) addEventToIndex(index, event, false);
   return index;
 }
 
-/**
- * Sort trauma IDs by intensity (highest first).
- * Requires access to events to get intensity values.
- */
 export function sortTraumaByIntensity(
   traumaIds: string[],
   events: Map<string, WolfEvent>
@@ -94,177 +44,155 @@ export function sortTraumaByIntensity(
   });
 }
 
-// ============================================================
-// Index Persistence
-// ============================================================
-
-/**
- * Get the path to cue-index.json given the project root
- */
 export function getCueIndexPath(projectRoot: string): string {
   return path.join(projectRoot, ".wolf", CUE_INDEX_FILENAME);
 }
 
-/**
- * Load cue index from disk.
- * Returns null if file doesn't exist or is invalid.
- */
-export function loadIndex(hippocampusPath: string): CueIndex | null {
-  try {
-    if (!fs.existsSync(hippocampusPath)) {
-      return null;
-    }
-    const content = fs.readFileSync(hippocampusPath, "utf-8");
-    const parsed = JSON.parse(content);
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
 
-    // Validate structure
-    if (
-      typeof parsed.version !== "number" ||
-      typeof parsed.location_index !== "object" ||
-      typeof parsed.trauma_index !== "object"
-    ) {
-      return null;
-    }
+function isIndexMap(value: unknown): value is Record<string, string[]> {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    Object.values(value).every(isStringArray)
+  );
+}
 
-    return parsed as CueIndex;
-  } catch {
-    // Corrupted JSON or parse error
+export function loadIndex(
+  indexPath: string,
+  recoverCorrupt: boolean = false
+): CueIndex | null {
+  const parsed = readJsonFile<Partial<CueIndex>>(indexPath, recoverCorrupt);
+  if (parsed === null) return null;
+  if (
+    parsed.version !== 1 ||
+    !isIndexMap(parsed.location_index) ||
+    !isIndexMap(parsed.tag_index) ||
+    !parsed.trauma_index || typeof parsed.trauma_index !== "object" ||
+    !isStringArray(parsed.trauma_index.all_trauma_ids) ||
+    !isIndexMap(parsed.trauma_index.by_path) ||
+    (parsed.event_ids !== undefined && !isStringArray(parsed.event_ids))
+  ) {
+    if (recoverCorrupt) backupCorruptFile(indexPath);
     return null;
   }
+  return parsed as CueIndex;
 }
 
-/**
- * Save cue index to disk
- */
-export function saveIndex(hippocampusPath: string, index: CueIndex): void {
-  const dir = path.dirname(hippocampusPath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+export function saveIndex(indexPath: string, index: CueIndex): void {
   index.last_updated = new Date().toISOString();
-  fs.writeFileSync(hippocampusPath, JSON.stringify(index, null, 2), "utf-8");
+  writeJsonAtomic(indexPath, index);
 }
 
-// ============================================================
-// Index Update Operations
-// ============================================================
-
-/**
- * Add a single event to the index (in-memory only)
- */
-export function addEventToIndex(index: CueIndex, event: WolfEvent): void {
-  // Location index
-  for (const file of event.context.files_involved) {
-    if (!index.location_index[file]) {
-      index.location_index[file] = [];
-    }
-    if (!index.location_index[file].includes(event.id)) {
-      index.location_index[file].unshift(event.id); // Add to front (most recent)
-    }
-  }
-
-  // Tag index
-  for (const tag of event.tags) {
-    if (!index.tag_index[tag]) {
-      index.tag_index[tag] = [];
-    }
-    if (!index.tag_index[tag].includes(event.id)) {
-      index.tag_index[tag].unshift(event.id);
-    }
-  }
-
-  // Trauma index
-  if (event.outcome.valence === "trauma") {
-    index.trauma_index.all_trauma_ids.unshift(event.id);
-    for (const file of event.context.files_involved) {
-      if (!index.trauma_index.by_path[file]) {
-        index.trauma_index.by_path[file] = [];
-      }
-      if (!index.trauma_index.by_path[file].includes(event.id)) {
-        index.trauma_index.by_path[file].unshift(event.id);
-      }
-    }
-  }
-}
-
-/**
- * Remove an event from the index (in-memory only)
- */
-export function removeEventFromIndex(
+/** Add one event to an in-memory index. */
+export function addEventToIndex(
   index: CueIndex,
-  eventId: string
+  event: WolfEvent,
+  addToWatermark: boolean = true
 ): void {
-  // Location index
-  for (const path of Object.keys(index.location_index)) {
-    index.location_index[path] = index.location_index[path].filter(
-      (id) => id !== eventId
-    );
-    if (index.location_index[path].length === 0) {
-      delete index.location_index[path];
+  if (!index.event_ids) index.event_ids = [];
+  if (addToWatermark && !index.event_ids.includes(event.id)) {
+    index.event_ids.unshift(event.id);
+  }
+
+  for (const rawFile of event.context.files_involved) {
+    const file = normalizeIndexedPath(rawFile);
+    if (!index.location_index[file]) index.location_index[file] = [];
+    if (!index.location_index[file].includes(event.id)) {
+      if (addToWatermark) index.location_index[file].unshift(event.id);
+      else index.location_index[file].push(event.id);
     }
   }
 
-  // Tag index
-  for (const tag of Object.keys(index.tag_index)) {
-    index.tag_index[tag] = index.tag_index[tag].filter(
-      (id) => id !== eventId
-    );
-    if (index.tag_index[tag].length === 0) {
-      delete index.tag_index[tag];
+  for (const tag of event.tags) {
+    if (!index.tag_index[tag]) index.tag_index[tag] = [];
+    if (!index.tag_index[tag].includes(event.id)) {
+      if (addToWatermark) index.tag_index[tag].unshift(event.id);
+      else index.tag_index[tag].push(event.id);
     }
   }
 
-  // Trauma index
+  if (event.outcome.valence === "trauma") {
+    if (!index.trauma_index.all_trauma_ids.includes(event.id)) {
+      if (addToWatermark) index.trauma_index.all_trauma_ids.unshift(event.id);
+      else index.trauma_index.all_trauma_ids.push(event.id);
+    }
+    for (const rawFile of event.context.files_involved) {
+      const file = normalizeIndexedPath(rawFile);
+      if (!index.trauma_index.by_path[file]) index.trauma_index.by_path[file] = [];
+      if (!index.trauma_index.by_path[file].includes(event.id)) {
+        if (addToWatermark) index.trauma_index.by_path[file].unshift(event.id);
+        else index.trauma_index.by_path[file].push(event.id);
+      }
+    }
+  }
+}
+
+export function removeEventFromIndex(index: CueIndex, eventId: string): void {
+  if (index.event_ids) index.event_ids = index.event_ids.filter((id) => id !== eventId);
+  for (const key of Object.keys(index.location_index)) {
+    index.location_index[key] = index.location_index[key].filter((id) => id !== eventId);
+    if (index.location_index[key].length === 0) delete index.location_index[key];
+  }
+  for (const key of Object.keys(index.tag_index)) {
+    index.tag_index[key] = index.tag_index[key].filter((id) => id !== eventId);
+    if (index.tag_index[key].length === 0) delete index.tag_index[key];
+  }
   index.trauma_index.all_trauma_ids = index.trauma_index.all_trauma_ids.filter(
     (id) => id !== eventId
   );
-  for (const path of Object.keys(index.trauma_index.by_path)) {
-    index.trauma_index.by_path[path] = index.trauma_index.by_path[path].filter(
+  for (const key of Object.keys(index.trauma_index.by_path)) {
+    index.trauma_index.by_path[key] = index.trauma_index.by_path[key].filter(
       (id) => id !== eventId
     );
-    if (index.trauma_index.by_path[path].length === 0) {
-      delete index.trauma_index.by_path[path];
+    if (index.trauma_index.by_path[key].length === 0) {
+      delete index.trauma_index.by_path[key];
     }
   }
 }
 
-/**
- * Create an empty cue index template
- */
 export function createEmptyIndex(): CueIndex {
-  return {
-    version: 1,
-    last_updated: new Date().toISOString(),
-    location_index: {},
-    tag_index: {},
-    trauma_index: {
-      all_trauma_ids: [],
-      by_path: {},
-    },
-  };
+  return buildIndex([]);
 }
 
-// ============================================================
-// Index Verification
-// ============================================================
+function sameIds(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  const expected = new Set(right);
+  return new Set(left).size === expected.size && left.every((id) => expected.has(id));
+}
 
-/**
- * Check if an index needs rebuilding (stale or corrupted)
- */
+function sameIndexMap(
+  actual: Record<string, string[]>,
+  expected: Record<string, string[]>
+): boolean {
+  const actualKeys = Object.keys(actual).sort();
+  const expectedKeys = Object.keys(expected).sort();
+  if (actualKeys.join("\0") !== expectedKeys.join("\0")) return false;
+  return actualKeys.every((key) => sameIds(actual[key], expected[key]));
+}
+
+/** Detect missing, stale, partial, or legacy cue indexes. */
 export function indexNeedsRebuild(
   index: CueIndex | null,
-  eventCount: number
+  events: readonly WolfEvent[] | number
 ): boolean {
   if (index === null) return true;
 
-  // Check if index is empty but events exist
-  const indexEventCount = new Set([
-    ...Object.values(index.location_index).flat(),
-  ]).size;
-
-  if (indexEventCount === 0 && eventCount > 0) {
-    return true;
+  // Retain compatibility with the old count-based helper for downstream users.
+  if (typeof events === "number") {
+    const indexedIds = index.event_ids ?? Object.values(index.location_index).flat();
+    return indexedIds.length === 0 && events > 0;
   }
 
-  return false;
+  if (!Array.isArray(index.event_ids)) return true;
+  const expected = buildIndex([...events]);
+  return !(
+    sameIds(index.event_ids, expected.event_ids ?? []) &&
+    sameIndexMap(index.location_index, expected.location_index) &&
+    sameIndexMap(index.tag_index, expected.tag_index) &&
+    sameIds(index.trauma_index.all_trauma_ids, expected.trauma_index.all_trauma_ids) &&
+    sameIndexMap(index.trauma_index.by_path, expected.trauma_index.by_path)
+  );
 }

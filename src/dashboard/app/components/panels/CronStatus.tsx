@@ -1,12 +1,14 @@
 import React, { useState } from "react";
 import { StatusBadge } from "../shared/StatusBadge.js";
 import { relativeTime, formatSchedule } from "../../lib/utils.js";
+import { dashboardFetch } from "../../lib/wolf-client.js";
 import type { WolfData } from "../../hooks/useWolfData.js";
 
 export function CronStatus({ data }: { data: WolfData }) {
   const { cronManifest, cronState, client } = data;
   const [showDeadLetters, setShowDeadLetters] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
+  const [runningTasks, setRunningTasks] = useState<Record<string, "running" | "ok" | "error">>({});
 
   const getTaskStatus = (taskId: string): string => {
     if (cronState.dead_letter_queue.some((d: any) => d.task_id === taskId)) return "failed";
@@ -19,8 +21,15 @@ export function CronStatus({ data }: { data: WolfData }) {
     return last ? relativeTime(last.timestamp) : "never";
   };
 
+  // Run Now over authenticated HTTP (from PR #4 by @MyEditHub): the old
+  // client?.send() silently dropped when the WebSocket wasn't OPEN.
+  const clearSoon = (taskId: string) =>
+    setTimeout(() => setRunningTasks(prev => { const n = { ...prev }; delete n[taskId]; return n; }), 3000);
   const triggerTask = (taskId: string) => {
-    client?.send({ type: "trigger_task", task_id: taskId });
+    setRunningTasks(prev => ({ ...prev, [taskId]: "running" }));
+    dashboardFetch(`/api/cron/run/${encodeURIComponent(taskId)}`, { method: "POST" })
+      .then(r => { setRunningTasks(prev => ({ ...prev, [taskId]: r.ok ? "ok" : "error" })); clearSoon(taskId); })
+      .catch(() => { setRunningTasks(prev => ({ ...prev, [taskId]: "error" })); clearSoon(taskId); });
   };
 
   const retryDeadLetter = (taskId: string) => {
@@ -55,9 +64,15 @@ export function CronStatus({ data }: { data: WolfData }) {
                 <td className="px-4 py-3 hidden md:table-cell text-sm" style={{ color: "var(--text-faint)" }}>{getLastRun(task.id)}</td>
                 <td className="px-4 py-3 text-right">
                   <button onClick={() => triggerTask(task.id)}
+                    disabled={runningTasks[task.id] === "running"}
                     className="px-3 py-1 text-xs rounded-md transition-colors"
-                    style={{ background: "var(--bg-surface-hover)", border: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}
-                  >Run Now</button>
+                    style={{
+                      background: "var(--bg-surface-hover)",
+                      border: "1px solid var(--border-subtle)",
+                      color: runningTasks[task.id] === "error" ? "var(--danger, #e5484d)" : "var(--text-secondary)",
+                      opacity: runningTasks[task.id] === "running" ? 0.6 : 1,
+                    }}
+                  >{runningTasks[task.id] === "running" ? "Running…" : runningTasks[task.id] === "ok" ? "✓ Queued" : runningTasks[task.id] === "error" ? "✗ Failed" : "Run Now"}</button>
                 </td>
               </tr>
             ))}

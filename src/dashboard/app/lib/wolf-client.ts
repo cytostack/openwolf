@@ -1,5 +1,25 @@
 type MessageHandler = (msg: any) => void;
 
+export function getDashboardToken(): string {
+  const params = new URLSearchParams(location.search);
+  const token = params.get("token");
+  if (token) {
+    sessionStorage.setItem("openwolf-dashboard-token", token);
+    params.delete("token");
+    const query = params.toString();
+    history.replaceState(null, "", `${location.pathname}${query ? `?${query}` : ""}${location.hash}`);
+    return token;
+  }
+  return sessionStorage.getItem("openwolf-dashboard-token") || "";
+}
+
+export function dashboardFetch(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(path, {
+    ...init,
+    headers: { ...(init?.headers ?? {}), Authorization: `Bearer ${getDashboardToken()}` },
+  });
+}
+
 export class WolfClient {
   private ws: WebSocket | null = null;
   private handlers: MessageHandler[] = [];
@@ -8,7 +28,8 @@ export class WolfClient {
 
   constructor(url?: string) {
     const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
-    this.url = url || `${wsProtocol}//${location.host}/ws`;
+    const token = encodeURIComponent(getDashboardToken());
+    this.url = url || `${wsProtocol}//${location.host}/ws?token=${token}`;
   }
 
   connect(): void {

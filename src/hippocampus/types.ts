@@ -61,7 +61,12 @@ export interface EventConsolidation {
   forgotten_at?: string;
 }
 
-export interface WolfEvent {
+export interface WolfEvent extends MemoryEvent {
+  consolidation: EventConsolidation;
+}
+
+/** Immutable historical evidence. Operational consolidation metadata lives on WolfEvent. */
+export interface MemoryEvent {
   id: string;
   version: 1;
   timestamp: string;
@@ -69,9 +74,150 @@ export interface WolfEvent {
   context: EventContext;
   action: EventAction;
   outcome: EventOutcome;
-  consolidation: EventConsolidation;
   source: "hook" | "daemon" | "manual";
   tags: string[];
+}
+
+export type ClaimStatus = "active" | "disputed" | "superseded";
+
+export type ClaimRelation = "confirms" | "contradicts" | "refines";
+
+export type EvidenceQuality =
+  | "automated-test"
+  | "reproducible-observation"
+  | "direct-tool-result"
+  | "explicit-user-correction"
+  | "verified-code-inspection"
+  | "agent-inference"
+  | "unverified-assumption";
+
+export type VerificationMethod = EvidenceQuality;
+
+export type ClaimProvenanceSource =
+  | "user"
+  | "hook"
+  | "daemon"
+  | "manual"
+  | "agent";
+
+export interface ClaimScope {
+  paths?: string[];
+  platforms?: string[];
+  versions?: string[];
+  contexts?: string[];
+}
+
+export interface ClaimProvenance {
+  source: ClaimProvenanceSource;
+  authority: number;
+  label?: string;
+  event_id: string;
+}
+
+export interface ClaimEvidence {
+  event_id: string;
+  relation: ClaimRelation;
+  quality: EvidenceQuality;
+  verification_method: VerificationMethod;
+  provenance: ClaimProvenance;
+  recorded_at: string;
+  note?: string;
+}
+
+export interface MemoryClaim {
+  id: string;
+  version: 1;
+  identity_key: string;
+  statement: string;
+  status: ClaimStatus;
+  confidence: number;
+  evidence: ClaimEvidence[];
+  evidence_event_ids: string[];
+  contradicting_event_ids: string[];
+  contradicts_claim_ids: string[];
+  refined_from?: string;
+  superseded_by?: string;
+  scope: ClaimScope;
+  provenance: ClaimProvenance;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClaimStore {
+  version: 1;
+  schema_version: 1;
+  project_root: string;
+  created_at: string;
+  last_updated: string;
+  claims: MemoryClaim[];
+  stats: {
+    total_claims: number;
+    active_count: number;
+    disputed_count: number;
+    superseded_count: number;
+  };
+  size_bytes: number;
+}
+
+export interface ClaimIndex {
+  version: 1;
+  last_updated: string;
+  claim_ids: string[];
+  identity_index: Record<string, string>;
+  token_index: Record<string, string[]>;
+  path_index: Record<string, string[]>;
+  status_index: Record<ClaimStatus, string[]>;
+  evidence_event_index: Record<string, string[]>;
+}
+
+export interface ClaimObservation {
+  statement: string;
+  event_id: string;
+  relation?: ClaimRelation;
+  target_claim_id?: string;
+  quality: EvidenceQuality;
+  verification_method: VerificationMethod;
+  provenance: Omit<ClaimProvenance, "event_id">;
+  scope?: ClaimScope;
+  note?: string;
+  observed_at?: string;
+}
+
+export type ClaimUpdateKind =
+  | "created"
+  | "reinforced"
+  | "contradicted"
+  | "refined";
+
+export interface ClaimUpdateReport {
+  kind: ClaimUpdateKind;
+  claim: MemoryClaim;
+  affected_claims: MemoryClaim[];
+}
+
+export interface ClaimRecallRequest {
+  query?: string;
+  paths?: string[];
+  platforms?: string[];
+  versions?: string[];
+  statuses?: ClaimStatus[];
+  include_disputed?: boolean;
+  include_superseded?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ClaimMatchDetail {
+  claim_id: string;
+  confidence: number;
+  evidence_strength: number;
+  match_reasons: string[];
+}
+
+export interface ClaimRecallResponse {
+  claims: MemoryClaim[];
+  total_matches: number;
+  match_details: ClaimMatchDetail[];
 }
 
 export interface HippocampusStore {
@@ -185,6 +331,7 @@ export interface RecallResponse {
 export interface CueIndex {
   version: 1;
   last_updated: string;
+  event_ids?: string[]; // Complete buffer event ID set, recency-sorted
   location_index: Record<string, string[]>; // path -> event IDs (recency-sorted)
   tag_index: Record<string, string[]>;
   trauma_index: {

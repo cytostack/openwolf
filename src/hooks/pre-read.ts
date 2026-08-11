@@ -1,9 +1,11 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import {
-  getWolfDir, ensureWolfDir, readJSON, writeJSON, readMarkdown, parseAnatomy,
-  estimateTokens, readStdin, normalizePath
+  getWolfDir, ensureWolfDir, readJSON, writeJSON,
+  estimateTokens, readStdin, normalizePath, getProjectDir, resolveProjectPath
 } from "./shared.js";
 import { Hippocampus } from "../hippocampus/index.js";
+import { lookupEntry } from "./anatomy-store.js";
 
 interface SessionData {
   session_id: string;
@@ -32,15 +34,15 @@ async function main(): Promise<void> {
   const filePath = input.tool_input?.file_path ?? input.tool_input?.path ?? "";
   if (!filePath) { process.exit(0); return; }
 
-  const normalizedFile = normalizePath(filePath);
+  const projectRoot = getProjectDir();
+  const resolvedPath = resolveProjectPath(projectRoot, filePath);
+  if (!resolvedPath) { process.exit(0); return; }
+  const { absolutePath, relativePath } = resolvedPath;
+  const normalizedFile = normalizePath(absolutePath);
 
   // Skip tracking for .wolf/ internal files — they're infrastructure, not project files.
   // Counting them inflates anatomy miss rates since .wolf/ is excluded from anatomy scanning.
-  const projectDir = normalizePath(process.env.CLAUDE_PROJECT_DIR || process.cwd());
-  const relToProject = normalizedFile.startsWith(projectDir)
-    ? normalizedFile.slice(projectDir.length).replace(/^\//, "")
-    : "";
-  if (relToProject.startsWith(".wolf/") || relToProject.startsWith(".wolf\\")) {
+  if (relativePath === ".wolf" || relativePath.startsWith(".wolf/")) {
     process.exit(0);
     return;
   }
@@ -63,24 +65,32 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Check anatomy.md for this file
-  const anatomyContent = readMarkdown(path.join(wolfDir, "anatomy.md"));
-  const sections = parseAnatomy(anatomyContent);
-  let found = false;
+  // Anatomy lookup: O(1) against the durable store, legacy md scan fallback.
+  const entry = lookupEntry(wolfDir, normalizePath(projectRoot), normalizedFile);
+  const found = entry !== null;
+  if (entry) {
+    process.stderr.write(
+      `📋 OpenWolf anatomy: ${entry.file} — ${entry.description} (~${entry.tokens} tok)\n`
+    );
 
-  for (const [sectionKey, entries] of sections) {
-    for (const entry of entries) {
-      // Build the full relative path from the section key + filename for accurate matching
-      const entryRelPath = normalizePath(path.join(sectionKey, entry.file));
-      if (normalizedFile.endsWith(entryRelPath) || normalizedFile.endsWith("/" + entryRelPath)) {
+    // Symbol hint (F2b Phase B): point at slices of big files. Suppressed if
+    // the on-disk file no longer matches what was indexed — a stale line
+    // range that misdirects an offset read is worse than no hint at all.
+    if (entry.symbols && entry.symbols.length > 0) {
+      let fresh = false;
+      try {
+        const st = fs.statSync(filePath);
+        fresh = (entry.size === undefined || st.size === entry.size) &&
+                (entry.mtimeMs === undefined || Math.abs(st.mtimeMs - entry.mtimeMs) < 1);
+      } catch {}
+      if (fresh) {
+        const top = [...entry.symbols].sort((a, b) => b.tokens - a.tokens).slice(0, 5);
+        const list = top.map((s) => `${s.kind} ${s.name} L${s.startLine}-${s.endLine} ~${s.tokens} tok`).join("; ");
         process.stderr.write(
-          `📋 OpenWolf anatomy: ${entry.file} — ${entry.description} (~${entry.tokens} tok)\n`
+          `   ↳ symbols: ${list}. Read with offset/limit to fetch just the part you need.\n`
         );
-        found = true;
-        break;
       }
     }
-    if (found) break;
   }
 
   if (found) {
@@ -92,16 +102,10 @@ async function main(): Promise<void> {
   // Check hippocampus for trauma warnings
   // Use context-aware recall to surface traumas from related files/directories, not just exact matches
   try {
-    const projectRoot = process.env.CLAUDE_PROJECT_DIR || process.cwd();
     const hippocampus = new Hippocampus(projectRoot);
 
     if (hippocampus.exists()) {
-      const absolutePath = path.isAbsolute(filePath)
-        ? filePath
-        : path.join(projectRoot, filePath);
-
-      // Convert to relative path to match how events store files_involved
-      const relativeFile = normalizePath(path.relative(projectRoot, absolutePath));
+      const relativeFile = relativePath;
 
       // First check exact file match
       const exactTraumas = hippocampus.getTraumas(relativeFile);
@@ -136,7 +140,7 @@ async function main(): Promise<void> {
           .slice(0, 5);
 
         if (highIntensity.length > 0) {
-          const fileLabel = highIntensityExact.length > 0 ? path.basename(absolutePath) : `related in ${path.dirname(absolutePath).split("/").pop()}`;
+          const fileLabel = highIntensityExact.length > 0 ? path.basename(absolutePath) : `related in ${path.basename(path.dirname(absolutePath))}`;
           const warnings = highIntensity
             .map((t) => {
               const isExact = highIntensityExact.some((e) => e.id === t.id);

@@ -2,11 +2,32 @@
 
 You are working in an OpenWolf-managed project. These rules apply every turn.
 
+## STATUS.md — Single Source of Truth (READ FIRST)
+
+`.wolf/STATUS.md` is the **first file** you read when resuming a session. It contains:
+- ✅ What is concluded (current quest finished)
+- 🚀 Next quest (objective, files to create, decisions fixed/pending)
+- 📁 Active architecture (stack, tables, patterns)
+- ⚠️ External pendencies
+- 🔧 Useful commands
+
+**At session start:** read `.wolf/STATUS.md` first. It replaces re-reading memory.md, plans, and code to reconstruct context.
+
+**MANDATORY — keep STATUS.md fresh:**
+1. When the user signals a quest is done ("done", "complete", "ship it", "next phase", "/clear", "wrap up"):
+   - Move just-finished items from `🚀 Próxima fase` → `✅ Concluído`.
+   - Replace `🚀 Próxima fase` with the next planned quest (objective, files, decisions).
+   - Bump "Last updated" date.
+2. After applying a migration, scaffolding a feature, or finishing a multi-file task: update STATUS.md before responding "done".
+3. Before suggesting `/clear` to the user, ensure STATUS.md reflects the current state.
+
+**The bar is HIGH for STATUS.md.** Stale STATUS.md = wasted next session. Always treat it as the handoff document.
+
 ## File Navigation
 
 1. Check `.wolf/anatomy.md` BEFORE reading any file. It has a 2-3 line description and token estimate for every file in the project.
 2. If the description in anatomy.md is sufficient for your task, do NOT read the full file.
-3. If a file is not in anatomy.md, search with Grep/Glob, then update anatomy.md with the new entry.
+3. If a file is not in anatomy.md, search with Grep/Glob. anatomy.md is rendered from `.wolf/anatomy-index.json`; you may edit descriptions in anatomy.md (they are absorbed on the next update) but do not reorder or reformat it. Regenerate with `openwolf scan`.
 
 ## Code Generation
 
@@ -131,5 +152,6 @@ When the user asks to change, pick, migrate, or "reframe" their project's UI fra
 
 Before ending or when asked to wrap up:
 
-1. Write a session summary to `.wolf/memory.md`.
-2. Review the session: did you learn anything? Did the user correct you? Did you fix a bug? If yes, update `.wolf/cerebrum.md` and/or `.wolf/buglog.json`.
+1. **Update `.wolf/STATUS.md`** — move concluded work to ✅, write next quest in 🚀, bump date. This is the most important step for next session efficiency.
+2. Write a session summary to `.wolf/memory.md`.
+3. Review the session: did you learn anything? Did the user correct you? Did you fix a bug? If yes, update `.wolf/cerebrum.md` and/or `.wolf/buglog.json`.

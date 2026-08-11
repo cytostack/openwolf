@@ -11,8 +11,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getRegisteredProjects, registerProject, type RegisteredProject } from "./registry.js";
-import { readJSON, writeJSON, readText, writeText } from "../utils/fs-safe.js";
+import { readJSON, writeJSON, readText, writeText, safeCopyFile } from "../utils/fs-safe.js";
 import { ensureDir } from "../utils/paths.js";
+import { resolveAgents, availableAgents } from "../agents/index.js";
+import { newStore, importFromMarkdown, saveStore, STORE_FILE, sha256 as storeSha256 } from "../hooks/anatomy-store.js";
+import { installSkills } from "../agents/skills.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,14 +30,26 @@ function getVersion(): string {
   }
 }
 
-// Files that are safe to overwrite (protocol/config)
-const ALWAYS_OVERWRITE = ["OPENWOLF.md", "config.json", "reframe-frameworks.md"];
+// Files that are safe to overwrite (protocol docs only — never user-edited config)
+const ALWAYS_OVERWRITE = ["OPENWOLF.md", "reframe-frameworks.md"];
 
-// Files that contain user data — NEVER overwrite, only create if missing
+// Files that contain user data — NEVER overwrite, only create if missing.
+//
+// `config.json` is user data: it holds per-project port assignments
+// (`openwolf.daemon.port`, `openwolf.dashboard.port`), scan intervals,
+// exclude patterns, and any other tunables a user has customized.
+// Overwriting it on `openwolf update` resets every registered project to
+// the same default ports (18790 / 18791), at which point only the first
+// daemon to start can bind and the rest crash-loop on EADDRINUSE.
+// Keep it in BACKUP_FILES (via the spread below) so `openwolf restore`
+// can still recover it.
 const USER_DATA_FILES = [
-  "identity.md", "cerebrum.md", "memory.md", "anatomy.md",
+  "config.json",
+  "identity.md", "cerebrum.md", "memory.md", "anatomy.md", "anatomy-index.json", "STATUS.md",
   "token-ledger.json", "buglog.json", "cron-manifest.json", "cron-state.json",
-  "suggestions.json", "designqc-report.json",
+  "suggestions.json",
+  "hippocampus.json", "cue-index.json", "neocortex.json",
+  "claims.json", "claim-index.json",
 ];
 
 // Files to include in backup
@@ -54,6 +69,7 @@ const HOOK_SETTINGS = {
       { matcher: "Read", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/post-read.js"', timeout: 5 }] },
       { matcher: "Write|Edit|MultiEdit", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/post-write.js"', timeout: 10 }] },
     ],
+    PreCompact: [{ matcher: "", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/precompact.js"', timeout: 5 }] }],
     Stop: [{ matcher: "", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/stop.js"', timeout: 10 }] }],
   },
 };
@@ -170,7 +186,7 @@ async function updateProject(
       const srcPath = path.join(templatesDir, file);
       const destPath = path.join(wolfDir, file);
       if (fs.existsSync(srcPath)) {
-        fs.copyFileSync(srcPath, destPath);
+        safeCopyFile(srcPath, destPath);
       }
     }
     console.log(`    ✓ Templates updated (${ALWAYS_OVERWRITE.join(", ")})`);
@@ -198,6 +214,64 @@ async function updateProject(
     const rulesContent = readTemplateContent("claude-rules-openwolf.md", templatesDir);
     writeText(path.join(rulesDir, "openwolf.md"), rulesContent);
     console.log(`    ✓ Claude rules updated`);
+
+    // 5a2. One-time anatomy store migration (projects predating the durable
+    // store): bootstrap anatomy-index.json from the existing anatomy.md.
+    try {
+      if (!fs.existsSync(path.join(wolfDir, STORE_FILE))) {
+        const md = readText(path.join(wolfDir, "anatomy.md"));
+        if (md) {
+          const store = newStore();
+          importFromMarkdown(store, md, root);
+          store.meta.renderedHash = storeSha256(md);
+          saveStore(wolfDir, store);
+          console.log(`    ✓ anatomy-index.json created (migrated from anatomy.md)`);
+        }
+      }
+    } catch {}
+
+    // 5a3. Resolve port collisions across registered projects. Projects
+    // upgraded from 1.x share the old default ports (18790/18791); when more
+    // than one is registered their daemons and dashboards collide, which is
+    // why the dashboard used to only ever open the first project. Reassign a
+    // free pair when this project's ports overlap another registered project.
+    try {
+      const reassigned = reassignCollidingPorts(root, wolfDir);
+      if (reassigned) console.log(`    ✓ Ports reassigned to ${reassigned} (avoids collision with another project)`);
+    } catch {}
+
+    // 5b. Create STATUS.md if missing (projects predating the handoff doc)
+    const statusPath = path.join(wolfDir, "STATUS.md");
+    if (!fs.existsSync(statusPath)) {
+      const statusContent = readTemplateContent("STATUS.md", templatesDir);
+      if (statusContent) {
+        writeText(statusPath, seedStatusPlaceholders(statusContent, root));
+        console.log(`    ✓ STATUS.md created`);
+      }
+    }
+
+    // 5c. Re-run the agent adapters this project was initialized with, so
+    // Codex/OpenCode/Gemini/Cursor wiring picks up new hooks and templates.
+    const cfg = readJSON<{ openwolf?: { agents?: string[] } }>(path.join(wolfDir, "config.json"), {});
+    const agentNames = cfg.openwolf?.agents ?? ["claude"];
+    const known = new Set(availableAgents());
+    const extras = agentNames.filter((a) => a !== "claude");
+    const unknown = extras.filter((a) => !known.has(a));
+    for (const u of unknown) {
+      console.log(`    ⚠ unknown agent "${u}" in config.openwolf.agents — skipped`);
+    }
+    const adapters = resolveAgents(extras.filter((a) => known.has(a)));
+    const ctx = { projectRoot: root, wolfDir, templatesDir };
+    for (const adapter of adapters) {
+      const result = adapter.install(ctx);
+      for (const line of result.actions) console.log(`    ✓ ${line}`);
+      for (const warn of result.warnings) console.log(`    ⚠ ${adapter.displayName}: ${warn}`);
+    }
+
+    // 5d. Refresh bundled skills for every configured agent.
+    for (const line of installSkills(root, templatesDir, agentNames)) {
+      console.log(`    ✓ ${line}`);
+    }
 
     // 6. Update CLAUDE.md snippet if it references OpenWolf
     const claudeMdPath = path.join(root, "CLAUDE.md");
@@ -238,6 +312,51 @@ async function updateProject(
 }
 
 /**
+ * If this project's dashboard/daemon ports collide with another registered
+ * project, allocate a free pair. Returns "daemon/dashboard" if reassigned,
+ * else null. Mirrors the free-port logic in cli/init.ts reconcileConfig.
+ */
+function reassignCollidingPorts(root: string, wolfDir: string): string | null {
+  const cfgPath = path.join(wolfDir, "config.json");
+  const cfg = readJSON<any>(cfgPath, null as any);
+  if (!cfg?.openwolf?.dashboard) return null;
+
+  const norm = (p: string) => (process.platform === "win32" ? path.resolve(p).toLowerCase() : path.resolve(p));
+  const mine = norm(root);
+  const used = new Set<number>();
+  for (const proj of getRegisteredProjects(false)) {
+    if (norm(proj.root) === mine) continue;
+    const oc = readJSON<any>(path.join(proj.root, ".wolf", "config.json"), null as any)?.openwolf;
+    if (typeof oc?.daemon?.port === "number") used.add(oc.daemon.port);
+    if (typeof oc?.dashboard?.port === "number") used.add(oc.dashboard.port);
+  }
+
+  const myDash = cfg.openwolf.dashboard.port;
+  const myDaemon = cfg.openwolf.daemon?.port;
+  if (!used.has(myDash) && (typeof myDaemon !== "number" || !used.has(myDaemon))) return null;
+
+  const nextFree = (base: number): number => { let p = base; while (used.has(p)) p++; used.add(p); return p; };
+  cfg.openwolf.daemon = cfg.openwolf.daemon || {};
+  cfg.openwolf.dashboard = cfg.openwolf.dashboard || {};
+  cfg.openwolf.daemon.port = nextFree(18790);
+  cfg.openwolf.dashboard.port = nextFree(18791);
+  writeJSON(cfgPath, cfg);
+  return `${cfg.openwolf.daemon.port}/${cfg.openwolf.dashboard.port}`;
+}
+
+/** Fill STATUS.md template placeholders — mirrors seedStatus in init.ts. */
+function seedStatusPlaceholders(content: string, projectRoot: string): string {
+  let projectName = path.basename(projectRoot);
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(projectRoot, "package.json"), "utf-8"));
+    if (typeof pkg.name === "string" && pkg.name) projectName = pkg.name;
+  } catch {}
+  return content
+    .replace(/\{\{PROJECT_NAME\}\}/g, projectName)
+    .replace(/\{\{DATE\}\}/g, new Date().toISOString().slice(0, 10));
+}
+
+/**
  * Create a timestamped backup of all .wolf files into .wolf/backups/YYYY-MM-DD_HHMMSS/
  */
 function createBackup(wolfDir: string): string {
@@ -250,7 +369,7 @@ function createBackup(wolfDir: string): string {
   for (const file of BACKUP_FILES) {
     const src = path.join(wolfDir, file);
     if (fs.existsSync(src)) {
-      fs.copyFileSync(src, path.join(backupDir, file));
+      safeCopyFile(src, path.join(backupDir, file));
     }
   }
 
@@ -264,7 +383,7 @@ function createBackup(wolfDir: string): string {
       for (const f of hookFiles) {
         const src = path.join(hooksDir, f);
         if (fs.statSync(src).isFile()) {
-          fs.copyFileSync(src, path.join(hooksBackup, f));
+          safeCopyFile(src, path.join(hooksBackup, f));
         }
       }
     } catch {}
@@ -276,13 +395,13 @@ function createBackup(wolfDir: string): string {
   if (fs.existsSync(claudeSettings)) {
     const claudeBackup = path.join(backupDir, ".claude");
     ensureDir(claudeBackup);
-    fs.copyFileSync(claudeSettings, path.join(claudeBackup, "settings.json"));
+    safeCopyFile(claudeSettings, path.join(claudeBackup, "settings.json"));
   }
   const claudeRules = path.join(projectRoot, ".claude", "rules", "openwolf.md");
   if (fs.existsSync(claudeRules)) {
     const rulesBackup = path.join(backupDir, ".claude", "rules");
     ensureDir(rulesBackup);
-    fs.copyFileSync(claudeRules, path.join(rulesBackup, "openwolf.md"));
+    safeCopyFile(claudeRules, path.join(rulesBackup, "openwolf.md"));
   }
 
   return backupDir;
@@ -310,7 +429,7 @@ function readTemplateContent(filename: string, templatesDir: string): string {
   }
   const templates: Record<string, string> = {
     "claude-md-snippet.md": `# OpenWolf\n\n@.wolf/OPENWOLF.md\n\nThis project uses OpenWolf for context management. Read and follow .wolf/OPENWOLF.md every session. Check .wolf/cerebrum.md before generating code. Check .wolf/anatomy.md before reading files.`,
-    "claude-rules-openwolf.md": `---\ndescription: OpenWolf protocol enforcement — active on all files\nglobs: **/*\n---\n\n- Check .wolf/anatomy.md before reading any project file\n- Check .wolf/cerebrum.md Do-Not-Repeat list before generating code\n- After writing or editing files, update .wolf/anatomy.md and append to .wolf/memory.md\n- After receiving a user correction, update .wolf/cerebrum.md immediately (Preferences, Learnings, or Do-Not-Repeat)\n- LEARN from every interaction: if you discover a convention, user preference, or project pattern, add it to .wolf/cerebrum.md. Low threshold — when in doubt, log it.\n- BEFORE fixing any bug or error: read .wolf/buglog.json for known fixes\n- AFTER fixing any bug, error, failed test, failed build, or user-reported problem: ALWAYS log to .wolf/buglog.json with error_message, root_cause, fix, and tags\n- If you edit a file more than twice in a session, that likely indicates a bug — log it to .wolf/buglog.json\n- When the user asks to check/evaluate UI design: run \`openwolf designqc\` to capture screenshots, then read them from .wolf/designqc-captures/\n- When the user asks to change/pick/migrate UI framework: read .wolf/reframe-frameworks.md, ask decision questions, recommend a framework, then execute with the framework's prompt`,
+    "claude-rules-openwolf.md": `---\ndescription: OpenWolf protocol enforcement — active on all files\nglobs: **/*\n---\n\n- Check .wolf/anatomy.md before reading any project file\n- Check .wolf/cerebrum.md Do-Not-Repeat list before generating code\n- After writing or editing files, update .wolf/anatomy.md and append to .wolf/memory.md\n- After receiving a user correction, update .wolf/cerebrum.md immediately (Preferences, Learnings, or Do-Not-Repeat)\n- LEARN from every interaction: if you discover a convention, user preference, or project pattern, add it to .wolf/cerebrum.md. Low threshold — when in doubt, log it.\n- BEFORE fixing any bug or error: read .wolf/buglog.json for known fixes\n- AFTER fixing any bug, error, failed test, failed build, or user-reported problem: ALWAYS log to .wolf/buglog.json with error_message, root_cause, fix, and tags\n- If you edit a file more than twice in a session, that likely indicates a bug — log it to .wolf/buglog.json\n- When the user asks to change/pick/migrate UI framework: read .wolf/reframe-frameworks.md, ask decision questions, recommend a framework, then execute with the framework's prompt`,
   };
   return templates[filename] ?? "";
 }
@@ -335,14 +454,27 @@ function copyHookScripts(wolfDir: string): void {
 
   const hookFiles = [
     "session-start.js", "pre-read.js", "pre-write.js",
-    "post-read.js", "post-write.js", "stop.js", "shared.js",
+    "post-read.js", "post-write.js", "precompact.js", "stop.js", "shared.js",
+    "anatomy-store.js", "anatomy-lock.js", "symbol-extractor.js",
   ];
 
   if (sourceDir) {
     for (const file of hookFiles) {
       const src = path.join(sourceDir, file);
       if (fs.existsSync(src)) {
-        fs.copyFileSync(src, path.join(hooksDir, file));
+        safeCopyFile(src, path.join(hooksDir, file));
+      }
+    }
+  }
+
+  // Hooks import the hippocampus module from ../hippocampus/index.js.
+  const hippocampusSrc = path.resolve(__dirname, "..", "hippocampus");
+  const hippocampusDest = path.join(wolfDir, "hippocampus");
+  if (fs.existsSync(hippocampusSrc) && fs.existsSync(path.join(hippocampusSrc, "index.js"))) {
+    ensureDir(hippocampusDest);
+    for (const file of fs.readdirSync(hippocampusSrc)) {
+      if (file.endsWith(".js") && !file.endsWith(".js.map")) {
+        safeCopyFile(path.join(hippocampusSrc, file), path.join(hippocampusDest, file));
       }
     }
   }
@@ -443,7 +575,7 @@ export function restoreCommand(backupName?: string): void {
   // Restore files
   const files = fs.readdirSync(backupDir).filter(f => fs.statSync(path.join(backupDir, f)).isFile());
   for (const file of files) {
-    fs.copyFileSync(path.join(backupDir, file), path.join(wolfDir, file));
+    safeCopyFile(path.join(backupDir, file), path.join(wolfDir, file));
   }
 
   // Restore hooks if present
@@ -453,7 +585,7 @@ export function restoreCommand(backupName?: string): void {
     const hooksDir = path.join(wolfDir, "hooks");
     ensureDir(hooksDir);
     for (const f of hookFiles) {
-      fs.copyFileSync(path.join(hooksBackup, f), path.join(hooksDir, f));
+      safeCopyFile(path.join(hooksBackup, f), path.join(hooksDir, f));
     }
   }
 
@@ -465,13 +597,13 @@ export function restoreCommand(backupName?: string): void {
     if (fs.existsSync(settingsBackup)) {
       const dest = path.join(projectRoot, ".claude", "settings.json");
       ensureDir(path.dirname(dest));
-      fs.copyFileSync(settingsBackup, dest);
+      safeCopyFile(settingsBackup, dest);
     }
     const rulesBackup = path.join(claudeBackup, "rules", "openwolf.md");
     if (fs.existsSync(rulesBackup)) {
       const dest = path.join(projectRoot, ".claude", "rules", "openwolf.md");
       ensureDir(path.dirname(dest));
-      fs.copyFileSync(rulesBackup, dest);
+      safeCopyFile(rulesBackup, dest);
     }
   }
 

@@ -2,10 +2,12 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
+import type { Request, Response, NextFunction } from "express";
 import { WebSocketServer, WebSocket } from "ws";
 import { findProjectRoot } from "../scanner/project-root.js";
 import { readJSON, writeJSON, readText } from "../utils/fs-safe.js";
 import { Logger } from "../utils/logger.js";
+import { getDashboardToken, validateDashboardToken } from "../utils/dashboard-auth.js";
 import { CronEngine } from "./cron-engine.js";
 import { startFileWatcher } from "./file-watcher.js";
 
@@ -19,7 +21,7 @@ const wolfDir = path.join(projectRoot, ".wolf");
 interface WolfConfig {
   openwolf: {
     daemon: { port: number; log_level: string };
-    dashboard: { enabled: boolean; port: number };
+    dashboard: { enabled: boolean; port: number; host?: string };
     cron: { enabled: boolean; heartbeat_interval_minutes: number };
   };
 }
@@ -39,10 +41,40 @@ const logger = new Logger(
 
 const startTime = Date.now();
 const wsClients = new Set<WebSocket>();
+getDashboardToken(wolfDir);
 
 // Express server
 const app = express();
 app.use(express.json());
+
+function isAllowedOrigin(origin: string | undefined): boolean {
+  if (!origin) return true;
+  try {
+    const url = new URL(origin);
+    return url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
+  } catch {
+    return false;
+  }
+}
+
+function extractBearerToken(req: Request): string | null {
+  const auth = req.header("authorization") ?? "";
+  if (auth.startsWith("Bearer ")) return auth.slice("Bearer ".length).trim();
+  const queryToken = req.query.token;
+  return typeof queryToken === "string" ? queryToken : null;
+}
+
+function requireDashboardAuth(req: Request, res: Response, next: NextFunction): void {
+  if (!isAllowedOrigin(req.header("origin"))) {
+    res.status(403).json({ error: "Forbidden origin" });
+    return;
+  }
+  if (!validateDashboardToken(wolfDir, extractBearerToken(req))) {
+    res.status(401).json({ error: "Dashboard token required" });
+    return;
+  }
+  next();
+}
 
 // Serve dashboard static files
 // In dist: dist/src/daemon/wolf-daemon.js → ../../../dist/dashboard/
@@ -105,6 +137,8 @@ function detectProjectMeta(): { name: string; description: string } {
 const projectMeta = detectProjectMeta();
 
 // API routes
+app.use("/api", requireDashboardAuth);
+
 app.get("/api/health", (_req, res) => {
   const cronState = readJSON<{ engine_status: string; last_heartbeat: string | null; dead_letter_queue: unknown[] }>(
     path.join(wolfDir, "cron-state.json"),
@@ -137,8 +171,7 @@ app.get("/api/files", (_req, res) => {
   const wolfFiles = [
     "OPENWOLF.md", "identity.md", "cerebrum.md", "memory.md", "anatomy.md",
     "config.json", "token-ledger.json", "buglog.json",
-    "cron-manifest.json", "cron-state.json",
-    "designqc-report.json",
+    "cron-manifest.json", "cron-state.json", "STATUS.md", "_scan-state.json", "anatomy-index.json",
   ];
   for (const file of wolfFiles) {
     try {
@@ -154,11 +187,6 @@ app.get("/api/files", (_req, res) => {
     files["suggestions.json"] = "";
   }
   res.json(files);
-});
-
-app.get("/api/designqc-report", (_req, res) => {
-  const report = readJSON(path.join(wolfDir, "designqc-report.json"), null);
-  res.json(report);
 });
 
 // Trigger a cron task by ID
@@ -185,14 +213,36 @@ app.get("/{*path}", (_req, res) => {
   }
 });
 
-// Start HTTP server
-const port = config.openwolf.dashboard.port;
-const server = app.listen(port, () => {
-  logger.info(`Dashboard server listening on port ${port}`);
+// Start HTTP server. OPENWOLF_DASHBOARD_PORT lets the launcher override the
+// configured port when it is already held by another project's daemon.
+const envPort = Number(process.env.OPENWOLF_DASHBOARD_PORT);
+const port = Number.isInteger(envPort) && envPort > 0 ? envPort : config.openwolf.dashboard.port;
+const host = config.openwolf.dashboard.host || "127.0.0.1";
+const server = app.listen(port, host, () => {
+  logger.info(`Dashboard server listening on ${host}:${port}`);
 });
 
 // WebSocket server
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({
+  server,
+  verifyClient: (info, done) => {
+    if (!isAllowedOrigin(info.origin)) {
+      done(false, 403, "Forbidden origin");
+      return;
+    }
+    try {
+      const url = new URL(info.req.url ?? "", `http://${info.req.headers.host ?? "localhost"}`);
+      if (!validateDashboardToken(wolfDir, url.searchParams.get("token"))) {
+        done(false, 401, "Dashboard token required");
+        return;
+      }
+    } catch {
+      done(false, 401, "Dashboard token required");
+      return;
+    }
+    done(true);
+  },
+});
 
 wss.on("connection", (ws) => {
   wsClients.add(ws);
@@ -259,8 +309,7 @@ function handleDashboardCommand(msg: { type: string; task_id?: string }): void {
         const wolfFiles = [
           "OPENWOLF.md", "identity.md", "cerebrum.md", "memory.md", "anatomy.md",
           "config.json", "token-ledger.json", "buglog.json",
-          "cron-manifest.json", "cron-state.json",
-          "designqc-report.json",
+          "cron-manifest.json", "cron-state.json", "STATUS.md", "_scan-state.json", "anatomy-index.json",
         ];
         for (const file of wolfFiles) {
           try {
