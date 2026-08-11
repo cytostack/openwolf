@@ -1,8 +1,10 @@
 # Hippocampus Memory System — Implementation Plan
 
-> **Status**: Phase 1 ✅ | Phase 2 ✅ | Phase 3 ✅
-> **Goal**: Implement neuroscience-inspired episodic/spatial memory for OpenWolf
-> **Docs**: [00-hippocampus-memory-system.md](./00-hippocampus-memory-system.md)
+> **Status**: Phases 1–3 ✅ | Hardening ✅ | Truth maintenance in progress
+> **Goal**: Maintain immutable historical events and a provenance-aware, revisable current-knowledge projection.
+> **Docs**: [truth-maintenance.md](./truth-maintenance.md) and [hippocampus-hardening-overview.md](./hippocampus-hardening-overview.md)
+
+> **Architecture note:** `hippocampus`, `neocortex`, and `trauma` are implementation metaphors, not a scientifically faithful brain simulation. Importance, repetition, access count, emotional intensity, and recency are retrieval/retention signals—not proof of truth.
 
 ---
 
@@ -13,9 +15,43 @@ The hippocampus system extends OpenWolf's flat, append-only memory with:
 - **Cues**: Location/Question/State triggers that recall relevant past events
 - **Consolidation**: Short-term (hippocampus) → Long-term (neocortex) memory transfer
 
+## Truth-maintenance phase
+
+### Implemented
+
+- [x] Claim, evidence, scope, and provenance types in `src/hippocampus/types.ts`.
+- [x] Deterministic NFKC statement/scope identity and capped evidence reinforcement.
+- [x] Explicit `confirms`, `contradicts`, and `refines` observations.
+- [x] Append-only correction evidence with dispute/supersession links.
+- [x] Authoritative `.wolf/claims.json` and derived `.wolf/claim-index.json` persistence.
+- [x] Lock-protected Hippocampus claim record/recall APIs.
+- [x] Explicit `openwolf claim record` and `openwolf claim recall` commands.
+- [x] Claim templates and init/update preservation.
+- [x] Sensitive path-scope rejection at the CLI boundary.
+- [x] Regression coverage for identity, correction, dispute, refinement, evidence ranking, recovery, concurrency, and CLI behavior.
+
+### Acceptance rules
+
+1. Historical event payloads and evidence provenance are immutable.
+2. Newer or repeated low-quality inference cannot outrank stronger test-backed evidence.
+3. Contradiction and refinement require an explicit target; free-form semantic opposition is not guessed.
+4. Active claims are the default recall surface; disputed/superseded history is opt-in.
+5. The authoritative claim store is persisted before the derived index.
+6. Corrupt or stale derived data is backed up and rebuilt from authoritative data.
+7. Normal post-write hooks remain event-only.
+
+## Completed historical phases
+
+The original three phases remain complete:
+
+- **Phase 1:** event model, event store, hook integration, and initial templates.
+- **Phase 2:** cue index, location/question/state recall, and recall CLI.
+- **Phase 3:** neocortex persistence, consolidation, decay, daemon wiring, and integration tests.
+
+The hardening work added Windows-safe containment, atomic persistence, directory locks, full index repair, transfer journaling, consolidation ordering/budget fixes, and OpenCode template parity. See the hardening docs for detailed invariants and dogfood results.
+
 ---
 
-## Phase 1: Minimum Viable Hippocampus ✅
 
 **Target**: 1 session to complete
 **Verification**: Build passes, `openwolf init` creates hippocampus.json, 98 tests passing
@@ -59,7 +95,7 @@ The hippocampus system extends OpenWolf's flat, append-only memory with:
 ### Phase 2.1 — Cue Index System ✅
 - [x] `src/hippocampus/cue-index.ts` — CueIndex type and build logic
 - [x] `src/templates/cue-index.json` — Template for cue-index.json
-- [x] Index updates on addEvent (batch every 10 events)
+- [x] Index is rebuilt and atomically persisted during every locked event transaction
 - [x] Wire into init.ts to create cue-index.json
 
 ### Phase 2.2 — Recall API ✅

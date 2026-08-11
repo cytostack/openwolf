@@ -98,10 +98,8 @@ export function extractDescription(filePath: string): string {
 
 // ── Durable store + lock (mirrors src/hooks/anatomy-store.ts, F2b) ──────────
 import * as crypto from "node:crypto"
-import * as os from "node:os"
 
 export const STORE_FILE = "anatomy-index.json"
-const LOCK_STALE_MS = 10_000
 export const LOCK_BUDGET_MS = 2_000
 
 export function sha256(text: string): string {
@@ -140,19 +138,35 @@ export function loadStore(wolfDir: string): AnatomyStoreData | null {
   }
 }
 
+function writeFileAtomic(filePath: string, content: string): void {
+  const dir = path.dirname(filePath)
+  fs.mkdirSync(dir, { recursive: true })
+  const tmp = path.join(
+    dir,
+    `.${path.basename(filePath)}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`
+  )
+
+  try {
+    const fd = fs.openSync(tmp, "wx", 0o600)
+    try {
+      fs.writeFileSync(fd, content, "utf-8")
+      fs.fsyncSync(fd)
+    } finally {
+      fs.closeSync(fd)
+    }
+    fs.renameSync(tmp, filePath)
+  } finally {
+    try { fs.unlinkSync(tmp) } catch {}
+  }
+}
+
 export function saveStore(wolfDir: string, store: AnatomyStoreData): void {
   store.meta.fileCount = Object.keys(store.files).length
   store.meta.storeUpdatedAt = new Date().toISOString()
-  const filePath = path.join(wolfDir, STORE_FILE)
-  const tmp = filePath + "." + crypto.randomBytes(4).toString("hex") + ".tmp"
-  const body = JSON.stringify(store, null, 2)
-  try {
-    fs.writeFileSync(tmp, body, "utf-8")
-    fs.renameSync(tmp, filePath)
-  } catch {
-    try { fs.writeFileSync(filePath, body, "utf-8") } catch {}
-    try { fs.unlinkSync(tmp) } catch {}
-  }
+  writeFileAtomic(
+    path.join(wolfDir, STORE_FILE),
+    JSON.stringify(store, null, 2) + "\n"
+  )
 }
 
 export function renderStore(store: AnatomyStoreData): string {
@@ -189,15 +203,7 @@ export function renderStore(store: AnatomyStoreData): string {
 export function renderToFile(wolfDir: string, store: AnatomyStoreData): void {
   const content = renderStore(store)
   store.meta.renderedHash = sha256(content)
-  const anatomyPath = path.join(wolfDir, "anatomy.md")
-  const tmp = anatomyPath + "." + crypto.randomBytes(4).toString("hex") + ".tmp"
-  try {
-    fs.writeFileSync(tmp, content, "utf-8")
-    fs.renameSync(tmp, anatomyPath)
-  } catch {
-    try { fs.writeFileSync(anatomyPath, content, "utf-8") } catch {}
-    try { fs.unlinkSync(tmp) } catch {}
-  }
+  writeFileAtomic(path.join(wolfDir, "anatomy.md"), content)
 }
 
 export function importFromMarkdown(store: AnatomyStoreData, mdContent: string, projectRoot: string): void {
@@ -242,34 +248,45 @@ function lockSleep(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }
 
+const LOCK_DIR = "anatomy-index.lock"
+const OWNER_FILE = "owner.json"
+
+function tryAcquire(lockPath: string): boolean {
+  try {
+    fs.mkdirSync(lockPath)
+    try {
+      fs.writeFileSync(
+        path.join(lockPath, OWNER_FILE),
+        JSON.stringify({ pid: process.pid, acquiredAt: Date.now() }),
+        { flag: "wx" }
+      )
+      return true
+    } catch (error) {
+      try { fs.rmdirSync(lockPath) } catch {}
+      throw error
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+    return false
+  }
+}
+
+function release(lockPath: string): void {
+  try { fs.unlinkSync(path.join(lockPath, OWNER_FILE)) } catch {}
+  try { fs.rmdirSync(lockPath) } catch {}
+}
+
 export function withAnatomyLock<T>(wolfDir: string, budgetMs: number, fn: () => T): T | null {
-  const lockPath = path.join(wolfDir, "anatomy-index.lock")
+  fs.mkdirSync(wolfDir, { recursive: true })
+  const lockPath = path.join(wolfDir, LOCK_DIR)
   const deadline = Date.now() + budgetMs
-  while (true) {
-    try {
-      fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, hostname: os.hostname(), acquiredAt: Date.now() }), { flag: "wx" })
-      break
-    } catch {}
-    let stale = false
-    try {
-      const body = JSON.parse(fs.readFileSync(lockPath, "utf-8"))
-      stale = typeof body.acquiredAt !== "number" || Date.now() - body.acquiredAt > LOCK_STALE_MS
-      if (!stale && body.hostname === os.hostname() && typeof body.pid === "number") {
-        try { process.kill(body.pid, 0) } catch (err) { stale = (err as NodeJS.ErrnoException).code === "ESRCH" }
-      }
-    } catch {
-      try { stale = Date.now() - fs.statSync(lockPath).mtimeMs > LOCK_STALE_MS } catch {}
-    }
-    if (stale) {
-      const graveyard = lockPath + "." + crypto.randomBytes(4).toString("hex") + ".stale"
-      try { fs.renameSync(lockPath, graveyard); try { fs.unlinkSync(graveyard) } catch {} } catch {}
-    }
+  while (!tryAcquire(lockPath)) {
     if (Date.now() >= deadline) return null
     lockSleep(25 + Math.floor(Math.random() * 25))
   }
   try {
     return fn()
   } finally {
-    try { fs.unlinkSync(lockPath) } catch {}
+    release(lockPath)
   }
 }

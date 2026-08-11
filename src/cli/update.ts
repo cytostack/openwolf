@@ -48,6 +48,8 @@ const USER_DATA_FILES = [
   "identity.md", "cerebrum.md", "memory.md", "anatomy.md", "anatomy-index.json", "STATUS.md",
   "token-ledger.json", "buglog.json", "cron-manifest.json", "cron-state.json",
   "suggestions.json",
+  "hippocampus.json", "cue-index.json", "neocortex.json",
+  "claims.json", "claim-index.json",
 ];
 
 // Files to include in backup

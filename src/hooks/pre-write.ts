@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getWolfDir, ensureWolfDir, readJSON, readMarkdown, readStdin, normalizePath } from "./shared.js";
+import { getWolfDir, ensureWolfDir, readJSON, readMarkdown, readStdin, resolveProjectPath } from "./shared.js";
 import { Hippocampus } from "../hippocampus/index.js";
 
 interface BugEntry {
@@ -166,13 +166,14 @@ function checkHippocampus(wolfDir: string, filePath: string): void {
 
   try {
     const projectRoot = path.dirname(wolfDir);
+    const resolvedPath = resolveProjectPath(projectRoot, filePath);
+    if (!resolvedPath) return;
+    const { absolutePath, relativePath: relativeFile } = resolvedPath;
     const hippocampus = new Hippocampus(projectRoot);
 
     if (!hippocampus.exists()) return;
 
-    // Get exact file traumas (convert to relative to match stored files_involved)
-    const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(projectRoot, filePath);
-    const relativeFile = normalizePath(path.relative(projectRoot, absolutePath));
+    // Get exact file traumas using the canonical project-relative path.
     const exactTraumas = hippocampus.getTraumas(relativeFile);
     const highIntensityExact = exactTraumas.filter(t => t.outcome.intensity >= 0.6);
 

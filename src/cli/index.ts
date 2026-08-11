@@ -8,6 +8,7 @@ import { scanCommand } from "./scan.js";
 import { dashboardCommand } from "./dashboard.js";
 import { createRecallCommand } from "./recall.js";
 import { reportCommand } from "./report.js";
+import { createClaimCommand } from "./claim.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -55,8 +56,9 @@ export function createProgram(): Command {
     .description("Open browser to dashboard")
     .action(dashboardCommand);
 
-  // --- Recall command ---
+  // --- Recall and current-knowledge commands ---
   program.addCommand(createRecallCommand());
+  program.addCommand(createClaimCommand());
 
   program
     .command("report")

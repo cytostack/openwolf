@@ -1,7 +1,6 @@
 // Hippocampus Memory System — Cue Recall Algorithm
 // Phase 2: Recall events given a cue
 
-import * as path from "path";
 import type {
   WolfEvent,
   Cue,
@@ -12,7 +11,6 @@ import type {
   RecallResponse,
   MatchDetail,
   CueIndex,
-  LocationMatchMode,
 } from "./types.js";
 
 // ============================================================
@@ -50,6 +48,10 @@ export function scoreEvent(
       score += locScore * WEIGHTS.location;
       reasons.push(`${cue.match_mode || "exact"} path match`);
     }
+  } else if (cue.type === "state") {
+    const stateMatch = scoreStateMatch(event, cue);
+    score += stateMatch.score * WEIGHTS.location;
+    reasons.push(...stateMatch.reasons);
   }
 
   // Recency boost
@@ -89,8 +91,12 @@ export function scoreLocationMatch(
   event: WolfEvent,
   cue: LocationCue
 ): number {
-  const eventPaths = Array.from(new Set(event.context.files_involved));
-  const cuePaths = Array.isArray(cue.path) ? cue.path : [cue.path];
+  const eventPaths = Array.from(
+    new Set(event.context.files_involved.map(normalizeRecallPath))
+  );
+  const cuePaths = (Array.isArray(cue.path) ? cue.path : [cue.path]).map(
+    normalizeRecallPath
+  );
   const matchMode = cue.match_mode || "exact";
 
   switch (matchMode) {
@@ -175,27 +181,55 @@ export function matchGlob(filePath: string, pattern: string): boolean {
   }
 }
 
-/**
- * Get all parent directories of a file path
- */
-export function getParentDirectories(filePath: string): string[] {
-  const parents: string[] = [];
-  const normalized = path.normalize(filePath);
-  const parts = normalized.split(path.sep);
-
-  for (let i = 1; i < parts.length; i++) {
-    const parent = parts.slice(0, i).join(path.sep) + path.sep;
-    parents.push(parent);
+/** Normalize stored and requested paths independently of the host platform. */
+export function normalizeRecallPath(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, "/").replace(/\/+/g, "/");
+  const driveMatch = normalized.match(/^([A-Za-z]:)(?:\/|$)/);
+  const isAbsolute = normalized.startsWith("/");
+  const prefix = driveMatch ? `${driveMatch[1]}/` : isAbsolute ? "/" : "";
+  const body = driveMatch
+    ? normalized.slice(driveMatch[0].length)
+    : isAbsolute
+      ? normalized.slice(1)
+      : normalized;
+  const parts: string[] = [];
+  for (const part of body.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (parts.length > 0) parts.pop();
+      continue;
+    }
+    parts.push(part);
   }
+  return prefix + parts.join("/");
+}
 
+/** Get all parent directory prefixes, nearest and distant. */
+export function getParentDirectories(filePath: string): string[] {
+  const normalized = normalizeRecallPath(filePath);
+  const slash = normalized.lastIndexOf("/");
+  if (slash < 0) return [];
+
+  const prefix = normalized.startsWith("/")
+    ? "/"
+    : /^[A-Za-z]:\//.test(normalized)
+      ? normalized.slice(0, 3)
+      : "";
+  const body = normalized.slice(prefix.length);
+  const parts = body.split("/").filter(Boolean);
+  const parents: string[] = [];
+  for (let i = parts.length - 1; i > 0; i--) {
+    parents.push(prefix + parts.slice(0, i).join("/") + "/");
+  }
+  if (prefix && parts.length > 0) parents.push(prefix);
   return parents;
 }
 
-/**
- * Get the directory part of a file path
- */
+/** Get the directory part of a normalized path. */
 export function getDirectory(filePath: string): string {
-  return path.dirname(filePath);
+  const normalized = normalizeRecallPath(filePath);
+  const separator = normalized.lastIndexOf("/");
+  return separator < 0 ? "." : normalized.slice(0, separator);
 }
 
 /**
@@ -228,7 +262,11 @@ export function scoreStateMatch(
 
   // File matching
   if (cue.error?.file) {
-    if (event.context.files_involved.includes(cue.error.file)) {
+    if (
+      event.context.files_involved
+        .map(normalizeRecallPath)
+        .includes(normalizeRecallPath(cue.error.file))
+    ) {
       score += 0.3;
       reasons.push(`same file: ${cue.error.file}`);
     }
@@ -261,7 +299,8 @@ export function recallEvents(
   } else if (cue.type === "question") {
     candidateIds = getQuestionCandidateIds(cue, index);
   } else if (cue.type === "state") {
-    candidateIds = getStateCandidateIds(cue, index);
+    // State matching is content-based rather than keyed by the cue index.
+    candidateIds = index.event_ids ?? events.map((event) => event.id);
   }
 
   // Load candidate events
@@ -276,10 +315,13 @@ export function recallEvents(
   }
 
   // Score and sort
-  const scored = candidates.map((event) => {
-    const { score, reasons } = scoreEvent(event, cue, request, index);
-    return { event, score, reasons };
-  });
+  const scored = candidates
+    .map((event) => {
+      const cueMatched = cue.type !== "state" || scoreStateMatch(event, cue).score > 0;
+      const { score, reasons } = scoreEvent(event, cue, request, index);
+      return { event, score, reasons, cueMatched };
+    })
+    .filter(({ cueMatched }) => cueMatched);
 
   scored.sort((a, b) => b.score - a.score);
 
@@ -315,7 +357,9 @@ function getLocationCandidateIds(
   cue: LocationCue,
   index: CueIndex
 ): string[] {
-  const cuePaths = Array.isArray(cue.path) ? cue.path : [cue.path];
+  const cuePaths = (Array.isArray(cue.path) ? cue.path : [cue.path]).map(
+    normalizeRecallPath
+  );
   const matchMode = cue.match_mode || "exact";
   const ids = new Set<string>();
 
@@ -329,8 +373,8 @@ function getLocationCandidateIds(
 
     case "prefix":
       for (const p of cuePaths) {
-        for (const [path, pathIds] of Object.entries(index.location_index)) {
-          if (path.startsWith(p)) {
+        for (const [indexedPath, pathIds] of Object.entries(index.location_index)) {
+          if (normalizeRecallPath(indexedPath).startsWith(p)) {
             pathIds.forEach((id) => ids.add(id));
           }
         }
@@ -339,8 +383,8 @@ function getLocationCandidateIds(
 
     case "glob":
       for (const pattern of cuePaths) {
-        for (const [path, pathIds] of Object.entries(index.location_index)) {
-          if (matchGlob(path, pattern)) {
+        for (const [indexedPath, pathIds] of Object.entries(index.location_index)) {
+          if (matchGlob(normalizeRecallPath(indexedPath), pattern)) {
             pathIds.forEach((id) => ids.add(id));
           }
         }
@@ -350,9 +394,11 @@ function getLocationCandidateIds(
     case "parent":
       for (const p of cuePaths) {
         const parents = getParentDirectories(p);
-        for (const parent of parents) {
-          const pathIds = index.location_index[parent] || [];
-          pathIds.forEach((id) => ids.add(id));
+        for (const [indexedPath, pathIds] of Object.entries(index.location_index)) {
+          const normalizedPath = normalizeRecallPath(indexedPath);
+          if (parents.some((parent) => normalizedPath.startsWith(parent))) {
+            pathIds.forEach((id) => ids.add(id));
+          }
         }
       }
       break;
@@ -360,8 +406,8 @@ function getLocationCandidateIds(
     case "sibling":
       for (const p of cuePaths) {
         const dir = getDirectory(p);
-        for (const [path, pathIds] of Object.entries(index.location_index)) {
-          if (getDirectory(path) === dir) {
+        for (const [indexedPath, pathIds] of Object.entries(index.location_index)) {
+          if (getDirectory(indexedPath) === dir) {
             pathIds.forEach((id) => ids.add(id));
           }
         }
@@ -393,15 +439,6 @@ function getQuestionCandidateIds(
   }
 
   return Array.from(ids);
-}
-
-function getStateCandidateIds(
-  cue: StateCue,
-  _index: CueIndex
-): string[] {
-  // State cue requires scanning events for error matching
-  // This is handled in the full recall flow
-  return [];
 }
 
 // ============================================================

@@ -1,8 +1,7 @@
 // Hippocampus Event Store — CRUD for hippocampus.json
 
-import * as fs from "node:fs";
-import * as path from "node:path";
 import { HippocampusStore, WolfEvent, Valence } from "./types.js";
+import { readJsonFile, writeJsonAtomic } from "./persistence.js";
 
 // Re-export types for external use
 export type { HippocampusStore, WolfEvent, Valence };
@@ -38,22 +37,17 @@ export function createEmptyStore(projectRoot: string): HippocampusStore {
   };
 }
 
-export function loadStore(hippocampusPath: string): HippocampusStore | null {
-  try {
-    if (!fs.existsSync(hippocampusPath)) {
-      return null;
-    }
-    const data = fs.readFileSync(hippocampusPath, "utf-8");
-    return JSON.parse(data) as HippocampusStore;
-  } catch {
-    return null;
-  }
+export function loadStore(
+  hippocampusPath: string,
+  recoverCorrupt: boolean = false
+): HippocampusStore | null {
+  return readJsonFile<HippocampusStore>(hippocampusPath, recoverCorrupt);
 }
 
 export function saveStore(hippocampusPath: string, store: HippocampusStore): void {
   store.last_updated = new Date().toISOString();
   store.size_bytes = Buffer.byteLength(JSON.stringify(store), "utf-8");
-  fs.writeFileSync(hippocampusPath, JSON.stringify(store, null, 2), "utf-8");
+  writeJsonAtomic(hippocampusPath, store);
 }
 
 export function addEventToStore(store: HippocampusStore, event: WolfEvent): void {

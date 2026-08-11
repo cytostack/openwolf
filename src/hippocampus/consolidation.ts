@@ -1,8 +1,7 @@
 // Hippocampus Consolidation — Neocortex Store & Memory Transfer
 
-import * as fs from "node:fs";
-import * as path from "node:path";
 import { WolfEvent, HippocampusStore, ConsolidationStage } from "./types.js";
+import { readJsonFile, writeJsonAtomic } from "./persistence.js";
 
 export interface NeocortexStore {
   version: 1;
@@ -37,7 +36,15 @@ export interface ConsolidationReport {
   forgotten: number;
   kept: number;
   new_neocortex_size: number;
+  /** Complete IDs promoted into long-term storage, independent of report truncation. */
+  transferred_event_ids: string[];
   results: ConsolidationResult[];
+}
+
+export interface PendingLongTermTransfer {
+  version: 1;
+  created_at: string;
+  events: WolfEvent[];
 }
 
 const DEFAULT_CONFIG = {
@@ -69,22 +76,53 @@ export function createEmptyNeocortex(projectRoot: string): NeocortexStore {
   };
 }
 
-export function loadNeocortex(neocortexPath: string): NeocortexStore | null {
-  try {
-    if (!fs.existsSync(neocortexPath)) {
-      return null;
-    }
-    const data = fs.readFileSync(neocortexPath, "utf-8");
-    return JSON.parse(data) as NeocortexStore;
-  } catch {
-    return null;
-  }
+export function loadNeocortex(
+  neocortexPath: string,
+  recoverCorrupt: boolean = false
+): NeocortexStore | null {
+  return readJsonFile<NeocortexStore>(neocortexPath, recoverCorrupt);
 }
 
 export function saveNeocortex(neocortexPath: string, store: NeocortexStore): void {
   store.last_updated = new Date().toISOString();
   store.size_bytes = Buffer.byteLength(JSON.stringify(store), "utf-8");
-  fs.writeFileSync(neocortexPath, JSON.stringify(store, null, 2), "utf-8");
+  writeJsonAtomic(neocortexPath, store);
+}
+
+export function enforceNeocortexSize(store: NeocortexStore): void {
+  store.size_bytes = Buffer.byteLength(JSON.stringify(store), "utf-8");
+  while (store.events.length > 0 && store.size_bytes > store.max_size_bytes) {
+    const evictIdx = store.events.findIndex(
+      (event) => event.outcome.valence === "neutral" && event.outcome.intensity < 0.5
+    );
+    if (evictIdx === -1) {
+      store.events.shift();
+    } else {
+      store.events.splice(evictIdx, 1);
+    }
+    store.size_bytes = Buffer.byteLength(JSON.stringify(store), "utf-8");
+  }
+}
+
+export function mergeEventsIntoNeocortex(
+  neocortexStore: NeocortexStore,
+  events: readonly WolfEvent[]
+): number {
+  const existingIds = new Set(neocortexStore.events.map((event) => event.id));
+  let added = 0;
+
+  for (const event of events) {
+    if (existingIds.has(event.id)) continue;
+    event.consolidation.stage = "long-term";
+    neocortexStore.events.push(event);
+    existingIds.add(event.id);
+    neocortexStore.stats.total_consolidated++;
+    neocortexStore.stats.by_valence[event.outcome.valence] =
+      (neocortexStore.stats.by_valence[event.outcome.valence] || 0) + 1;
+    added++;
+  }
+
+  return added;
 }
 
 // ─── Consolidation Logic ─────────────────────────────────────
@@ -281,18 +319,59 @@ export function runConsolidation(
 ): ConsolidationReport {
   const now = new Date();
   const results: ConsolidationResult[] = [];
+  const transferredEventIds: string[] = [];
   let promoted = 0;
   let decayed = 0;
   let forgotten = 0;
   let kept = 0;
   const maxToPromote = options?.maxToPromote ?? 50;
 
-  // Process buffer events (short-term -> consolidating)
-  for (const event of hippocampusStore.buffer) {
+  // Process events that were already consolidating before this pass first, so
+  // a stream of new short-term events cannot starve long-term transfers.
+  const initiallyConsolidating = hippocampusStore.buffer.filter(
+    (event) =>
+      event.consolidation.stage === "consolidating" &&
+      !event.consolidation.forgotten
+  );
+
+  for (const event of initiallyConsolidating) {
+    if (promoted >= maxToPromote) break;
+
     const result = determineConsolidationAction(event, now);
     results.push(result);
 
-    // Update decay factor in the event
+    event.consolidation.decay_factor = result.decay_factor ?? event.consolidation.decay_factor;
+    event.consolidation.last_decay_check = now.toISOString();
+
+    if (result.action === "promote" && result.new_stage === "long-term") {
+      event.consolidation.stage = "long-term";
+
+      // Remove from hippocampus buffer. The caller journals and persists these
+      // transfers destination-first before committing the source removal.
+      const idx = hippocampusStore.buffer.indexOf(event);
+      if (idx !== -1) hippocampusStore.buffer.splice(idx, 1);
+      transferredEventIds.push(event.id);
+      promoted++;
+    } else if (result.action === "forget") {
+      event.consolidation.forgotten = true;
+      event.consolidation.forgotten_at = now.toISOString();
+      hippocampusStore.buffer = hippocampusStore.buffer.filter((e) => e.id !== event.id);
+      forgotten++;
+    } else if (result.action === "keep") {
+      kept++;
+    }
+  }
+
+  // Advance short-term events with whatever promotion budget remains. They are
+  // not eligible for long-term transfer until a later pass.
+  const shortTermEvents = hippocampusStore.buffer.filter(
+    (event) => event.consolidation.stage === "short-term"
+  );
+  for (const event of shortTermEvents) {
+    if (promoted >= maxToPromote) break;
+    const result = determineConsolidationAction(event, now);
+    results.push(result);
+
     event.consolidation.decay_factor = result.decay_factor ?? event.consolidation.decay_factor;
     event.consolidation.last_decay_check = now.toISOString();
 
@@ -310,7 +389,6 @@ export function runConsolidation(
       case "forget":
         event.consolidation.forgotten = true;
         event.consolidation.forgotten_at = now.toISOString();
-        // Remove from buffer immediately to prevent duplicate processing
         hippocampusStore.buffer = hippocampusStore.buffer.filter((e) => e.id !== event.id);
         forgotten++;
         break;
@@ -320,65 +398,13 @@ export function runConsolidation(
     }
   }
 
-  // Process consolidating events (consolidating -> long-term)
-  const consolidatingEvents = hippocampusStore.buffer.filter(
-    (e) => e.consolidation.stage === "consolidating" && !e.consolidation.forgotten
-  );
-
-  for (const event of consolidatingEvents) {
-    if (promoted >= maxToPromote) break;
-
-    const result = determineConsolidationAction(event, now);
-    results.push(result);
-
-    event.consolidation.decay_factor = result.decay_factor ?? event.consolidation.decay_factor;
-    event.consolidation.last_decay_check = now.toISOString();
-
-    if (result.action === "promote" && result.new_stage === "long-term") {
-      // Move to neocortex
-      event.consolidation.stage = "long-term";
-      neocortexStore.events.push(event);
-      neocortexStore.stats.total_consolidated++;
-      neocortexStore.stats.by_valence[event.outcome.valence] =
-        (neocortexStore.stats.by_valence[event.outcome.valence] || 0) + 1;
-
-      // Remove from hippocampus buffer
-      const idx = hippocampusStore.buffer.indexOf(event);
-      if (idx !== -1) hippocampusStore.buffer.splice(idx, 1);
-
-      promoted++;
-    } else if (result.action === "forget") {
-      event.consolidation.forgotten = true;
-      event.consolidation.forgotten_at = now.toISOString();
-      hippocampusStore.buffer = hippocampusStore.buffer.filter((e) => e.id !== event.id);
-      forgotten++;
-    } else if (result.action === "keep") {
-      kept++;
-    }
-  }
-
   // Remove forgotten events from buffer
   hippocampusStore.buffer = hippocampusStore.buffer.filter((e) => !e.consolidation.forgotten);
 
   // Update neocortex stats
   neocortexStore.stats.last_consolidation = now.toISOString();
 
-  // Enforce neocortex max size (evict oldest long-term events if needed)
-  while (neocortexStore.events.length > 0 &&
-         neocortexStore.size_bytes > DEFAULT_CONFIG.max_size_bytes) {
-    // Evict oldest low-intensity neutral events first
-    const evictIdx = neocortexStore.events.findIndex(
-      (e) => e.outcome.valence === "neutral" && e.outcome.intensity < 0.5
-    );
-    if (evictIdx === -1) {
-      // Fallback: evict oldest
-      neocortexStore.events.shift();
-    } else {
-      neocortexStore.events.splice(evictIdx, 1);
-    }
-    // Recalculate size
-    neocortexStore.size_bytes = Buffer.byteLength(JSON.stringify(neocortexStore), "utf-8");
-  }
+  enforceNeocortexSize(neocortexStore);
 
   return {
     timestamp: now.toISOString(),
@@ -388,7 +414,8 @@ export function runConsolidation(
     forgotten,
     kept,
     new_neocortex_size: neocortexStore.size_bytes,
-    results: results.slice(0, 100), // Cap results to avoid huge reports
+    transferred_event_ids: transferredEventIds,
+    results: results.slice(0, 100), // Cap human-facing detail without hiding transfers
   };
 }
 
@@ -403,7 +430,7 @@ export function getNeocortexEvents(
     limit?: number;
   }
 ): WolfEvent[] {
-  let events = neocortexStore.events;
+  let events = [...neocortexStore.events];
 
   if (filters?.valence && filters.valence.length > 0) {
     events = events.filter((e) => filters.valence!.includes(e.outcome.valence));

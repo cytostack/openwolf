@@ -52,6 +52,8 @@ const CREATE_IF_MISSING = [
   "hippocampus.json",
   "cue-index.json",
   "neocortex.json",
+  "claims.json",
+  "claim-index.json",
 ];
 
 // Use $CLAUDE_PROJECT_DIR so hooks resolve correctly even if CWD changes during a session
@@ -233,6 +235,20 @@ export async function initCommand(options?: { agent?: string[] }): Promise<void>
   if (!neocortex.created_at) { neocortex.created_at = now; }
   if (!neocortex.last_updated) { neocortex.last_updated = now; }
   writeJSON(neocortexPath, neocortex);
+
+  // --- Claim projection: fill project_root and timestamps ---
+  const claimsPath = path.join(wolfDir, "claims.json");
+  const claims = readJSON<Record<string, unknown>>(claimsPath, {});
+  if (!claims.project_root) { claims.project_root = projectRoot; }
+  if (!claims.created_at) { claims.created_at = now; }
+  if (!claims.last_updated) { claims.last_updated = now; }
+  writeJSON(claimsPath, claims);
+
+  // --- Derived claim index: fill initial timestamp ---
+  const claimIndexPath = path.join(wolfDir, "claim-index.json");
+  const claimIndex = readJSON<Record<string, unknown>>(claimIndexPath, {});
+  if (!claimIndex.last_updated) { claimIndex.last_updated = now; }
+  writeJSON(claimIndexPath, claimIndex);
 
   // --- Hook scripts: always update (bug fixes, new features) ---
   copyHookScripts(wolfDir);

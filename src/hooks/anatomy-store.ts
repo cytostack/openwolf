@@ -87,19 +87,35 @@ export function loadStore(wolfDir: string): AnatomyStoreData | null {
   }
 }
 
+function writeFileAtomic(filePath: string, content: string): void {
+  const dir = path.dirname(filePath);
+  fs.mkdirSync(dir, { recursive: true });
+  const tmp = path.join(
+    dir,
+    `.${path.basename(filePath)}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`
+  );
+
+  try {
+    const fd = fs.openSync(tmp, "wx", 0o600);
+    try {
+      fs.writeFileSync(fd, content, "utf-8");
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tmp, filePath);
+  } finally {
+    try { fs.unlinkSync(tmp); } catch {}
+  }
+}
+
 export function saveStore(wolfDir: string, store: AnatomyStoreData): void {
   store.meta.fileCount = Object.keys(store.files).length;
   store.meta.storeUpdatedAt = new Date().toISOString();
-  const filePath = path.join(wolfDir, STORE_FILE);
-  const tmp = filePath + "." + crypto.randomBytes(4).toString("hex") + ".tmp";
-  const body = JSON.stringify(store, null, 2);
-  try {
-    fs.writeFileSync(tmp, body, "utf-8");
-    fs.renameSync(tmp, filePath);
-  } catch {
-    try { fs.writeFileSync(filePath, body, "utf-8"); } catch {}
-    try { fs.unlinkSync(tmp); } catch {}
-  }
+  writeFileAtomic(
+    path.join(wolfDir, STORE_FILE),
+    JSON.stringify(store, null, 2) + "\n"
+  );
 }
 
 // ── Markdown format (canonical — the legacy contract, unchanged) ────────────
@@ -204,15 +220,7 @@ export function renderStore(store: AnatomyStoreData): string {
 export function renderToFile(wolfDir: string, store: AnatomyStoreData): void {
   const content = renderStore(store);
   store.meta.renderedHash = sha256(content);
-  const anatomyPath = path.join(wolfDir, "anatomy.md");
-  const tmp = anatomyPath + "." + crypto.randomBytes(4).toString("hex") + ".tmp";
-  try {
-    fs.writeFileSync(tmp, content, "utf-8");
-    fs.renameSync(tmp, anatomyPath);
-  } catch {
-    try { fs.writeFileSync(anatomyPath, content, "utf-8"); } catch {}
-    try { fs.unlinkSync(tmp); } catch {}
-  }
+  writeFileAtomic(path.join(wolfDir, "anatomy.md"), content);
 }
 
 /**

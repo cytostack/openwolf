@@ -31,7 +31,15 @@ export function recallCommand(query: string, opts: {
   };
 
   // Execute recall
-  const response = hippocampus.recall(request);
+  let response;
+  try {
+    response = hippocampus.recall(request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Error: hippocampus recall failed: ${message}`);
+    process.exitCode = 1;
+    return;
+  }
 
   // Output results
   if (opts.json) {
