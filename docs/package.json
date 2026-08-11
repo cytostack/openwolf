@@ -9,9 +9,9 @@
     "preview": "vitepress preview"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.2.2",
+    "@tailwindcss/vite": "^4.3.3",
     "daisyui": "^5.5.19",
     "tailwindcss": "^4.2.2",
-    "vitepress": "^1.6.4"
+    "vitepress": "2.0.0-alpha.12"
   }
 }

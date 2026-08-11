@@ -24,27 +24,27 @@
     "express": "^5.2.1",
     "node-cron": "^4.2.1",
     "open": "^10.0.0",
-    "ws": "^8.18.0"
+    "ws": "^8.21.3"
   },
   "optionalDependencies": {
-    "puppeteer-core": "^24.42.0"
+    "puppeteer-core": "^24.43.1"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.0.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
     "@types/node-cron": "^3.0.11",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/ws": "^8.5.12",
-    "@vitejs/plugin-react": "^4.0.0",
+    "@vitejs/plugin-react": "^4.7.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "recharts": "^2.15.0",
+    "recharts": "^2.15.4",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",
-    "vite": "^6.0.0",
-    "vitepress": "^1.6.4"
+    "vite": "^6.4.3",
+    "vitepress": "2.0.0-alpha.12"
   },
   "engines": {
     "node": ">=20.0.0"
