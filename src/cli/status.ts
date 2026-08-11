@@ -1,7 +1,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { findProjectRoot } from "../scanner/project-root.js";
 import { readJSON, readText } from "../utils/fs-safe.js";
+import { HOOK_ENTRYPOINTS, listHookModules, resolveHookSourceDir } from "../utils/hook-files.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export async function statusCommand(): Promise<void> {
   const projectRoot = findProjectRoot();
@@ -34,20 +38,19 @@ export async function statusCommand(): Promise<void> {
     console.log(`  ✓ All ${requiredFiles.length} core files present`);
   }
 
-  // Hook scripts check
-  const hookFiles = [
-    "session-start.js", "pre-read.js", "pre-write.js",
-    "post-read.js", "post-write.js", "stop.js", "shared.js",
-  ];
+  // Hook scripts check — compare against what the installed package ships, not a
+  // hardcoded list. The entrypoints import helper modules, and a missing helper
+  // kills the hook just as dead as a missing entrypoint.
   const hooksDir = path.join(wolfDir, "hooks");
-  let hooksMissing = 0;
-  for (const file of hookFiles) {
-    if (!fs.existsSync(path.join(hooksDir, file))) hooksMissing++;
-  }
-  if (hooksMissing === 0) {
+  const hookSourceDir = resolveHookSourceDir(__dirname);
+  const expectedHooks = listHookModules(hookSourceDir);
+  const hookFiles = expectedHooks.length ? expectedHooks : [...HOOK_ENTRYPOINTS];
+  const missingHooks = hookFiles.filter((file) => !fs.existsSync(path.join(hooksDir, file)));
+  if (missingHooks.length === 0) {
     console.log(`  ✓ All ${hookFiles.length} hook scripts present`);
   } else {
-    console.log(`  ✗ Missing ${hooksMissing} hook scripts`);
+    console.log(`  ✗ Missing ${missingHooks.length} hook scripts: ${missingHooks.join(", ")}`);
+    console.log(`    Run: openwolf update`);
   }
 
   // Claude settings check

@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { getRegisteredProjects, registerProject, type RegisteredProject } from "./registry.js";
 import { readJSON, writeJSON, readText, writeText, safeCopyFile } from "../utils/fs-safe.js";
 import { ensureDir } from "../utils/paths.js";
+import { listHookModules, resolveHookSourceDir } from "../utils/hook-files.js";
 import { resolveAgents, availableAgents } from "../agents/index.js";
 import { newStore, importFromMarkdown, saveStore, STORE_FILE, sha256 as storeSha256 } from "../hooks/anatomy-store.js";
 import { installSkills } from "../agents/skills.js";
@@ -436,32 +437,11 @@ function copyHookScripts(wolfDir: string): void {
   const hooksDir = path.join(wolfDir, "hooks");
   ensureDir(hooksDir);
 
-  const candidates = [
-    path.join(__dirname, "..", "hooks"),
-    path.resolve(__dirname, "..", "..", "hooks"),
-    path.resolve(__dirname, "..", "..", "dist", "hooks"),
-  ];
-
-  let sourceDir = "";
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate) && fs.existsSync(path.join(candidate, "shared.js"))) {
-      sourceDir = candidate;
-      break;
-    }
-  }
-
-  const hookFiles = [
-    "session-start.js", "pre-read.js", "pre-write.js",
-    "post-read.js", "post-write.js", "precompact.js", "stop.js", "shared.js",
-    "anatomy-store.js", "anatomy-lock.js",
-  ];
+  const sourceDir = resolveHookSourceDir(__dirname);
 
   if (sourceDir) {
-    for (const file of hookFiles) {
-      const src = path.join(sourceDir, file);
-      if (fs.existsSync(src)) {
-        safeCopyFile(src, path.join(hooksDir, file));
-      }
+    for (const file of listHookModules(sourceDir)) {
+      safeCopyFile(path.join(sourceDir, file), path.join(hooksDir, file));
     }
   }
 
