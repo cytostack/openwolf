@@ -14,6 +14,14 @@
     "declarationMap": false,
     "sourceMap": true
   },
-  "include": ["bin/**/*.ts", "src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "src/dashboard/app"]
+  "include": [
+    "bin/**/*.ts",
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/dashboard/app",
+    "src/templates/opencode-plugin"
+  ]
 }

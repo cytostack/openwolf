@@ -5,13 +5,14 @@ import { fileURLToPath } from "node:url";
 import { fork } from "node:child_process";
 import { findProjectRoot } from "../scanner/project-root.js";
 import { readJSON } from "../utils/fs-safe.js";
+import { getDashboardToken } from "../utils/dashboard-auth.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 interface WolfConfig {
   openwolf: {
-    dashboard: { port: number };
+    dashboard: { port: number; host?: string };
   };
 }
 
@@ -48,50 +49,84 @@ export async function dashboardCommand(): Promise<void> {
     openwolf: { dashboard: { port: 18791 } },
   });
 
-  const port = config.openwolf.dashboard.port;
-  const url = `http://localhost:${port}`;
+  const configuredPort = config.openwolf.dashboard.port;
+  const host = config.openwolf.dashboard.host || "127.0.0.1";
+  const displayHost = host === "0.0.0.0" ? "localhost" : host;
+  const token = getDashboardToken(wolfDir);
 
-  // Check if daemon is already running on that port
-  const running = await isPortOpen(port);
+  const daemonScript = path.resolve(__dirname, "..", "daemon", "wolf-daemon.js");
 
-  if (!running) {
-    console.log("  Daemon not running. Starting dashboard server...");
-
-    // Find the daemon script
-    const daemonScript = path.resolve(__dirname, "..", "daemon", "wolf-daemon.js");
-    if (!fs.existsSync(daemonScript)) {
-      console.error(`  Daemon script not found at: ${daemonScript}`);
-      console.log("  Run 'pnpm build' in the openwolf directory first.");
-      return;
+  // Does the server on `p` accept THIS project's token? Distinguishes our own
+  // daemon from another project's daemon squatting the shared default port.
+  async function isOurDaemon(p: number): Promise<boolean> {
+    try {
+      const res = await fetch(`http://${displayHost}:${p}/api/health`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(1500),
+      });
+      return res.ok;
+    } catch {
+      return false;
     }
+  }
 
-    // Fork the daemon as a child process, passing project root explicitly
+  function spawnDaemon(p: number): void {
     const child = fork(daemonScript, [], {
       cwd: projectRoot,
-      env: { ...process.env, OPENWOLF_PROJECT_ROOT: projectRoot },
+      env: { ...process.env, OPENWOLF_PROJECT_ROOT: projectRoot, OPENWOLF_DASHBOARD_PORT: String(p) },
+      // Do not inherit the launcher's execArgv (e.g. --input-type=module): the
+      // daemon is a plain script and inherited flags can abort its startup.
+      execArgv: [],
       detached: true,
       stdio: "ignore",
     });
     child.unref();
+  }
 
-    // Wait for the port to open (up to 5 seconds)
-    let ready = false;
+  async function waitForOurDaemon(p: number): Promise<boolean> {
     for (let i = 0; i < 25; i++) {
       await new Promise((r) => setTimeout(r, 200));
-      if (await isPortOpen(port)) {
-        ready = true;
-        break;
-      }
+      if (await isOurDaemon(p)) return true;
     }
+    return false;
+  }
 
-    if (!ready) {
+  if (!fs.existsSync(daemonScript)) {
+    console.error(`  Daemon script not found at: ${daemonScript}`);
+    console.log("  Run 'pnpm build' in the openwolf directory first.");
+    return;
+  }
+
+  let servePort = configuredPort;
+
+  if (await isPortOpen(configuredPort)) {
+    if (await isOurDaemon(configuredPort)) {
+      // Our own daemon is already serving this project. Reuse it.
+    } else {
+      // The port is held by another project's daemon (or an unrelated server).
+      // Start this project's dashboard on the next free port instead of
+      // opening a URL against a server that will reject our token with 401.
+      servePort = configuredPort + 1;
+      while (await isPortOpen(servePort) && servePort < configuredPort + 50) servePort++;
+      console.log(`  Port ${configuredPort} is in use by another server. Starting this project's dashboard on port ${servePort}...`);
+      spawnDaemon(servePort);
+      if (!(await waitForOurDaemon(servePort))) {
+        console.log(`  Server didn't start in time. Try: OPENWOLF_DASHBOARD_PORT=${servePort} node "${daemonScript}"`);
+        return;
+      }
+      console.log(`  ✓ Dashboard server running on port ${servePort}`);
+    }
+  } else {
+    console.log("  Daemon not running. Starting dashboard server...");
+    spawnDaemon(configuredPort);
+    if (!(await waitForOurDaemon(configuredPort))) {
       console.log(`  Server didn't start in time. Try manually: node "${daemonScript}"`);
       return;
     }
-
-    console.log(`  ✓ Dashboard server running on port ${port}`);
+    console.log(`  ✓ Dashboard server running on port ${configuredPort}`);
   }
 
+  const url = `http://${displayHost}:${servePort}/?token=${encodeURIComponent(token)}`;
   console.log(`  Opening ${url}...`);
 
   try {

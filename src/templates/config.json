@@ -58,16 +58,18 @@
     },
     "dashboard": {
       "enabled": true,
-      "port": 18791
+      "port": 18791,
+      "host": "127.0.0.1"
     },
-    "designqc": {
-      "enabled": true,
-      "viewports": [
-        { "name": "desktop", "width": 1440, "height": 900 },
-        { "name": "mobile", "width": 375, "height": 812 }
-      ],
-      "max_screenshots": 6,
-      "chrome_path": null
+    "context": {
+      "session_digest_budget_tokens": 1500,
+      "budgets": {
+        "claude": 1500,
+        "codex": 1200,
+        "gemini": 1200,
+        "opencode": 1200,
+        "cursor": 800
+      }
     }
   }
 }

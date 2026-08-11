@@ -10,20 +10,30 @@ Initialize OpenWolf in the current project.
 openwolf init
 ```
 
+**Options:**
+
+```bash
+openwolf init                          # auto-detect installed agents (default)
+openwolf init --agent codex opencode   # wire exactly these agents
+openwolf init --agent all              # wire every supported agent
+openwolf init --agent claude           # Claude Code only, skip detection
+```
+
 **What it does:**
 1. Detects the project root (looks for `.git`, `package.json`, `Cargo.toml`, etc.)
-2. Creates `.wolf/` with 10 template files
-3. Copies 7 hook scripts to `.wolf/hooks/`
-4. Registers 6 Claude Code hooks in `.claude/settings.json`
-5. Creates `.claude/rules/openwolf.md`
-6. Prepends the OpenWolf snippet to `CLAUDE.md`
-7. Runs an initial anatomy scan
-8. Populates `cerebrum.md` with detected project name and description
+2. Creates `.wolf/` with the template files and the durable anatomy store
+3. Copies the lifecycle hook scripts to `.wolf/hooks/`
+4. Registers 7 hooks in `.claude/settings.json`
+5. Auto-detects installed agents (Codex, OpenCode, Gemini CLI, Cursor) and wires each one: hook registrations, protocol blocks, or plugins as appropriate
+6. Installs the bundled skills (`/security-audit`, `/reframe`) for every wired agent
+7. Creates `.claude/rules/openwolf.md` and prepends the OpenWolf snippet to `CLAUDE.md`
+8. Runs the initial anatomy scan (descriptions, token estimates, symbols)
+9. Populates `cerebrum.md` with detected project name and description
 
 If `.wolf/` already exists, it reinitializes (overwrites templates, preserves learned data).
 
 ::: info
-If `.claude/settings.json` already has hooks, OpenWolf merges its hooks in -- existing hooks are not overwritten.
+If `.claude/settings.json` already has hooks, OpenWolf merges its hooks in, existing hooks are not overwritten.
 :::
 
 ---
@@ -41,9 +51,9 @@ openwolf status
 OpenWolf Status
 ===============
 
-  ✓ All 10 core files present
+  ✓ All core files present
   ✓ All 7 hook scripts present
-  ✓ Claude Code hooks registered (6 matchers)
+  ✓ Agent hooks registered (claude, codex)
 
 Token Stats:
   Sessions: 12
@@ -88,6 +98,19 @@ openwolf scan --check || echo "anatomy.md is out of date. Run openwolf scan"
 ```
 
 ---
+
+## `openwolf report`
+
+Print the token report: estimated usage (character-ratio heuristic) next to
+measured usage (summed from harness transcripts at session end), plus
+lifetime stats and the most recent measured sessions.
+
+```bash
+openwolf report
+```
+
+Measured figures appear once sessions end under 2.0; older projects show
+estimates only until then.
 
 ## `openwolf dashboard`
 
@@ -273,67 +296,6 @@ With a backup name, restores from that backup:
 
 ```bash
 openwolf restore 2026-03-15T10-30-00
-```
-
----
-
-## `openwolf designqc`
-
-Capture full-page screenshots for design evaluation by Claude Code.
-
-```bash
-openwolf designqc [target]
-```
-
-**Options:**
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--url <url>` | *(auto-detect)* | Dev server URL. Auto-starts the dev server if omitted |
-| `--routes <routes...>` | *(all detected)* | Specific routes to capture |
-| `--quality <n>` | `70` | JPEG quality 1--100. Lower values produce smaller files and consume fewer tokens |
-| `--max-width <n>` | `1200` | Maximum capture width in pixels |
-| `--desktop-only` | `false` | Skip mobile viewport captures |
-
-**Requires:** `puppeteer-core` must be installed in the project or globally.
-
-```bash
-npm install puppeteer-core
-```
-
-**How it works:**
-
-1. Detects or starts the project's dev server (Vite, Next.js, etc.)
-2. Launches a headless Chrome/Edge instance
-3. Captures full-page screenshots, split into sections (max 8 sections per route) for large pages
-4. Saves all captures to `.wolf/designqc-captures/`
-
-Screenshots are JPEG at the configured quality to keep file sizes and token counts low.
-
-**Full workflow:**
-
-```bash
-# Step 1: capture screenshots
-openwolf designqc
-
-# Step 2: ask Claude to evaluate the design
-# In your Claude Code session, say:
-#   "Read the screenshots in .wolf/designqc-captures/ and evaluate the design"
-```
-
-Claude evaluates the screenshots inline using its vision capabilities. No separate API key is needed beyond your existing Claude Code subscription.
-
-**Examples:**
-
-```bash
-# Capture specific routes only
-openwolf designqc --routes / /about /pricing
-
-# Point at a running server, desktop only
-openwolf designqc --url http://localhost:3000 --desktop-only
-
-# Lower quality for faster iteration
-openwolf designqc --quality 40 --max-width 800
 ```
 
 ---

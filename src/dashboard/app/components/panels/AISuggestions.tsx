@@ -4,7 +4,7 @@ import type { WolfData } from "../../hooks/useWolfData.js";
 
 const sections = [
   { key: "achievements", title: "Achievements", icon: "🏆", color: "#059669" },
-  { key: "improvements", title: "Improvements", icon: "✨", color: "#3b82f6" },
+  { key: "improvements", title: "Improvements", icon: "◆", color: "var(--text-secondary)" },
   { key: "next_tasks", title: "Next Tasks", icon: "📋", color: "#d97706" },
   { key: "risks", title: "Risks & Tech Debt", icon: "🛡", color: "#dc2626" },
 ] as const;

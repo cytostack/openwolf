@@ -62,8 +62,8 @@ export function ActivityTimeline({ data }: { data: WolfData }) {
               {session.entries.map((entry, ei) => (
                 <div key={ei} className="flex items-center gap-4 px-4 py-3" style={{ borderBottom: ei < session.entries.length - 1 ? "1px solid var(--border)" : "none" }}>
                   <span className="text-xs font-mono w-12 shrink-0" style={{ color: "var(--text-faint)" }}>{entry.time}</span>
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${entry.action.includes("Created") ? "bg-emerald-500" : entry.action.includes("Edited") ? "bg-blue-500" : ""}`}
-                    style={{ background: !entry.action.includes("Created") && !entry.action.includes("Edited") ? "var(--text-faint)" : undefined }} />
+                  <span className="w-2 h-2 rounded-full shrink-0"
+                    style={{ background: entry.action.includes("Created") ? "var(--text-primary)" : entry.action.includes("Edited") ? "var(--text-muted)" : "var(--text-faint)" }} />
                   <span className="text-sm flex-1" style={{ color: "var(--text-secondary)" }}>{entry.action}</span>
                   <span className="text-xs font-mono" style={{ color: "var(--text-faint)" }}>{entry.tokens}</span>
                 </div>

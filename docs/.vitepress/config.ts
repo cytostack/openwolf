@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   title: "OpenWolf",
   description:
-    "Open-source middleware for Claude Code. Project intelligence, persistent memory, and token tracking through invisible hooks. 65% average token reduction.",
+    "A second brain for AI coding agents. Context management, architecture scaffolding, and smarter token utilization through invisible hooks. Works with Codex, OpenCode, Claude Code, and more.",
   head: [
     ["link", { rel: "icon", type: "image/svg+xml", href: "/wolf.svg" }],
     ["link", { rel: "canonical", href: "https://openwolf.com" }],
@@ -38,7 +38,7 @@ export default defineConfig({
       "meta",
       {
         property: "og:title",
-        content: "OpenWolf -- A Second Brain for Claude Code",
+        content: "OpenWolf: A Second Brain for AI Coding Agents",
       },
     ],
     [
@@ -46,7 +46,7 @@ export default defineConfig({
       {
         property: "og:description",
         content:
-          "Open-source hooks that give Claude Code project intelligence, token tracking, and mistake prevention. 2M+ tokens saved across real projects.",
+          "Open-source hooks that give AI coding agents project intelligence, verifiable token measurement, and mistake prevention. Works with Codex, OpenCode, Claude Code, and more.",
       },
     ],
     // Twitter Card
@@ -55,7 +55,7 @@ export default defineConfig({
       "meta",
       {
         name: "twitter:title",
-        content: "OpenWolf -- A Second Brain for Claude Code",
+        content: "OpenWolf: A Second Brain for AI Coding Agents",
       },
     ],
     [
@@ -63,7 +63,7 @@ export default defineConfig({
       {
         name: "twitter:description",
         content:
-          "Open-source hooks that give Claude Code project intelligence, token tracking, and mistake prevention. 2M+ tokens saved across real projects.",
+          "Open-source hooks that give AI coding agents project intelligence, verifiable token measurement, and mistake prevention. Works with Codex, OpenCode, Claude Code, and more.",
       },
     ],
     // Additional SEO
@@ -73,7 +73,7 @@ export default defineConfig({
       {
         name: "keywords",
         content:
-          "claude code, token tracking, context management, ai middleware, claude code hooks, token optimization, open source, developer tools",
+          "ai coding agents, codex, opencode, claude code, cursor, antigravity, context management, token tracking, agent memory, token optimization, open source, developer tools",
       },
     ],
   ],
@@ -108,7 +108,6 @@ export default defineConfig({
       {
         text: "Features",
         items: [
-          { text: "Design QC", link: "/designqc" },
           { text: "Reframe", link: "/reframe" },
         ],
       },

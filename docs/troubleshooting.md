@@ -49,22 +49,13 @@ openwolf dashboard
 
 **Fix:** This is fixed in the latest version. Rebuild and restart the daemon.
 
-## Dashboard shows wrong project
+## Dashboard shows the wrong project (multi-project)
 
-**Symptom:** The dashboard at `localhost:18791` shows files from a different project.
+**Symptom:** Opening one project's dashboard shows another project's data, or a 401 token error.
 
-**Cause:** A stale daemon from a previous project is still running on port 18791.
+**Cause:** Projects created under 1.x all shared the default ports, so their daemons collided and only the first one to start would serve.
 
-**Fix:** Stop the old daemon and start a new one from the correct project:
-
-```bash
-openwolf daemon stop
-```
-
-```bash
-cd your-project
-openwolf dashboard
-```
+**Fix:** This is resolved in OpenWolf 2. Run `openwolf update` once and every project is reassigned a unique port pair. From then on `openwolf dashboard` opens each project on its own port, and if a port is ever still occupied the launcher automatically starts on a free one. A rejected token now shows a clear message instead of a blank screen.
 
 ## Dashboard shows "AI development assistant" instead of project info
 
@@ -98,7 +89,7 @@ Or let OpenWolf detect it from your README. The daemon checks (in order):
 
 **Symptom:** Dashboard fails to start because the port is occupied.
 
-**Fix:** Either stop the existing daemon or change the port in `.wolf/config.json`:
+**Fix:** In OpenWolf 2, `openwolf dashboard` automatically starts on a free port when the configured one is taken, so this rarely happens. To set a fixed port anyway, change it in `.wolf/config.json`:
 
 ```json
 {
@@ -112,9 +103,9 @@ Or let OpenWolf detect it from your README. The daemon checks (in order):
 
 ## Hooks not firing
 
-**Symptom:** OpenWolf doesn't track tokens or update memory when using Claude.
+**Symptom:** OpenWolf doesn't track tokens or update memory when using your agent.
 
-**Cause:** Claude Code hooks aren't registered or the hook scripts are missing.
+**Cause:** The agent's hooks aren't registered or the hook scripts are missing.
 
 **Fix:** Re-run init to register hooks:
 
@@ -128,7 +119,7 @@ Then verify:
 openwolf status
 ```
 
-Look for `✓ Claude Code hooks registered (6 matchers)`.
+Look for the line confirming the agent's hooks are registered.
 
 ## Anatomy scan finds 0 files
 
@@ -141,79 +132,6 @@ openwolf scan
 ```
 
 If files are missing, adjust the exclude patterns. The defaults skip `node_modules`, `.git`, `dist`, `build`, and similar directories.
-
-## designqc: Chrome/Edge not found
-
-**Symptom:** Running `openwolf designqc` shows "Chrome/Edge not found".
-
-**Cause:** Design QC uses `puppeteer-core` which requires an existing browser installation. It does not bundle its own browser.
-
-**Fix:** Install Chrome or Edge, or set the browser path manually in `.wolf/config.json`:
-
-```json
-{
-  "designqc": {
-    "chrome_path": "/path/to/chrome"
-  }
-}
-```
-
-Auto-detection checks these locations in order:
-1. `designqc.chrome_path` in `.wolf/config.json` (if set)
-2. Google Chrome (standard install paths)
-3. Microsoft Edge (standard install paths)
-4. Chromium
-
-## designqc: puppeteer-core not installed
-
-**Symptom:** Running `openwolf designqc` shows "puppeteer-core is required for designqc".
-
-**Cause:** `puppeteer-core` is an optional dependency and was not installed with OpenWolf.
-
-**Fix:** Install it manually:
-
-```bash
-npm install puppeteer-core
-```
-
-This installs the Puppeteer library without downloading a bundled browser (that is what makes it `puppeteer-core` rather than full `puppeteer`).
-
-## designqc: Dev server not detected
-
-**Symptom:** Running `openwolf designqc` shows "No running server found" or "No dev script found".
-
-**Cause:** Design QC needs a running dev server to capture screenshots. It tries to detect one automatically but could not find it.
-
-**Fix:** Either start your dev server manually and pass the URL:
-
-```bash
-openwolf designqc --url http://localhost:3000
-```
-
-Or add a `dev`, `start`, or `serve` script to your `package.json` so that Design QC can detect and start it automatically:
-
-```json
-{
-  "scripts": {
-    "dev": "vite"
-  }
-}
-```
-
-## designqc: Screenshots only show top of page
-
-**Symptom:** Captured screenshots only contain the top portion of the page.
-
-**Cause:** This should not happen in v1.0.0. The capture system uses sectioned capture, which scrolls through the full page taking viewport-height sections until the entire page is covered.
-
-**Fix:** Rebuild OpenWolf to ensure you have the latest capture logic:
-
-```bash
-cd openwolf
-pnpm build
-```
-
-If the issue persists, check that the page content is fully loaded before capture. Pages that lazy-load content on scroll may require a longer wait time.
 
 ## scan --check exits with code 1
 

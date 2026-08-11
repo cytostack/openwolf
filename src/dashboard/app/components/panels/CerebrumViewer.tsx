@@ -54,7 +54,7 @@ export function CerebrumViewer({ data }: { data: WolfData }) {
           onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-surface-hover)")}
           onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
           <div className="flex items-center gap-2">
-            <span className="text-blue-400">◈</span>
+            <span style={{ color: "var(--text-muted)" }}>◈</span>
             <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>User Preferences</h3>
             <span className="text-xs" style={{ color: "var(--text-faint)" }}>{cerebrum.preferences.length}</span>
           </div>
@@ -101,7 +101,7 @@ export function CerebrumViewer({ data }: { data: WolfData }) {
           onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-surface-hover)")}
           onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
           <div className="flex items-center gap-2">
-            <span className="text-amber-400">⚖</span>
+            <span style={{ color: "var(--text-muted)" }}>⚖</span>
             <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>Decision Log</h3>
             <span className="text-xs" style={{ color: "var(--text-faint)" }}>{cerebrum.decisions.length}</span>
           </div>
