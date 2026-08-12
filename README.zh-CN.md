@@ -17,7 +17,13 @@
   <a href="https://www.npmjs.com/package/@alptech/openwolf"><img src="https://img.shields.io/npm/v/@alptech/openwolf.svg" alt="npm version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0" /></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/Node.js-20%2B-green.svg" alt="Node.js" /></a>
-  <a href="README.md"><img src="https://img.shields.io/badge/docs-English-blue.svg" alt="English README" /></a>
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> ·
+  <b>中文</b> ·
+  <a href="README.ja.md">日本語</a> ·
+  <a href="README.ru.md">Русский</a>
 </p>
 
 > **本仓库是 [openwolf](https://github.com/cytostack/openwolf)（[Cytostack](https://github.com/cytostack)）的 fork。** 同步上游业务能力，并保留 `@alptech/openwolf` 包名与项目身份。

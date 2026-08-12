@@ -17,7 +17,13 @@
   <a href="https://www.npmjs.com/package/@alptech/openwolf"><img src="https://img.shields.io/npm/v/@alptech/openwolf.svg" alt="npm version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0" /></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/Node.js-20%2B-green.svg" alt="Node.js" /></a>
-  <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/docs-中文-blue.svg" alt="Chinese README" /></a>
+</p>
+
+<p align="center">
+  <b>English</b> ·
+  <a href="README.zh-CN.md">中文</a> ·
+  <a href="README.ja.md">日本語</a> ·
+  <a href="README.ru.md">Русский</a>
 </p>
 
 <p align="center">

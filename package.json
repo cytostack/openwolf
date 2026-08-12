@@ -76,6 +76,8 @@
     "src/templates/",
     "LICENSE",
     "README.md",
-    "README.zh-CN.md"
+    "README.zh-CN.md",
+    "README.ja.md",
+    "README.ru.md"
   ]
 }
