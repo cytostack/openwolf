@@ -1,8 +1,10 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import {
-  getWolfDir, ensureWolfDir, readJSON, writeJSON, readMarkdown, parseAnatomy,
+  getWolfDir, ensureWolfDir, readJSON, writeJSON,
   estimateTokens, readStdin, normalizePath, getProjectDir
 } from "./shared.js";
+import { lookupEntry } from "./anatomy-store.js";
 
 interface SessionData {
   session_id: string;
@@ -62,24 +64,32 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Check anatomy.md for this file
-  const anatomyContent = readMarkdown(path.join(wolfDir, "anatomy.md"));
-  const sections = parseAnatomy(anatomyContent);
-  let found = false;
+  // Anatomy lookup: O(1) against the durable store, legacy md scan fallback.
+  const entry = lookupEntry(wolfDir, projectDir, normalizedFile);
+  const found = entry !== null;
+  if (entry) {
+    process.stderr.write(
+      `📋 OpenWolf anatomy: ${entry.file} — ${entry.description} (~${entry.tokens} tok)\n`
+    );
 
-  for (const [sectionKey, entries] of sections) {
-    for (const entry of entries) {
-      // Build the full relative path from the section key + filename for accurate matching
-      const entryRelPath = normalizePath(path.join(sectionKey, entry.file));
-      if (normalizedFile.endsWith(entryRelPath) || normalizedFile.endsWith("/" + entryRelPath)) {
+    // Symbol hint (F2b Phase B): point at slices of big files. Suppressed if
+    // the on-disk file no longer matches what was indexed — a stale line
+    // range that misdirects an offset read is worse than no hint at all.
+    if (entry.symbols && entry.symbols.length > 0) {
+      let fresh = false;
+      try {
+        const st = fs.statSync(filePath);
+        fresh = (entry.size === undefined || st.size === entry.size) &&
+                (entry.mtimeMs === undefined || Math.abs(st.mtimeMs - entry.mtimeMs) < 1);
+      } catch {}
+      if (fresh) {
+        const top = [...entry.symbols].sort((a, b) => b.tokens - a.tokens).slice(0, 5);
+        const list = top.map((s) => `${s.kind} ${s.name} L${s.startLine}-${s.endLine} ~${s.tokens} tok`).join("; ");
         process.stderr.write(
-          `📋 OpenWolf anatomy: ${entry.file} — ${entry.description} (~${entry.tokens} tok)\n`
+          `   ↳ symbols: ${list}. Read with offset/limit to fetch just the part you need.\n`
         );
-        found = true;
-        break;
       }
     }
-    if (found) break;
   }
 
   if (found) {

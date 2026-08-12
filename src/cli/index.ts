@@ -6,6 +6,7 @@ import { initCommand } from "./init.js";
 import { statusCommand } from "./status.js";
 import { scanCommand } from "./scan.js";
 import { dashboardCommand } from "./dashboard.js";
+import { reportCommand } from "./report.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,11 +30,13 @@ export function createProgram(): Command {
     .version(getVersion());
 
   program
-    .command("init [target]")
-    .description("Initialize .wolf/ and install Claude/Codex integration in current project")
-    .action(async (target?: string) => {
-      await initCommand(target);
-    });
+    .command("init")
+    .description("Initialize .wolf/ in current project")
+    .option(
+      "--agent <agents...>",
+      "agents to wire up alongside Claude Code: codex, opencode, gemini, cursor, all. Default: auto-detect what's installed; pass 'claude' to wire Claude Code only"
+    )
+    .action((opts: { agent?: string[] }) => initCommand(opts));
 
   program
     .command("status")
@@ -50,6 +53,11 @@ export function createProgram(): Command {
     .command("dashboard")
     .description("Open browser to dashboard")
     .action(dashboardCommand);
+
+  program
+    .command("report")
+    .description("Token report: estimated vs measured (from harness transcripts)")
+    .action(reportCommand);
 
   const daemon = program
     .command("daemon")
@@ -138,20 +146,6 @@ export function createProgram(): Command {
     .action(async (backup?: string) => {
       const { restoreCommand } = await import("./update.js");
       restoreCommand(backup);
-    });
-
-  // --- Design QC command ---
-  program
-    .command("designqc [target]")
-    .description("Capture full-page screenshots for design evaluation by Claude Code")
-    .option("--url <url>", "Dev server URL (auto-starts server if omitted)")
-    .option("--routes <routes...>", "Specific routes to check")
-    .option("--quality <n>", "JPEG quality 1-100 (lower = fewer tokens)", "70")
-    .option("--max-width <n>", "Max capture width in px", "1200")
-    .option("--desktop-only", "Skip mobile viewport captures")
-    .action(async (target: string | undefined, opts: { url?: string; routes?: string[]; quality?: string; maxWidth?: string; desktopOnly?: boolean }) => {
-      const { designqcCommand } = await import("./designqc-cmd.js");
-      await designqcCommand(target, opts);
     });
 
   // --- Bug command ---

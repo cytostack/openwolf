@@ -1,5 +1,6 @@
 import * as path from "node:path";
-import { getWolfDir, ensureWolfDir, readJSON, writeJSON, readMarkdown, parseAnatomy, estimateTokens, readStdin, normalizePath, getProjectDir } from "./shared.js";
+import { getWolfDir, ensureWolfDir, readJSON, writeJSON, estimateTokens, readStdin, normalizePath, getProjectDir } from "./shared.js";
+import { lookupEntry } from "./anatomy-store.js";
 
 interface SessionData {
   files_read: Record<string, { count: number; tokens: number; first_read: string }>;
@@ -44,20 +45,10 @@ async function main(): Promise<void> {
 
   let tokens = content ? estimateTokens(content, type as "code" | "prose" | "mixed") : 0;
 
-  // Fallback: if tool_output had no content, use anatomy token estimate
+  // Fallback: if tool_output had no content, use the anatomy token estimate
   if (tokens === 0) {
-    const anatomyContent = readMarkdown(path.join(wolfDir, "anatomy.md"));
-    const sections = parseAnatomy(anatomyContent);
-    for (const [sectionKey, entries] of sections) {
-      for (const entry of entries) {
-        const entryRelPath = normalizePath(path.join(sectionKey, entry.file));
-        if (normalizedFile.endsWith(entryRelPath) || normalizedFile.endsWith("/" + entryRelPath)) {
-          tokens = entry.tokens;
-          break;
-        }
-      }
-      if (tokens > 0) break;
-    }
+    const entry = lookupEntry(wolfDir, projectDir, normalizedFile);
+    if (entry) tokens = entry.tokens;
   }
 
   const session = readJSON<SessionData>(sessionFile, { files_read: {} });

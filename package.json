@@ -1,7 +1,7 @@
 {
   "name": "@alptech/openwolf",
   "version": "1.0.6",
-  "description": "Token-conscious AI brain for Claude Code projects",
+  "description": "The second brain for Claude Code, now for every AI coding assistant: context management, architecture scaffolding, and smarter token utilization through lifecycle hooks.",
   "type": "module",
   "bin": {
     "openwolf": "./dist/bin/openwolf.js"
@@ -14,25 +14,25 @@
     "dev": "tsc --watch",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
-    "prepublishOnly": "pnpm build"
+    "prepublishOnly": "pnpm build",
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
   },
   "dependencies": {
     "chalk": "^5.3.0",
     "chokidar": "^4.0.0",
     "commander": "^12.0.0",
-    "express": "^5.0.0",
-    "node-cron": "^3.0.3",
+    "express": "^5.2.1",
+    "node-cron": "^4.2.1",
     "open": "^10.0.0",
     "ws": "^8.18.0"
   },
   "optionalDependencies": {
-    "puppeteer-core": "^24.39.1"
+    "puppeteer-core": "^24.42.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
-    "@types/node-cron": "^3.0.11",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/ws": "^8.5.12",
@@ -67,12 +67,15 @@
     "openwolf",
     "claude-code",
     "codex-cli",
+    "opencode",
+    "cursor",
     "developer-tools"
   ],
   "files": [
     "dist/",
     "src/templates/",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "README.zh-CN.md"
   ]
 }

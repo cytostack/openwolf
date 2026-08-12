@@ -1,7 +1,31 @@
 import { useState, useEffect, useCallback } from "react";
-import { WolfClient } from "../lib/wolf-client.js";
+import { dashboardFetch, WolfClient } from "../lib/wolf-client.js";
 import { parseAnatomy, parseMemory, parseCerebrum } from "../lib/file-parsers.js";
 import type { AnatomyEntry, MemorySession, CerebrumData } from "../lib/file-parsers.js";
+
+export interface RealUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens: number;
+  cache_creation_input_tokens: number;
+  api_calls: number;
+}
+
+export interface LedgerSession {
+  id: string;
+  agent?: string;
+  started: string;
+  ended: string;
+  totals: {
+    input_tokens_estimated: number;
+    output_tokens_estimated: number;
+    reads_count: number;
+    writes_count: number;
+    repeated_reads_blocked: number;
+    anatomy_lookups: number;
+  };
+  real_usage?: RealUsage;
+}
 
 interface TokenLedger {
   lifetime: {
@@ -13,9 +37,25 @@ interface TokenLedger {
     anatomy_misses: number;
     repeated_reads_blocked: number;
     estimated_savings_vs_bare_cli: number;
+    real_input_tokens?: number;
+    real_output_tokens?: number;
+    real_cache_read_tokens?: number;
+    real_cache_creation_tokens?: number;
+    real_api_calls?: number;
   };
-  sessions: any[];
+  sessions: LedgerSession[];
   waste_flags: any[];
+}
+
+export interface WolfConfig {
+  agents: string[];
+  context?: { session_digest_budget_tokens?: number; budgets?: Record<string, number> };
+}
+
+export interface ScanState {
+  last_scanned?: string;
+  git_head?: string | null;
+  file_count?: number;
 }
 
 interface CronState {
@@ -31,13 +71,6 @@ interface BugLog {
 
 interface CronManifest {
   tasks: any[];
-}
-
-interface DesignQCReport {
-  captured_at: string | null;
-  captures: any[];
-  total_size_kb: number;
-  estimated_tokens: number;
 }
 
 interface Health {
@@ -60,11 +93,14 @@ export interface WolfData {
   cronManifest: CronManifest;
   buglog: BugLog;
   suggestions: any;
-  designqcReport: DesignQCReport | null;
   health: Health;
   identity: { name: string; role: string };
   project: ProjectMeta;
+  config: WolfConfig;
+  statusDoc: string;
+  scanState: ScanState;
   loading: boolean;
+  authError: boolean;
   client: WolfClient | null;
 }
 
@@ -78,14 +114,37 @@ export function useWolfData(): WolfData {
   const [cronManifest, setCronManifest] = useState<CronManifest>({ tasks: [] });
   const [buglog, setBuglog] = useState<BugLog>({ bugs: [] });
   const [suggestions, setSuggestions] = useState<any>(null);
-  const [designqcReport, setDesignqcReport] = useState<DesignQCReport | null>(null);
   const [health, setHealth] = useState<Health>({ status: "unknown", uptime_seconds: 0 });
   const [identity, setIdentity] = useState({ name: "Wolf", role: "AI development assistant" });
   const [project, setProject] = useState<ProjectMeta>({ name: "", description: "", root: "" });
+  const [config, setConfig] = useState<WolfConfig>({ agents: ["claude"] });
+  const [statusDoc, setStatusDoc] = useState("");
+  const [scanState, setScanState] = useState<ScanState>({});
   const [client, setClient] = useState<WolfClient | null>(null);
+  const [authError, setAuthError] = useState(false);
 
   const processFiles = useCallback((files: Record<string, string>) => {
-    if (files["anatomy.md"]) setAnatomy(parseAnatomy(files["anatomy.md"]));
+    if (files["anatomy-index.json"]) {
+      try {
+        const store = JSON.parse(files["anatomy-index.json"]);
+        const entries = Object.entries(store.files ?? {}).map(([relPath, e]: [string, any]) => {
+          const slash = relPath.lastIndexOf("/");
+          return {
+            file: slash === -1 ? relPath : relPath.slice(slash + 1),
+            description: e.description ?? "",
+            tokens: e.tokens ?? 0,
+            section: slash === -1 ? "./" : relPath.slice(0, slash + 1),
+            symbols: e.symbols,
+          };
+        });
+        setAnatomy({
+          entries,
+          metadata: { files: entries.length, hits: store.meta?.hits ?? 0, misses: store.meta?.misses ?? 0 },
+        });
+      } catch {
+        if (files["anatomy.md"]) setAnatomy(parseAnatomy(files["anatomy.md"]));
+      }
+    } else if (files["anatomy.md"]) setAnatomy(parseAnatomy(files["anatomy.md"]));
     if (files["cerebrum.md"]) setCerebrum(parseCerebrum(files["cerebrum.md"]));
     if (files["memory.md"]) setMemory(parseMemory(files["memory.md"]));
     if (files["token-ledger.json"]) {
@@ -103,8 +162,15 @@ export function useWolfData(): WolfData {
     if (files["suggestions.json"]) {
       try { setSuggestions(JSON.parse(files["suggestions.json"])); } catch {}
     }
-    if (files["designqc-report.json"]) {
-      try { setDesignqcReport(JSON.parse(files["designqc-report.json"])); } catch {}
+    if (files["config.json"]) {
+      try {
+        const cfg = JSON.parse(files["config.json"]);
+        setConfig({ agents: cfg?.openwolf?.agents ?? ["claude"], context: cfg?.openwolf?.context });
+      } catch {}
+    }
+    if (files["STATUS.md"] !== undefined && files["STATUS.md"] !== "") setStatusDoc(files["STATUS.md"]);
+    if (files["_scan-state.json"]) {
+      try { setScanState(JSON.parse(files["_scan-state.json"])); } catch {}
     }
     if (files["identity.md"]) {
       const nameMatch = files["identity.md"].match(/\*\*Name:\*\*\s*(.+)/);
@@ -119,23 +185,28 @@ export function useWolfData(): WolfData {
   }, []);
 
   useEffect(() => {
-    // Initial fetch
-    fetch("/api/files")
-      .then(r => r.json())
+    // Initial fetch. Never feed a non-OK response body into state: a 401 error
+    // object like {error:"..."} would overwrite defaults and crash the UI.
+    dashboardFetch("/api/files")
+      .then(r => {
+        if (r.status === 401) { setAuthError(true); throw new Error("unauthorized"); }
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      })
       .then(files => {
         processFiles(files);
         setLoading(false);
       })
       .catch(() => setLoading(false));
 
-    fetch("/api/health")
-      .then(r => r.json())
-      .then(h => setHealth(h))
+    dashboardFetch("/api/health")
+      .then(r => (r.ok ? r.json() : null))
+      .then(h => { if (h && typeof h.status === "string") setHealth(h); })
       .catch(() => {});
 
-    fetch("/api/project")
-      .then(r => r.json())
-      .then(p => setProject(p))
+    dashboardFetch("/api/project")
+      .then(r => (r.ok ? r.json() : null))
+      .then(p => { if (p && typeof p.name === "string") setProject(p); })
       .catch(() => {});
 
     // WebSocket
@@ -158,5 +229,5 @@ export function useWolfData(): WolfData {
     return () => wsClient.disconnect();
   }, [processFiles]);
 
-  return { anatomy, cerebrum, memory, tokenLedger, cronState, cronManifest, buglog, suggestions, designqcReport, health, identity, project, loading, client };
+  return { anatomy, cerebrum, memory, tokenLedger, cronState, cronManifest, buglog, suggestions, health, identity, project, config, statusDoc, scanState, loading, authError, client };
 }

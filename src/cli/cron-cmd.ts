@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { findProjectRoot } from "../scanner/project-root.js";
 import { readJSON, writeJSON } from "../utils/fs-safe.js";
+import { getDashboardToken } from "../utils/dashboard-auth.js";
 import { Logger } from "../utils/logger.js";
 import { CronEngine } from "../daemon/cron-engine.js";
 
@@ -84,12 +85,13 @@ export async function cronRun(id: string): Promise<void> {
     openwolf: { dashboard: { port: 18791 } },
   });
   const port = config.openwolf.dashboard.port;
+  const token = getDashboardToken(wolfDir);
 
   // Try calling the daemon's HTTP endpoint first
   try {
     const res = await fetch(`http://127.0.0.1:${port}/api/cron/run/${encodeURIComponent(id)}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     });
     const body = await res.json() as { status?: string; error?: string };
     if (res.ok) {

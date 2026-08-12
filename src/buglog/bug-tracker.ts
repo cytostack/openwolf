@@ -5,7 +5,8 @@ interface BugEntry {
   id: string;
   timestamp: string;
   error_message: string;
-  file: string;
+  file?: string;
+  files?: string[];
   line?: number;
   root_cause: string;
   fix: string;
@@ -124,12 +125,19 @@ export function findSimilarBugs(wolfDir: string, errorMessage: string): ScoredBu
 export function searchBugs(wolfDir: string, term: string): BugEntry[] {
   const bugLog = readBugLog(wolfDir);
   const lower = term.toLowerCase();
+  // Null-safe across schema drift: older entries omit `file`/`tags`, newer
+  // ones use a `files` array instead of a singular `file`. A missing field on
+  // any one entry must skip that entry, not throw and abort the whole search.
+  const has = (s: unknown): boolean =>
+    typeof s === "string" && s.toLowerCase().includes(lower);
+  const hasAny = (a: unknown): boolean => Array.isArray(a) && a.some(has);
   return bugLog.bugs.filter(
     (b) =>
-      b.error_message.toLowerCase().includes(lower) ||
-      b.root_cause.toLowerCase().includes(lower) ||
-      b.fix.toLowerCase().includes(lower) ||
-      b.tags.some((t) => t.toLowerCase().includes(lower)) ||
-      b.file.toLowerCase().includes(lower)
+      has(b.error_message) ||
+      has(b.root_cause) ||
+      has(b.fix) ||
+      hasAny(b.tags) ||
+      has(b.file) ||
+      hasAny(b.files)
   );
 }
