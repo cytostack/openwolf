@@ -21,10 +21,23 @@ export interface ProviderEndpoint {
   openaiBaseUrl: string;
 }
 
+export interface ProviderPricingUsdPerMillionTokens {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number | null;
+}
+
+export type ProviderInputModality = "text" | "image" | "video";
+export type ProviderThinkingMode = "adaptive" | "disabled" | "always_on";
+
 export interface ProviderModel {
   id: string;
   /** Maximum combined input + output tokens the model accepts. */
   contextWindow: number;
+  pricingUsdPerMillionTokens: ProviderPricingUsdPerMillionTokens;
+  inputModalities: ProviderInputModality[];
+  thinking: ProviderThinkingMode[];
 }
 
 export interface InferenceProvider {
@@ -47,8 +60,30 @@ export const PROVIDERS: Record<string, InferenceProvider> = {
     apiKeyEnv: "MINIMAX_API_KEY",
     defaultModel: "MiniMax-M3",
     models: [
-      { id: "MiniMax-M3", contextWindow: 1_000_000 },
-      { id: "MiniMax-M2.7", contextWindow: 204_800 },
+      {
+        id: "MiniMax-M3",
+        contextWindow: 1_000_000,
+        pricingUsdPerMillionTokens: {
+          input: 0.6,
+          output: 2.4,
+          cacheRead: 0.12,
+          cacheWrite: null,
+        },
+        inputModalities: ["text", "image", "video"],
+        thinking: ["adaptive", "disabled"],
+      },
+      {
+        id: "MiniMax-M2.7",
+        contextWindow: 204_800,
+        pricingUsdPerMillionTokens: {
+          input: 0.3,
+          output: 1.2,
+          cacheRead: 0.06,
+          cacheWrite: 0.375,
+        },
+        inputModalities: ["text"],
+        thinking: ["always_on"],
+      },
     ],
     endpoints: [
       {

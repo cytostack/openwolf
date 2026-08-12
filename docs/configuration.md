@@ -82,6 +82,14 @@ provider's regional base URL and asked for the selected model.
 | `region` | `global_en` | Endpoint region. `minimax`: `global_en`, `cn_zh` |
 | `model` | provider default | Model to request. `minimax`: `MiniMax-M3`, `MiniMax-M2.7` |
 
+The registry also exposes model metadata for tooling and validation. Prices are
+in US dollars per million tokens.
+
+| Model | Context | Input / output | Cache read / write | Input modalities | Thinking modes |
+|-------|---------|----------------|--------------------|------------------|----------------|
+| `MiniMax-M3` | 1,000,000 | $0.60 / $2.40 | $0.12 / unavailable | text, image, video | adaptive, disabled |
+| `MiniMax-M2.7` | 204,800 | $0.30 / $1.20 | $0.06 / $0.375 | text | always on |
+
 The provider API key is read from the provider's environment variable
 (`minimax`: `MINIMAX_API_KEY`). Example:
 

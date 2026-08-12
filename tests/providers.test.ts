@@ -51,10 +51,32 @@ describe("inference provider registry", () => {
     assert.deepStrictEqual(regions, ["cn_zh", "global_en"]);
   });
 
-  test("exposes both models with their context windows", () => {
-    const byId = new Map(PROVIDERS.minimax.models.map((m) => [m.id, m.contextWindow]));
-    assert.strictEqual(byId.get("MiniMax-M3"), 1_000_000);
-    assert.strictEqual(byId.get("MiniMax-M2.7"), 204_800);
+  test("exposes complete metadata for both models", () => {
+    const byId = new Map(PROVIDERS.minimax.models.map((model) => [model.id, model]));
+    assert.deepStrictEqual(byId.get("MiniMax-M3"), {
+      id: "MiniMax-M3",
+      contextWindow: 1_000_000,
+      pricingUsdPerMillionTokens: {
+        input: 0.6,
+        output: 2.4,
+        cacheRead: 0.12,
+        cacheWrite: null,
+      },
+      inputModalities: ["text", "image", "video"],
+      thinking: ["adaptive", "disabled"],
+    });
+    assert.deepStrictEqual(byId.get("MiniMax-M2.7"), {
+      id: "MiniMax-M2.7",
+      contextWindow: 204_800,
+      pricingUsdPerMillionTokens: {
+        input: 0.3,
+        output: 1.2,
+        cacheRead: 0.06,
+        cacheWrite: 0.375,
+      },
+      inputModalities: ["text"],
+      thinking: ["always_on"],
+    });
   });
 
   test("accepts an explicitly named supported model", () => {
