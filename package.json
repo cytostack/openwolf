@@ -1,6 +1,6 @@
 {
   "name": "@alptech/openwolf",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "The second brain for Claude Code, now for every AI coding assistant: context management, architecture scaffolding, and smarter token utilization through lifecycle hooks.",
   "type": "module",
   "bin": {
