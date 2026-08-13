@@ -418,6 +418,60 @@ export class Hippocampus {
     return event;
   }
 
+  /**
+   * Batch-insert many events under a single store/index transaction lock.
+   *
+   * The lock-and-fsync cost per event is ~16 ms on Windows (writeJsonAtomic
+   * renames a temp file). Single-event `addEvent` therefore costs O(N) fsyncs
+   * for N events; `addMany` costs O(1) — one lock, one store save, one index
+   * rebuild + save, regardless of batch size.
+   *
+   * Atomicity is preserved: the batch is all-or-nothing from the reader's
+   * perspective. Either every event in the batch is visible in the next
+   * `recall` call, or none of them are (if the lock budget expires the
+   * batch is rejected).
+   */
+  addMany(
+    eventsData: ReadonlyArray<Omit<WolfEvent, "id" | "consolidation">>
+  ): WolfEvent[] {
+    if (eventsData.length === 0) return [];
+
+    const events: WolfEvent[] = eventsData.map((eventData) => ({
+      ...eventData,
+      id: `evt-${crypto.randomUUID()}`,
+      consolidation: {
+        stage: "short-term",
+        access_count: 0,
+        last_accessed: eventData.timestamp,
+        consolidation_score: 0,
+        should_consolidate: false,
+        decay_factor: 1.0,
+        last_decay_check: eventData.timestamp,
+      },
+    }));
+
+    const updated = withHippocampusLock(
+      this.wolfDir,
+      HIPPOCAMPUS_HOOK_LOCK_BUDGET_MS,
+      () => {
+        const store = this.loadStoreOrCreate();
+        const neocortex = this.loadNeocortexOrCreate();
+        this.recoverPendingTransfer(store, neocortex);
+        // Load the existing index so corrupt data is preserved before replacement.
+        loadIndex(this.cueIndexPath, true);
+        for (const event of events) addEventToStore(store, event);
+        const index = buildIndex(store.buffer);
+        saveStore(this.hippocampusPath, store);
+        saveIndex(this.cueIndexPath, index);
+        return { store, index };
+      }
+    );
+    if (!updated) throw new Error("Could not add hippocampus batch within lock budget");
+    this.store = updated.store;
+    this.cueIndex = updated.index;
+    return events;
+  }
+
   getTraumas(filePath?: string): WolfEvent[] {
     const store = this.ensureLoaded();
     if (filePath) return getTraumaEventsForPath(store, filePath.replace(/\\/g, "/"));
