@@ -59,6 +59,19 @@ export function createProgram(): Command {
     .description("Token report: estimated vs measured (from harness transcripts)")
     .action(reportCommand);
 
+  program
+    .command("designqc")
+    .description("Capture screenshots of a running app for design evaluation")
+    .option("--url <url>", "Dev server URL. Auto-detects a running server, or starts one, if omitted")
+    .option("--routes <routes...>", "Specific routes to capture instead of auto-detecting")
+    .option("--desktop-only", "Skip the mobile viewport")
+    .option("--quality <number>", "JPEG quality (1-100), default 70")
+    .option("--max-width <number>", "Maximum capture width in pixels")
+    .action(async (opts: { url?: string; routes?: string[]; desktopOnly?: boolean; quality?: string; maxWidth?: string }) => {
+      const { designqcCommand } = await import("./designqc.js");
+      await designqcCommand(opts);
+    });
+
   const daemon = program
     .command("daemon")
     .description("Daemon management");

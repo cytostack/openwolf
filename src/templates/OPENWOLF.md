@@ -114,6 +114,8 @@ OpenWolf's value comes from learning across sessions. You MUST update `.wolf/cer
 
 ## Design QC
 
+> **Vision gate:** If your model cannot read images (no vision support), IGNORE everything below — do not run `openwolf designqc`, do not read `.wolf/designqc-captures/`, and never claim to have seen screenshots. Just tell the user vision is unavailable and offer text-based review instead.
+
 When the user asks you to check, evaluate, or improve the design/UI of their app:
 
 1. Run `openwolf designqc` via Bash to capture screenshots.

@@ -49,8 +49,8 @@ For each route, Design QC:
 1. Opens the page in a headless Chromium instance
 2. Scrolls through the full page height
 3. Takes a viewport-height JPEG at each scroll position (one per "fold")
-4. Captures up to **8 sections** per route
-5. Repeats for both desktop (1200px) and mobile (390px) viewports by default
+4. Captures up to `designqc.max_screenshots` sections per route (default 6)
+5. Repeats for both desktop (1440px) and mobile (375px) viewports by default
 
 Screenshots are saved as JPEG at quality 70, max width 1200px -- optimized for token economy at roughly **2,500 tokens per screenshot**.
 
@@ -112,28 +112,31 @@ Design QC settings can be configured in `.wolf/config.json` under the `designqc`
 
 ## Chrome Detection
 
-OpenWolf searches for a Chromium-based browser in this order:
+OpenWolf searches for a Chromium-based browser in this order. The OS default browser is checked first — if it's Chromium-based (Chrome, Edge, Brave, etc.), it's used directly; non-Chromium defaults (e.g. Firefox) are skipped.
 
 **Windows:**
 1. `designqc.chromePath` in `.wolf/config.json` (manual override)
-2. `Program Files/Google/Chrome/Application/chrome.exe`
-3. `Program Files (x86)/Google/Chrome/Application/chrome.exe`
-4. `Program Files/Microsoft/Edge/Application/msedge.exe`
-5. `where chrome` (PATH lookup)
-6. `where msedge` (PATH lookup)
+2. System default browser (registry `UserChoice` ProgId) — only if Chromium-based
+3. `Program Files/Google/Chrome/Application/chrome.exe`
+4. `Program Files (x86)/Google/Chrome/Application/chrome.exe`
+5. `Program Files/Microsoft/Edge/Application/msedge.exe`
+6. `Program Files (x86)/Microsoft/Edge/Application/msedge.exe`
+7. `where chrome` / `where msedge` (PATH lookup)
 
 **macOS:**
 1. Config override
-2. `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`
-3. `/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge`
+2. System default browser (LaunchServices) — only if Chromium-based
+3. `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`
+4. `/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge`
 
 **Linux:**
 1. Config override
-2. `which google-chrome`
-3. `which google-chrome-stable`
-4. `which chromium-browser`
-5. `which chromium`
-6. `which microsoft-edge`
+2. System default browser (`xdg-settings`) — only if Chromium-based
+3. `which google-chrome`
+4. `which google-chrome-stable`
+5. `which chromium-browser`
+6. `which chromium`
+7. `which microsoft-edge`
 
 If no browser is found, Design QC exits with an error and instructions to set the path manually in config.
 
@@ -147,10 +150,10 @@ The math for a single route with default settings:
 
 | Factor | Value |
 |--------|-------|
-| Sections per route | Up to 8 |
+| Sections per route | Up to 6 (default `max_screenshots`) |
 | Viewports | 2 (desktop + mobile) |
 | Tokens per screenshot | ~2,500 |
-| **Max per route** | **~40,000 tokens** |
+| **Max per route** | **~30,000 tokens** |
 
 For a site with 5 detected routes, that is up to 200K tokens per full capture. To reduce cost:
 

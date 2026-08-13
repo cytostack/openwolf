@@ -84,7 +84,7 @@ Design QC is a capture-only tool. It takes screenshots; Claude does the evaluati
 
 ### How it works
 
-1. **Dev server detection** -- `openwolf designqc` checks common ports (3000, 5173, 4321, 8080) for a running dev server. If none is found, it starts one automatically using `npm run dev`, `pnpm dev`, or whatever start script your project defines.
+1. **Dev server detection** -- `openwolf designqc` checks common ports (3000, 3001, 5173, 5174, 4321, 8080, 8000, 4200) for a running dev server. If none is found, it starts one automatically using `npm run dev`, `pnpm dev`, or whatever start script your project defines.
 
 2. **Route detection** -- OpenWolf scans your project for route files (Next.js `app/` routes, file-based routers, etc.) and builds a list of pages to capture. You can also specify routes manually with `--routes`.
 

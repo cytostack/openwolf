@@ -282,7 +282,7 @@ openwolf restore 2026-03-15T10-30-00
 Capture full-page screenshots for design evaluation by Claude Code.
 
 ```bash
-openwolf designqc [target]
+openwolf designqc
 ```
 
 **Options:**

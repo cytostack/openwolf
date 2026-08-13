@@ -71,5 +71,14 @@
         "cursor": 800
       }
     }
+  },
+  "designqc": {
+    "enabled": true,
+    "viewports": [
+      { "name": "desktop", "width": 1440, "height": 900 },
+      { "name": "mobile", "width": 375, "height": 812 }
+    ],
+    "max_screenshots": 6,
+    "chrome_path": null
   }
 }
