@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "last_updated": "",
+  "event_ids": [],
+  "location_index": {},
+  "tag_index": {},
+  "trauma_index": {
+    "all_trauma_ids": [],
+    "by_path": {}
+  }
+}

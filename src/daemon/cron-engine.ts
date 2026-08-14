@@ -5,6 +5,7 @@ import cron from "node-cron";
 import { readJSON, writeJSON, readText, writeText, appendText } from "../utils/fs-safe.js";
 import { scanProject } from "../scanner/anatomy-scanner.js";
 import { detectWaste } from "../tracker/waste-detector.js";
+import { createHippocampus } from "../hippocampus/index.js";
 import type { Logger } from "../utils/logger.js";
 
 interface CronAction {
@@ -217,6 +218,10 @@ export class CronEngine {
         this.consolidateMemory(action.params?.older_than_days as number ?? 7);
         break;
 
+      case "consolidate_hippocampus":
+        this.consolidateHippocampus(action.params?.max_to_promote as number ?? 50);
+        break;
+
       case "generate_token_report":
         this.generateTokenReport();
         break;
@@ -281,6 +286,22 @@ export class CronEngine {
     }
 
     writeText(memoryPath, result.join("\n"));
+  }
+
+  private consolidateHippocampus(maxToPromote: number): void {
+    const hippocampus = createHippocampus(this.projectRoot);
+
+    if (!hippocampus.exists()) {
+      this.logger.info("Hippocampus not initialized, skipping consolidation");
+      return;
+    }
+
+    const report = hippocampus.consolidate({ maxToPromote });
+    this.logger.info(
+      `Hippocampus consolidation: ${report.promoted} promoted, ${report.decayed} decayed, ` +
+      `${report.forgotten} forgotten, ${report.kept} kept. ` +
+      `Neocortex size: ${(report.new_neocortex_size / 1024).toFixed(1)}KB`
+    );
   }
 
   private generateTokenReport(): void {

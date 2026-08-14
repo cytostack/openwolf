@@ -49,6 +49,11 @@ const CREATE_IF_MISSING = [
   "cron-manifest.json",
   "cron-state.json",
   "suggestions.json",
+  "hippocampus.json",
+  "cue-index.json",
+  "neocortex.json",
+  "claims.json",
+  "claim-index.json",
 ];
 
 // Use $CLAUDE_PROJECT_DIR so hooks resolve correctly even if CWD changes during a session
@@ -213,6 +218,37 @@ export async function initCommand(options?: { agent?: string[] }): Promise<void>
     ledger.created_at = new Date().toISOString();
     writeJSON(ledgerPath, ledger);
   }
+
+  // --- Hippocampus: fill project_root, created_at, last_updated ---
+  const hippoPath = path.join(wolfDir, "hippocampus.json");
+  const hippo = readJSON<Record<string, unknown>>(hippoPath, {});
+  const now = new Date().toISOString();
+  if (!hippo.project_root) { hippo.project_root = projectRoot; }
+  if (!hippo.created_at) { hippo.created_at = now; }
+  if (!hippo.last_updated) { hippo.last_updated = now; }
+  writeJSON(hippoPath, hippo);
+
+  // --- Neocortex: fill project_root, created_at, last_updated ---
+  const neocortexPath = path.join(wolfDir, "neocortex.json");
+  const neocortex = readJSON<Record<string, unknown>>(neocortexPath, {});
+  if (!neocortex.project_root) { neocortex.project_root = projectRoot; }
+  if (!neocortex.created_at) { neocortex.created_at = now; }
+  if (!neocortex.last_updated) { neocortex.last_updated = now; }
+  writeJSON(neocortexPath, neocortex);
+
+  // --- Claim projection: fill project_root and timestamps ---
+  const claimsPath = path.join(wolfDir, "claims.json");
+  const claims = readJSON<Record<string, unknown>>(claimsPath, {});
+  if (!claims.project_root) { claims.project_root = projectRoot; }
+  if (!claims.created_at) { claims.created_at = now; }
+  if (!claims.last_updated) { claims.last_updated = now; }
+  writeJSON(claimsPath, claims);
+
+  // --- Derived claim index: fill initial timestamp ---
+  const claimIndexPath = path.join(wolfDir, "claim-index.json");
+  const claimIndex = readJSON<Record<string, unknown>>(claimIndexPath, {});
+  if (!claimIndex.last_updated) { claimIndex.last_updated = now; }
+  writeJSON(claimIndexPath, claimIndex);
 
   // --- Hook scripts: always update (bug fixes, new features) ---
   copyHookScripts(wolfDir);
@@ -593,6 +629,7 @@ function copyHookScripts(wolfDir: string): void {
     "shared.js",
     "anatomy-store.js",
     "anatomy-lock.js",
+    "symbol-extractor.js",
   ];
 
   let copiedAny = false;
@@ -620,6 +657,19 @@ function copyHookScripts(wolfDir: string): void {
 
   if (!copiedAny) {
     console.warn("  ⚠ Could not find compiled hook scripts. Run 'pnpm build:hooks' and re-run init.");
+  }
+
+  // Copy hippocampus module to .wolf/hippocampus/ (hooks import it as ../hippocampus/index.js)
+  const hippocampusSrc = path.resolve(__dirname, "..", "hippocampus");
+  const hippocampusDest = path.join(wolfDir, "hippocampus");
+  if (fs.existsSync(hippocampusSrc) && fs.existsSync(path.join(hippocampusSrc, "index.js"))) {
+    ensureDir(hippocampusDest);
+    for (const file of fs.readdirSync(hippocampusSrc)) {
+      if ((file.endsWith(".js") && !file.endsWith(".js.map")) || file === "types.js") {
+        fs.copyFileSync(path.join(hippocampusSrc, file), path.join(hippocampusDest, file));
+      }
+    }
+    console.log("  ✓ Hippocampus episodic memory module installed");
   }
 
   // Always write a package.json with type:module so ESM hooks work in any project

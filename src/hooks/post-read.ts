@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { getWolfDir, ensureWolfDir, readJSON, writeJSON, estimateTokens, readStdin, normalizePath, getProjectDir } from "./shared.js";
+import { getWolfDir, ensureWolfDir, readJSON, writeJSON, estimateTokens, readStdin, normalizePath, getProjectDir, resolveProjectPath } from "./shared.js";
 import { lookupEntry } from "./anatomy-store.js";
 
 interface SessionData {
@@ -26,19 +26,20 @@ async function main(): Promise<void> {
   const content = input.tool_output?.content ?? "";
   if (!filePath) { process.exit(0); return; }
 
-  const normalizedFile = normalizePath(filePath);
+  const projectRoot = getProjectDir();
+  const resolvedPath = resolveProjectPath(projectRoot, filePath);
+  if (!resolvedPath) { process.exit(0); return; }
+  const { absolutePath, relativePath } = resolvedPath;
+  const normalizedFile = normalizePath(absolutePath);
 
   // Skip tracking for .wolf/ internal files — consistent with pre-read
-  const projectDir = normalizePath(getProjectDir());
-  const relToProject = normalizedFile.startsWith(projectDir)
-    ? normalizedFile.slice(projectDir.length).replace(/^\//, "")
-    : "";
-  if (relToProject.startsWith(".wolf/") || relToProject.startsWith(".wolf\\")) {
+  if (relativePath === ".wolf" || relativePath.startsWith(".wolf/")) {
     process.exit(0);
     return;
   }
 
-  const ext = path.extname(filePath).toLowerCase();
+  const projectDir = normalizePath(projectRoot);
+  const ext = path.extname(absolutePath).toLowerCase();
   const codeExts = new Set([".ts", ".js", ".tsx", ".jsx", ".py", ".rs", ".go", ".java", ".c", ".cpp", ".css", ".json", ".yaml", ".yml"]);
   const proseExts = new Set([".md", ".txt", ".rst"]);
   const type = codeExts.has(ext) ? "code" : proseExts.has(ext) ? "prose" : "mixed";

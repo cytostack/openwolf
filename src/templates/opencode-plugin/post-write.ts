@@ -31,7 +31,7 @@ export function handlePostWrite(
   updateAnatomy(wolfDir, absolutePath, projectRoot, content)
   appendToMemory(wolfDir, toolName, absolutePath, projectRoot, content, newStr)
   trackSession(wolfDir, sessionFile, filePath, toolName, content, newStr, baseName)
-  
+
   if (oldStr && newStr) {
     autoDetectBugFix(wolfDir, absolutePath, projectRoot, oldStr, newStr)
   }

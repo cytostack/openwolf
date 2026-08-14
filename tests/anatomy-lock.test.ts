@@ -7,7 +7,7 @@ import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 import { withAnatomyLock } from "../src/hooks/anatomy-lock.ts";
-import { loadStore } from "../src/hooks/anatomy-store.ts";
+import { loadStore, newStore, renderToFile, saveStore } from "../src/hooks/anatomy-store.ts";
 
 const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "wolf-lock-"));
 const storeUrl = pathToFileURL(path.resolve(import.meta.dirname, "../src/hooks/anatomy-store.ts")).href;
@@ -48,29 +48,54 @@ describe("anatomy lock", () => {
     assert.strictEqual(Object.keys(store!.files).length, 8, "every concurrent upsert must survive");
   });
 
-  test("stale lock (dead pid, old timestamp) is stolen and work proceeds", () => {
+  test("abandoned lock directory times out safely", () => {
     const dir = tmpDir();
+    fs.mkdirSync(path.join(dir, "anatomy-index.lock"));
     fs.writeFileSync(
-      path.join(dir, "anatomy-index.lock"),
-      JSON.stringify({ pid: 999999, hostname: os.hostname(), acquiredAt: Date.now() - 60_000 }),
+      path.join(dir, "anatomy-index.lock", "owner.json"),
+      JSON.stringify({ pid: 999999, acquiredAt: Date.now() - 60_000 }),
       "utf-8"
     );
     const result = withAnatomyLock(dir, 3000, () => "ran");
-    assert.strictEqual(result, "ran");
-    assert.ok(!fs.existsSync(path.join(dir, "anatomy-index.lock")), "lock released after work");
+    assert.strictEqual(
+      result,
+      null,
+      "abandoned locks require explicit cleanup"
+    );
+    fs.rmSync(path.join(dir, "anatomy-index.lock"), { recursive: true });
   });
 
-  test("held lock (live pid, fresh) times out to null within budget", () => {
+  test("store and rendered anatomy use atomic sibling replacement", () => {
     const dir = tmpDir();
-    fs.writeFileSync(
-      path.join(dir, "anatomy-index.lock"),
-      JSON.stringify({ pid: process.pid, hostname: os.hostname(), acquiredAt: Date.now() }),
+    const store = newStore();
+    store.files["src/atomic.ts"] = {
+      description: "atomic",
+      tokens: 1,
+      updatedAt: new Date().toISOString(),
+      source: "hook",
+    };
+
+    saveStore(dir, store);
+    renderToFile(dir, store);
+
+    assert.ok(loadStore(dir)?.files["src/atomic.ts"]);
+    assert.match(fs.readFileSync(path.join(dir, "anatomy.md"), "utf-8"), /atomic\.ts/);
+    assert.deepStrictEqual(
+      fs.readdirSync(dir).filter((file) => file.endsWith(".tmp")),
+      []
+    );
+  });
+
+  test("OpenCode anatomy template uses the directory lock protocol", () => {
+    const source = fs.readFileSync(
+      path.resolve(import.meta.dirname, "../src/templates/opencode-plugin/anatomy.ts"),
       "utf-8"
     );
-    const started = Date.now();
-    const result = withAnatomyLock(dir, 300, () => "ran");
-    assert.strictEqual(result, null, "must degrade, never run");
-    assert.ok(Date.now() - started < 2000, "returns promptly after budget");
-    fs.unlinkSync(path.join(dir, "anatomy-index.lock"));
+
+    assert.match(source, /fs\.mkdirSync\(lockPath\)/);
+    assert.match(source, /path\.join\(lockPath, OWNER_FILE\)/);
+    assert.match(source, /fs\.rmdirSync\(lockPath\)/);
+    assert.doesNotMatch(source, /LOCK_STALE_MS|\.stale|process\.kill/);
+    assert.doesNotMatch(source, /writeFileSync\(filePath, body/);
   });
 });

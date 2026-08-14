@@ -4,8 +4,9 @@ import * as crypto from "node:crypto";
 import {
   getWolfDir, ensureWolfDir, readJSON, writeJSON, readMarkdown,
   extractDescription, estimateTokens, appendMarkdown, timeShort, readStdin, normalizePath,
-  isSensitiveFile, getProjectDir
+  isSensitiveFile, getProjectDir, resolveProjectPath
 } from "./shared.js";
+import { Hippocampus } from "../hippocampus/index.js";
 import { loadStoreReconciled, saveStore, renderToFile, sha256 } from "./anatomy-store.js";
 import { withAnatomyLock, HOOK_LOCK_BUDGET_MS } from "./anatomy-lock.js";
 import { extractSymbols, symbolsSupported, SYMBOL_MIN_TOKENS } from "./symbol-extractor.js";
@@ -65,16 +66,12 @@ async function main(): Promise<void> {
   const filePath = input.tool_input?.file_path ?? input.tool_input?.path ?? "";
   if (!filePath) { process.exit(0); return; }
 
-  const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(projectRoot, filePath);
+  const resolvedPath = resolveProjectPath(projectRoot, filePath);
+  if (!resolvedPath) { process.exit(0); return; }
+  const { absolutePath, relativePath: relPath } = resolvedPath;
 
   // Skip processing for .wolf/ internal files to avoid slow self-referential updates
-  const relPath = normalizePath(path.relative(projectRoot, absolutePath));
-  if (relPath.startsWith(".wolf/")) { process.exit(0); return; }
-
-  // Never track files outside the project root (e.g. the Claude Code scratchpad under
-  // /private/tmp). path.relative() yields ../.. section keys that pollute anatomy.md and are
-  // wiped again by every full `openwolf scan`, so the index churns instead of converging.
-  if (relPath.startsWith("..")) { process.exit(0); return; }
+  if (relPath === ".wolf" || relPath.startsWith(".wolf/")) { process.exit(0); return; }
 
   // Never track secret-bearing files in anatomy/memory (issue #54): .env is
   // not the only file whose *description* would leak sensitive content.
@@ -88,7 +85,7 @@ async function main(): Promise<void> {
   //    All of this happens under the anatomy lock; if the lock cannot be
   //    acquired within budget we skip — a later writer converges the state.
   try {
-    const relPathLocal = normalizePath(path.relative(projectRoot, absolutePath));
+    const relPathLocal = relPath;
 
     let fileContent = "";
     try {
@@ -140,7 +137,7 @@ async function main(): Promise<void> {
   // 2. Append richer entry to memory.md
   try {
     const action = toolName === "Write" ? "Created" : toolName === "MultiEdit" ? "Multi-edited" : "Edited";
-    const relFile = normalizePath(path.relative(projectRoot, absolutePath));
+    const relFile = relPath;
     const fileContent = input.tool_input?.content ?? "";
     const ext = path.extname(absolutePath).toLowerCase();
     const codeExts = new Set([".ts", ".js", ".tsx", ".jsx", ".py", ".json", ".yaml", ".yml", ".css"]);
@@ -162,7 +159,7 @@ async function main(): Promise<void> {
     const session = readJSON<SessionData>(sessionFile, { files_written: [], edit_counts: {} });
     if (!session.edit_counts) session.edit_counts = {};
 
-    const normalizedFile = normalizePath(filePath);
+    const normalizedFile = normalizePath(absolutePath);
     const action = toolName === "Write" ? "create" : "edit";
     const fileContent = input.tool_input?.content ?? "";
     const tokens = estimateTokens(fileContent || newStr, "code");
@@ -174,7 +171,7 @@ async function main(): Promise<void> {
       at: new Date().toISOString(),
     });
 
-    const editKey = normalizePath(path.relative(projectRoot, absolutePath));
+    const editKey = relPath;
     session.edit_counts[editKey] = (session.edit_counts[editKey] || 0) + 1;
 
     writeJSON(sessionFile, session);
@@ -189,9 +186,101 @@ async function main(): Promise<void> {
   // 4. Auto-detect bug-fix patterns and log them
   try {
     if (oldStr && newStr) {
-      autoDetectBugFix(wolfDir, absolutePath, projectRoot, oldStr, newStr);
+      autoDetectBugFix(wolfDir, absolutePath, relPath, oldStr, newStr);
     }
   } catch {}
+
+  // 5. Capture hippocampus event and surface related past learnings
+  try {
+    const hippocampus = new Hippocampus(projectRoot);
+
+    // Determine valence from context
+    let valence: "reward" | "neutral" | "penalty" | "trauma" = "neutral";
+    let intensity = 0.5;
+    let reflection = "";
+
+    const action = toolName === "Write" ? "write" : "edit";
+    const relFile = relPath;
+
+    // Check edit count for recurring trauma
+    const session = readJSON<SessionData>(sessionFile, { files_written: [], edit_counts: {} });
+    const editKey = relPath;
+    const editCount = session.edit_counts?.[editKey] || 0;
+
+    if (editCount >= 3) {
+      valence = "trauma";
+      intensity = Math.min(0.9, 0.6 + editCount * 0.1);
+      reflection = `File edited ${editCount} times. Possible issue or bug fix.`;
+    } else if (editCount >= 1) {
+      valence = "neutral";
+      intensity = 0.3;
+      reflection = `File edited ${editCount + 1} time(s).`;
+    } else {
+      reflection = `New file created: ${relFile}`;
+    }
+
+    // Surface related past learnings if this is a multi-edit (potential bug fix attempt)
+    if (hippocampus.exists() && editCount >= 2) {
+      const relatedResponse = hippocampus.recall({
+        cue: {
+          type: "location",
+          path: relFile,
+          match_mode: "parent",
+        },
+        filters: {
+          valence: ["trauma", "reward"],
+          min_intensity: 0.5,
+        },
+        limit: 3,
+      });
+
+      const pastLearnings = relatedResponse.events;
+
+      if (pastLearnings.length > 0) {
+        const learningLines = pastLearnings
+          .slice(0, 2)
+          .map((e) => {
+            const icon = e.outcome.valence === "reward" ? "✅" : "⚠️";
+            return `   ${icon} [past ${e.outcome.valence}] ${e.outcome.reflection}`;
+          })
+          .join("\n");
+        process.stderr.write(`\n🧠 OpenWolf hippocampus: Related past learnings for ${path.basename(absolutePath)}:\n${learningLines}\n`);
+      }
+    }
+
+    hippocampus.addEvent({
+      version: 1,
+      timestamp: new Date().toISOString(),
+      session_id: process.env.CLAUDE_SESSION_ID || "unknown",
+      context: {
+        project_root: projectRoot,
+        files_involved: [relFile],
+        cwd_at_time: projectRoot,
+        spatial_path: normalizePath(path.dirname(relFile)) || "./",
+        spatial_depth: relFile.split("/").length - 1,
+        session_start: process.env.CLAUDE_SESSION_START || new Date().toISOString(),
+        turn_in_session: 0,
+        current_goal: undefined,
+      },
+      action: {
+        type: toolName === "Write" ? "write" : "edit",
+        description: `${toolName === "Write" ? "Created" : "Edited"} ${relFile}`,
+        tokens_spent: estimateTokens(input.tool_input?.content || newStr || "", "code"),
+        files_modified: [absolutePath],
+        succeeded: true,
+      },
+      outcome: {
+        valence,
+        intensity,
+        reflection,
+        is_recurring: editCount >= 3,
+      },
+      source: "hook",
+      tags: ["file-write", action, path.extname(absolutePath).slice(1) || "unknown"],
+    });
+  } catch (e) {
+    // Fail silently - hippocampus should not break existing functionality
+  }
 
   process.exit(0);
 }
@@ -311,7 +400,7 @@ function bugAutoDetectEnabled(wolfDir: string): boolean {
   }
 }
 
-function autoDetectBugFix(wolfDir: string, absolutePath: string, projectRoot: string, oldStr: string, newStr: string): void {
+function autoDetectBugFix(wolfDir: string, absolutePath: string, relFile: string, oldStr: string, newStr: string): void {
   const basename = path.basename(absolutePath);
   const ext = path.extname(basename).toLowerCase();
 
@@ -322,7 +411,6 @@ function autoDetectBugFix(wolfDir: string, absolutePath: string, projectRoot: st
 
   const bugLogPath = path.join(wolfDir, "buglog.json");
   const bugLog = readJSON<BugLog>(bugLogPath, { version: 1, bugs: [] });
-  const relFile = normalizePath(path.relative(projectRoot, absolutePath));
 
   // Detect what kind of fix this is
   const detection = detectFixPattern(oldStr, newStr, ext);

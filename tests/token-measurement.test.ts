@@ -36,3 +36,31 @@ describe("readTranscriptUsage", () => {
     assert.strictEqual(readTranscriptUsage(f), null);
   });
 });
+
+describe("stop reminder bookkeeping", () => {
+  test("counts time-only semantic memory rows written during the session", async () => {
+    const { countSemanticEntries } = await import("../src/hooks/shared.ts");
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "wolf-stop-"));
+    fs.writeFileSync(
+      path.join(root, "memory.md"),
+      [
+        "| 08:00 | Older semantic summary | src/old.ts | passed | ~10 |",
+        "| 17:34 | Session end: 45 writes across 13 files | 38 reads | ~100 tok |",
+        "| 17:35 | Implemented truth maintenance | src/hippocampus/ | passed | ~100 |",
+      ].join("\n")
+    );
+    const started = new Date();
+    started.setHours(17, 0, 0, 0);
+    assert.strictEqual(countSemanticEntries(root, started.toISOString()), 1);
+  });
+
+  test("detects a bookkeeping file updated after session start", async () => {
+    const { wasFileUpdatedSince } = await import("../src/hooks/shared.ts");
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "wolf-stop-"));
+    const file = path.join(root, "buglog.json");
+    const started = new Date(Date.now() - 1000).toISOString();
+    fs.writeFileSync(file, "{}\n");
+    assert.strictEqual(wasFileUpdatedSince(file, started), true);
+    assert.strictEqual(wasFileUpdatedSince(file, new Date(Date.now() + 1000).toISOString()), false);
+  });
+});

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "schema_version": 1,
+  "project_root": "",
+  "created_at": "",
+  "last_updated": "",
+  "events": [],
+  "stats": {
+    "total_consolidated": 0,
+    "by_valence": {
+      "reward": 0,
+      "neutral": 0,
+      "penalty": 0,
+      "trauma": 0
+    },
+    "last_consolidation": null
+  },
+  "size_bytes": 0,
+  "max_size_bytes": 10000000
+}

@@ -18,6 +18,61 @@ export function getWolfDir(): string {
   return path.join(getProjectDir(), ".wolf");
 }
 
+export interface ResolvedProjectPath {
+  absolutePath: string;
+  relativePath: string;
+}
+
+function isWindowsStylePath(filePath: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(filePath) || /^\\\\/.test(filePath);
+}
+
+/**
+ * Resolve a tool path and return its project-relative form, or null when the
+ * path escapes the project. Windows paths are handled with win32 semantics
+ * even when tests run on another platform.
+ */
+export function resolveProjectPath(
+  projectRoot: string,
+  filePath: string
+): ResolvedProjectPath | null {
+  if (!projectRoot || !filePath) return null;
+
+  const rootIsWindows = isWindowsStylePath(projectRoot);
+  const fileIsWindows = isWindowsStylePath(filePath);
+
+  // An absolute path from a different path family can never be inside.
+  if (rootIsWindows !== fileIsWindows && path.isAbsolute(filePath)) return null;
+  if (!rootIsWindows && fileIsWindows) return null;
+
+  const pathApi = rootIsWindows ? path.win32 : path;
+  const absoluteRoot = pathApi.resolve(projectRoot);
+  const absolutePath = pathApi.isAbsolute(filePath)
+    ? pathApi.resolve(filePath)
+    : pathApi.resolve(absoluteRoot, filePath);
+
+  const rootName = pathApi.parse(absoluteRoot).root;
+  const fileRootName = pathApi.parse(absolutePath).root;
+  const rootsMatch = rootIsWindows
+    ? rootName.toLowerCase() === fileRootName.toLowerCase()
+    : rootName === fileRootName;
+  if (!rootsMatch) return null;
+
+  const relative = pathApi.relative(absoluteRoot, absolutePath);
+  if (
+    pathApi.isAbsolute(relative) ||
+    relative === ".." ||
+    relative.startsWith(`..${pathApi.sep}`)
+  ) {
+    return null;
+  }
+
+  return {
+    absolutePath,
+    relativePath: normalizePath(relative || "."),
+  };
+}
+
 /** Which agent harness invoked this hook — used for per-agent ledger attribution. */
 export function detectAgent(): string {
   if (process.env.CLAUDE_PROJECT_DIR) return "claude";
@@ -582,20 +637,55 @@ export function normalizePath(p: string): string {
  * Mechanical entries (auto-generated file ops, session-end lines) don't count.
  * Used by the stop hook to detect whether Claude wrote a meaningful summary.
  */
-export function countSemanticEntries(wolfDir: string): number {
+export function countSemanticEntries(
+  wolfDir: string,
+  sessionStarted?: string
+): number {
   const memoryPath = path.join(wolfDir, "memory.md");
   try {
     const content = fs.readFileSync(memoryPath, "utf-8");
     const mechanical = /^\|\s*[\d:]+\s*\|\s*(Created|Edited|Multi-edited|Session end:|designqc:)/;
-    const today = new Date().toISOString().slice(0, 10);
-    const todayPrefix = `| ${today}`;
+    const started = sessionStarted ? new Date(sessionStarted) : null;
+    const hasValidStart = started !== null && !Number.isNaN(started.getTime());
+    const now = new Date();
+    const startMinutes = hasValidStart
+      ? started.getHours() * 60 + started.getMinutes()
+      : 0;
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const crossedMidnight = hasValidStart && (
+      started.getFullYear() !== now.getFullYear() ||
+      started.getMonth() !== now.getMonth() ||
+      started.getDate() !== now.getDate()
+    );
+
     let count = 0;
     for (const line of content.split("\n")) {
-      if (line.startsWith(todayPrefix) && !mechanical.test(line)) count++;
+      if (mechanical.test(line)) continue;
+      const match = line.match(/^\|\s*(\d{2}):(\d{2})\s*\|/);
+      if (!match) continue;
+      if (hasValidStart) {
+        const entryMinutes = Number(match[1]) * 60 + Number(match[2]);
+        const inSession = crossedMidnight
+          ? entryMinutes >= startMinutes || entryMinutes <= currentMinutes
+          : entryMinutes >= startMinutes && entryMinutes <= currentMinutes;
+        if (!inSession) continue;
+      }
+      count++;
     }
     return count;
   } catch {
     return 0;
+  }
+}
+
+/** Return whether a file was modified after the session began. */
+export function wasFileUpdatedSince(filePath: string, sessionStarted: string): boolean {
+  const sessionStartMs = Date.parse(sessionStarted);
+  if (!Number.isFinite(sessionStartMs)) return false;
+  try {
+    return fs.statSync(filePath).mtimeMs >= sessionStartMs;
+  } catch {
+    return false;
   }
 }
 

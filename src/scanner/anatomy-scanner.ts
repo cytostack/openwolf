@@ -240,4 +240,3 @@ export function scanProject(wolfDir: string, projectRoot: string): number {
 
   return fileCount;
 }
-

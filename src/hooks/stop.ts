@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getWolfDir, ensureWolfDir, readJSON, writeJSON, appendMarkdown, timeShort, countSemanticEntries, readStdin, readTranscriptUsage, detectAgent, type RealUsage } from "./shared.js";
+import { getWolfDir, ensureWolfDir, readJSON, writeJSON, appendMarkdown, timeShort, countSemanticEntries, wasFileUpdatedSince, readStdin, readTranscriptUsage, detectAgent, type RealUsage } from "./shared.js";
 
 interface FileRead {
   count: number;
@@ -224,9 +224,10 @@ function checkForMissingBugLogs(wolfDir: string, session: SessionData): string |
 
   if (multiEditFiles.length === 0) return null;
 
+  const buglogPath = path.join(wolfDir, "buglog.json");
   const buglogWritten = session.files_written.some(w =>
     w.file.includes("buglog.json")
-  );
+  ) || wasFileUpdatedSince(buglogPath, session.started);
 
   if (!buglogWritten) {
     return `ACTION REQUIRED: Files edited 3+ times this session (${multiEditFiles.join(", ")}) but buglog.json was not updated. Log the bug fixes to .wolf/buglog.json now.`;
@@ -292,7 +293,7 @@ function checkSemanticSummaries(wolfDir: string, session: SessionData): string |
   const writeCount = session.files_written.length;
   if (writeCount < 2) return null;
 
-  const semanticCount = countSemanticEntries(wolfDir);
+  const semanticCount = countSemanticEntries(wolfDir, session.started);
   if (semanticCount === 0) {
     return `ACTION REQUIRED: ${writeCount} files were modified this session but no semantic summary was written to memory.md. Append a one-line summary: | HH:MM | description | file(s) | outcome | ~tokens |`;
   }

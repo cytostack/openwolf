@@ -75,7 +75,14 @@ OpenWolf gives your agent a second brain that fixes all of that:
 ## Quick Start
 
 ```bash
+# Install from npm
 npm install -g openwolf
+
+# Or install locally from source
+git clone https://github.com/cytostack/openwolf.git
+cd openwolf
+./scripts/install.sh   # Installs local version globally
+
 cd your-project
 openwolf init
 ```
@@ -122,7 +129,11 @@ Protocol blocks are marker-fenced: your own content in `AGENTS.md` or
 | `token-ledger.json` | Estimated and measured token usage, per session and per agent |
 | `hooks/` | 7 lifecycle hooks (pure Node.js, zero dependencies) |
 | `config.json` | Configuration, including per-agent context budgets |
+| `identity.md` | Agent persona for this project |
 | `OPENWOLF.md` | The operating protocol your agents follow |
+| `hippocampus.json` | Episodic event memory (writes, edits, reads) |
+| `cue-index.json` | Fast lookup index for recall |
+| `neocortex.json` | Long-term memory with decay |
 
 ## How It Works
 
@@ -151,6 +162,49 @@ Session ends
     |
 OpenWolf reads the real token usage from the transcript into the ledger
 ```
+
+## Hippocampus Memory System
+
+OpenWolf's hippocampus provides **episodic memory** — tracking what happened, when, and where in your project. It captures file writes, edits, and reads as events with context and outcome.
+
+### How It Works
+
+Every file operation is captured as an event with:
+- **Context**: file path, session, timestamps, spatial location
+- **Action**: write/edit/delete with description
+- **Outcome**: valence (trauma/neutral/reward/penalty), intensity, reflection
+
+Events are stored in `hippocampus.json` and indexed in `cue-index.json` for fast recall.
+
+### Valence Detection
+
+- **Trauma** (3+ edits to same file): Flagged as high-intensity — something needed fixing
+- **Neutral** (new file or 1-2 edits): Normal work activity
+- **Reward/Penalty**: Future hooks will track successful vs failed actions
+
+### Recall
+
+Query past events by location or context:
+
+```bash
+# Recall all events for a file
+openwolf recall /path/to/file.ts
+
+# Recall with prefix match (all files under directory)
+openwolf recall --match-mode prefix /path/to/src/
+
+# Recall only trauma events
+openwolf recall --type state --error "TypeError" /path/to/src/
+
+# JSON output
+openwolf recall --json /path/to/file.ts
+```
+
+### Consolidation (Long-term Memory)
+
+High-value events are promoted to `neocortex.json` (long-term storage). Low-value events decay over time (5% per week). Trauma events never decay.
+
+The daemon runs consolidation daily at 3 AM to transfer important events from short-term (hippocampus) to long-term (neocortex) storage.
 
 ## Context Management
 
@@ -261,12 +315,16 @@ openwolf init              Initialize .wolf/ and wire detected agents
 openwolf status            Health, stats, file integrity
 openwolf scan              Rebuild the project index
 openwolf scan --check      Verify the index matches the filesystem (CI-friendly)
+openwolf recall <path>     Recall events from hippocampus memory
 openwolf report            Token report: estimated vs measured
 openwolf dashboard         Open the web dashboard
 openwolf daemon start      Start the background daemon
 openwolf daemon stop       Stop the daemon
+openwolf daemon restart    Restart the daemon
+openwolf daemon logs       View daemon logs
 openwolf cron list         Scheduled tasks
 openwolf cron run <id>     Trigger a task
+openwolf cron retry <id>   Retry a dead-lettered task
 openwolf bug search <term> Search the bug memory
 openwolf update            Update every registered project (with backup)
 openwolf restore [backup]  Roll back .wolf/ from a timestamped backup
@@ -300,7 +358,7 @@ node scripts/openwolf-check.mjs [projectDir]   # read-only usage report
 
 ## Contributors
 
-OpenWolf is better because people fixed it. Every merged contribution is credited here. Kindly let us know if we have missed a contribution. 
+OpenWolf is better because people fixed it. Every merged contribution is credited here. Kindly let us know if we have missed a contribution.
 
 | | | | | |
 |:-:|:-:|:-:|:-:|:-:|

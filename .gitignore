@@ -4,9 +4,25 @@ node_modules/
 # Build output
 dist/
 
-# Environment
+# Compiled TypeScript (source should only be .ts)
+src/**/*.js
+
+# Environment and credentials
 .env
 .env.*
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.ppk
+*.keystore
+*.jks
+credentials*
+.npmrc
+.netrc
+.htpasswd
+.pgpass
 
 # OS files
 .DS_Store

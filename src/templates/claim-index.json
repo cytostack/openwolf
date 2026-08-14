@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "last_updated": "",
+  "claim_ids": [],
+  "identity_index": {},
+  "token_index": {},
+  "path_index": {},
+  "status_index": {
+    "active": [],
+    "disputed": [],
+    "superseded": []
+  },
+  "evidence_event_index": {}
+}

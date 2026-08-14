@@ -40,6 +40,26 @@
       "enabled": true
     },
     {
+      "id": "hippocampus-consolidation",
+      "name": "Hippocampus consolidation",
+      "schedule": "0 3 * * *",
+      "description": "Transfer short-term hippocampus events to long-term neocortex memory",
+      "action": {
+        "type": "consolidate_hippocampus",
+        "params": { "max_to_promote": 50 }
+      },
+      "retry": {
+        "max_attempts": 2,
+        "backoff": "exponential",
+        "base_delay_seconds": 60
+      },
+      "failsafe": {
+        "on_failure": "skip_and_retry_next_cycle",
+        "dead_letter": false
+      },
+      "enabled": true
+    },
+    {
       "id": "token-audit",
       "name": "Token audit report",
       "schedule": "0 0 * * 1",

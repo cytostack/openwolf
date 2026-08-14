@@ -48,6 +48,8 @@ const USER_DATA_FILES = [
   "identity.md", "cerebrum.md", "memory.md", "anatomy.md", "anatomy-index.json", "STATUS.md",
   "token-ledger.json", "buglog.json", "cron-manifest.json", "cron-state.json",
   "suggestions.json",
+  "hippocampus.json", "cue-index.json", "neocortex.json",
+  "claims.json", "claim-index.json",
 ];
 
 // Files to include in backup
@@ -453,7 +455,7 @@ function copyHookScripts(wolfDir: string): void {
   const hookFiles = [
     "session-start.js", "pre-read.js", "pre-write.js",
     "post-read.js", "post-write.js", "precompact.js", "stop.js", "shared.js",
-    "anatomy-store.js", "anatomy-lock.js",
+    "anatomy-store.js", "anatomy-lock.js", "symbol-extractor.js",
   ];
 
   if (sourceDir) {
@@ -461,6 +463,18 @@ function copyHookScripts(wolfDir: string): void {
       const src = path.join(sourceDir, file);
       if (fs.existsSync(src)) {
         safeCopyFile(src, path.join(hooksDir, file));
+      }
+    }
+  }
+
+  // Hooks import the hippocampus module from ../hippocampus/index.js.
+  const hippocampusSrc = path.resolve(__dirname, "..", "hippocampus");
+  const hippocampusDest = path.join(wolfDir, "hippocampus");
+  if (fs.existsSync(hippocampusSrc) && fs.existsSync(path.join(hippocampusSrc, "index.js"))) {
+    ensureDir(hippocampusDest);
+    for (const file of fs.readdirSync(hippocampusSrc)) {
+      if (file.endsWith(".js") && !file.endsWith(".js.map")) {
+        safeCopyFile(path.join(hippocampusSrc, file), path.join(hippocampusDest, file));
       }
     }
   }

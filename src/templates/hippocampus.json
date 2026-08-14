@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "schema_version": 1,
+  "project_root": "",
+  "created_at": "",
+  "last_updated": "",
+  "buffer": [],
+  "stats": {
+    "total_events": 0,
+    "reward_count": 0,
+    "penalty_count": 0,
+    "trauma_count": 0,
+    "neutral_count": 0,
+    "oldest_event": null,
+    "newest_event": null
+  },
+  "size_bytes": 0,
+  "max_size_bytes": 5000000,
+  "retention_days": 7,
+  "max_buffer_size": 500
+}

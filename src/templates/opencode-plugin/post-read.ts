@@ -42,7 +42,7 @@ export function handlePostRead(directory: string, sessionId: string, filePath: s
 
   const session = readJSON<PartialSessionState>(sessionFile, { files_read: {} })
   if (!session.files_read) session.files_read = {}
-  
+
   if (session.files_read[normalizedFile]) {
     session.files_read[normalizedFile].tokens = tokens
   } else {

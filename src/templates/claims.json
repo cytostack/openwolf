@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "schema_version": 1,
+  "project_root": "",
+  "created_at": "",
+  "last_updated": "",
+  "claims": [],
+  "stats": {
+    "total_claims": 0,
+    "active_count": 0,
+    "disputed_count": 0,
+    "superseded_count": 0
+  },
+  "size_bytes": 0
+}
