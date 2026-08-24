@@ -215,7 +215,7 @@ export async function buildAnatomy(wolfDir: string, projectRoot: string): Promis
       anatomy: {
         max_description_length: 100,
         max_files: 500,
-        exclude_patterns: ["node_modules", ".git", "dist", "build", ".wolf"],
+        exclude_patterns: ["node_modules", ".git", "dist", "build", ".wolf", ".gradle", ".DS_Store", ".venv", "venv", "env", "site-packages"],
       },
       token_audit: { chars_per_token_code: 3.5, chars_per_token_prose: 4.0 },
     },
