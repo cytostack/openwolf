@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { dashboardFetch, WolfClient } from "../lib/wolf-client.js";
-import { parseAnatomy, parseMemory, parseCerebrum } from "../lib/file-parsers.js";
-import type { AnatomyEntry, MemorySession, CerebrumData } from "../lib/file-parsers.js";
+import { parseAnatomy, parseMemory, parseCerebrum, parseCronState } from "../lib/file-parsers.js";
+import type { AnatomyEntry, MemorySession, CerebrumData, CronState } from "../lib/file-parsers.js";
 
 export interface RealUsage {
   input_tokens: number;
@@ -103,13 +103,6 @@ export interface ScanState {
   file_count?: number;
 }
 
-interface CronState {
-  engine_status: string;
-  last_heartbeat: string | null;
-  execution_log: any[];
-  dead_letter_queue: any[];
-}
-
 interface BugLog {
   bugs: any[];
 }
@@ -205,7 +198,7 @@ export function useWolfData(): WolfData {
       try { setTokenLedger(JSON.parse(files["token-ledger.json"])); } catch {}
     }
     if (files["cron-state.json"]) {
-      try { setCronState(JSON.parse(files["cron-state.json"])); } catch {}
+      try { setCronState(parseCronState(files["cron-state.json"])); } catch {}
     }
     if (files["cron-manifest.json"]) {
       try { setCronManifest(JSON.parse(files["cron-manifest.json"])); } catch {}

@@ -30,6 +30,23 @@ export interface CerebrumData {
   lastUpdated: string;
 }
 
+export interface CronState {
+  engine_status: string;
+  last_heartbeat: string | null;
+  execution_log: any[];
+  dead_letter_queue: any[];
+}
+
+export function parseCronState(content: string): CronState {
+  const state = JSON.parse(content);
+  return {
+    engine_status: state?.engine_status ?? "unknown",
+    last_heartbeat: state?.last_heartbeat ?? null,
+    execution_log: Array.isArray(state?.execution_log) ? state.execution_log : [],
+    dead_letter_queue: Array.isArray(state?.dead_letter_queue) ? state.dead_letter_queue : [],
+  };
+}
+
 export function parseAnatomy(content: string): { entries: AnatomyEntry[]; metadata: { files: number; hits: number; misses: number } } {
   const entries: AnatomyEntry[] = [];
   let currentSection = "";
