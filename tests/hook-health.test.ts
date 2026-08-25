@@ -139,4 +139,76 @@ describe("compiled hook integration", { skip: !haveDist ? "dist/hooks not built"
     assert.ok(fs.existsSync(path.join(hooksDir, "sessions", "sessA.json")));
     assert.ok(fs.existsSync(path.join(hooksDir, "sessions", "sessB.json")));
   });
+
+  test("accounts for Claude and Codex activity when SessionStart was missed", async () => {
+    const installedRoot = tmpProject();
+    const { resolveAgents } = await import("../dist/src/agents/index.js");
+    const codexAdapter = resolveAgents(["codex"])[0];
+    codexAdapter.install({
+      projectRoot: installedRoot,
+      wolfDir: path.join(installedRoot, ".wolf"),
+      templatesDir: path.resolve("src", "templates"),
+    });
+    const installedHooks = JSON.parse(fs.readFileSync(path.join(installedRoot, ".codex", "hooks.json"), "utf-8"));
+    assert.ok(installedHooks.hooks.PreToolUse.some((entry: { matcher: string; hooks: Array<{ command: string }> }) => entry.matcher === "Bash" && entry.hooks[0].command.endsWith("pre-bash.js\"")));
+    assert.ok(installedHooks.hooks.PostToolUse.some((entry: { matcher: string; hooks: Array<{ command: string }> }) => entry.matcher === "Bash" && entry.hooks[0].command.endsWith("post-bash.js\"")));
+
+    const exercise = async (runtime: "claude" | "codex") => {
+      const root = tmpProject();
+      const decoyRoot = tmpProject();
+      const hooksDir = path.join(root, ".wolf", "hooks");
+      fs.cpSync(DIST_HOOKS, hooksDir, { recursive: true });
+      fs.writeFileSync(path.join(hooksDir, "package.json"), JSON.stringify({ type: "module" }));
+
+      const readTarget = path.join(root, "read.ts");
+      const writeTarget = path.join(root, "write.ts");
+      fs.writeFileSync(readTarget, "export const read = 1;\n");
+      fs.writeFileSync(writeTarget, "export const write = 1;\n");
+
+      const sessionId = `${runtime}-missed-start`;
+      const runHook = (file: string, payload: unknown): Promise<void> =>
+        new Promise((resolve, reject) => {
+          const env = { ...process.env };
+          delete env.CLAUDE_PROJECT_DIR;
+          delete env.CODEX_PROJECT_ROOT;
+          delete env.OPENWOLF_PROJECT_ROOT;
+          env[runtime === "claude" ? "CLAUDE_PROJECT_DIR" : "CODEX_PROJECT_ROOT"] = root;
+
+          const child = execFile(
+            process.execPath,
+            [path.join(hooksDir, file)],
+            { env, timeout: 10000 },
+            (err) => (err ? reject(err) : resolve())
+          );
+          child.stdin!.end(JSON.stringify(payload));
+        });
+
+      await runHook(runtime === "claude" ? "post-read.js" : "post-bash.js", {
+        session_id: sessionId,
+        tool_name: runtime === "claude" ? "Read" : "Bash",
+        tool_input: runtime === "claude" ? { file_path: readTarget } : { command: `cat ${readTarget}` },
+        tool_response: runtime === "claude" ? { file: { content: "export const read = 1;\n" } } : { stdout: "export const read = 1;\n" },
+      });
+      if (runtime === "codex") {
+        const recovered = JSON.parse(fs.readFileSync(path.join(hooksDir, "sessions", `${sessionId}.json`), "utf-8"));
+        assert.strictEqual(recovered.session_id, sessionId, "Bash recovery keeps the session ID before the write hook");
+      }
+      await runHook("post-write.js", {
+        session_id: sessionId,
+        tool_name: runtime === "claude" ? "Edit" : "apply_patch",
+        tool_input: { file_path: writeTarget, old_string: "1", new_string: "2" },
+      });
+      await runHook("stop.js", { session_id: sessionId });
+
+      const ledgerPath = path.join(root, ".wolf", "token-ledger.json");
+      assert.ok(fs.existsSync(ledgerPath), `${runtime} Stop must persist the ledger`);
+      const ledger = JSON.parse(fs.readFileSync(ledgerPath, "utf-8"));
+      assert.strictEqual(ledger.lifetime.total_reads, 1, `${runtime} read accounting`);
+      assert.strictEqual(ledger.lifetime.total_writes, 1, `${runtime} write accounting`);
+      assert.ok(!fs.existsSync(path.join(decoyRoot, ".wolf", "token-ledger.json")), `${runtime} must not create a decoy ledger`);
+    };
+
+    await exercise("claude");
+    await exercise("codex");
+  });
 });

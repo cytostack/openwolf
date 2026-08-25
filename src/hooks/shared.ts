@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
+import type { SessionData } from "./ledger-math.js";
 
 // Prefer the harness-provided project dir so hooks work even if CWD changes
 // during a session. Each supported agent exposes its own env var; hooks are
@@ -133,6 +134,24 @@ export function getSessionFilePath(hookInput: { session_id?: string } | undefine
   }
   // Legacy fallback for agents that pass no session id.
   return path.join(hooksDir, "_session.json");
+}
+
+/** Restore the complete SessionStart shape when a later hook arrives first. */
+export function readSessionState(sessionFile: string, sessionId?: string): SessionData {
+  const existing = readJSON<Partial<SessionData>>(sessionFile, {});
+  return {
+    session_id: sessionId ?? "",
+    started: new Date().toISOString(),
+    files_read: {},
+    files_written: [],
+    edit_counts: {},
+    anatomy_hits: 0,
+    anatomy_misses: 0,
+    repeated_reads_warned: 0,
+    stop_count: 0,
+    reminders_sent: {},
+    ...existing,
+  };
 }
 
 /** Delete session state files older than maxAgeDays (called from session-start). */

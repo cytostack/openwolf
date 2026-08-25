@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { getWolfDir, ensureWolfDir, readJSON, writeJSON, estimateTokens, readStdin, normalizePath, getProjectDir, hookMain, getSessionFilePath } from "./shared.js";
+import { getWolfDir, ensureWolfDir, writeJSON, estimateTokens, readStdin, normalizePath, getProjectDir, hookMain, getSessionFilePath, readSessionState } from "./shared.js";
 import { lookupEntry } from "./anatomy-store.js";
 
 interface SessionData {
@@ -71,7 +71,7 @@ async function main(): Promise<void> {
     // separately from project reads so anatomy hit-rates stay meaningful.
     try {
       if (content) {
-        const session = readJSON<SessionData>(sessionFile, { files_read: {} });
+        const session = readSessionState(sessionFile, input.session_id) as SessionData;
         const tok = estimateTokens(content, "prose");
         session.wolf_internal_tokens = ((session.wolf_internal_tokens as number) ?? 0) + tok;
         const perFile = (session.wolf_internal_reads ?? {}) as Record<string, number>;
@@ -96,7 +96,7 @@ async function main(): Promise<void> {
     if (entry) tokens = entry.tokens;
   }
 
-  const session = readJSON<SessionData>(sessionFile, { files_read: {} });
+  const session = readSessionState(sessionFile, input.session_id) as SessionData;
   const existing = session.files_read[normalizedFile];
   if (existing && existing.ranged !== true) {
     existing.tokens = tokens;

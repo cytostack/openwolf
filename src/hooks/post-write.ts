@@ -4,7 +4,8 @@ import * as crypto from "node:crypto";
 import {
   getWolfDir, ensureWolfDir, readJSON, writeJSON, readBugLogFile, readMarkdown,
   extractDescription, estimateTokens, appendMarkdown, timeShort, readStdin, normalizePath,
-  isSensitiveFile, getProjectDir, emitHookJSON, recordInjection, hookMain, getSessionFilePath
+  isSensitiveFile, getProjectDir, emitHookJSON, recordInjection, hookMain, getSessionFilePath,
+  readSessionState
 } from "./shared.js";
 import { loadStoreReconciled, saveStore, renderToFile, sha256 } from "./anatomy-store.js";
 import { withAnatomyLock, HOOK_LOCK_BUDGET_MS } from "./anatomy-lock.js";
@@ -79,7 +80,7 @@ async function main(): Promise<void> {
         const content = fs.readFileSync(absolutePath, "utf-8");
         const tokens = estimateTokens(content, "prose");
         if (tokens > budget) {
-          const session = readJSON<SessionData>(sessionFile, { files_written: [], edit_counts: {} });
+          const session = readSessionState(sessionFile, input.session_id) as SessionData;
           const warned = (session.budget_warned ?? {}) as Record<string, boolean>;
           if (!warned[relPath]) {
             warned[relPath] = true;
@@ -183,7 +184,7 @@ async function main(): Promise<void> {
 
   // 3. Record in session tracker + track edit counts
   try {
-    const session = readJSON<SessionData>(sessionFile, { files_written: [], edit_counts: {} });
+    const session = readSessionState(sessionFile, input.session_id) as SessionData;
     if (!session.edit_counts) session.edit_counts = {};
 
     const normalizedFile = normalizePath(filePath);
