@@ -3,7 +3,7 @@ import * as path from "node:path";
 import * as crypto from "node:crypto";
 import {
   getWolfDir, ensureWolfDir, readJSON, writeJSON, readStdin, emitHookJSON,
-  hookMain, getProjectDir, getSessionFilePath, normalizePath, readSessionState
+  hookMain, getSessionFilePath, normalizePath, readSessionState
 } from "./shared.js";
 import {
   classifyCommand, condenseOutput, estimateTokens,
@@ -76,7 +76,7 @@ async function main(): Promise<void> {
   try {
     const read = parseBashRead(command);
     if (read && stdout.length > 0) {
-      const normalized = normalizePath(path.isAbsolute(read.file) ? read.file : path.join(getProjectDir(), read.file));
+      const normalized = normalizePath(path.isAbsolute(read.file) ? read.file : path.resolve(process.cwd(), read.file));
       if (!normalized.includes("/.wolf/")) {
         const session = readSessionState(sessionFile, input.session_id) as {
           files_read?: Record<string, { count: number; tokens: number; first_read: string; ranged?: boolean; read_mtime?: number; via_bash?: boolean }>;
@@ -146,7 +146,7 @@ async function main(): Promise<void> {
           at: new Date().toISOString(),
         };
         try {
-          const session = readJSON<{ bash_governed?: GovernedRecord[] }>(sessionFile, {});
+          const session = readSessionState(sessionFile, input.session_id) as { bash_governed?: GovernedRecord[] };
           session.bash_governed = [...(session.bash_governed ?? []), record].slice(-200);
           writeJSON(sessionFile, session);
         } catch {}

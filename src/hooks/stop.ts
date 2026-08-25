@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getWolfDir, ensureWolfDir, readJSON, writeJSON, countSemanticEntries, readStdin, hookMain, getSessionFilePath } from "./shared.js";
+import { getWolfDir, ensureWolfDir, writeJSON, countSemanticEntries, readStdin, hookMain, getSessionFilePath, readSessionState } from "./shared.js";
 import { buildSessionEntry, flushSessionToLedger, type SessionData } from "./ledger.js";
 import { verifyHookDelivery } from "./hook-attachments.js";
 
@@ -15,18 +15,7 @@ async function main(): Promise<void> {
   } catch {}
   const sessionFile = getSessionFilePath(hookInput);
 
-  const session = readJSON<SessionData>(sessionFile, {
-    session_id: "",
-    started: "",
-    files_read: {},
-    files_written: [],
-    edit_counts: {},
-    anatomy_hits: 0,
-    anatomy_misses: 0,
-    repeated_reads_warned: 0,
-    stop_count: 0,
-    reminders_sent: {},
-  });
+  const session = readSessionState(sessionFile, hookInput.session_id);
 
   session.stop_count++;
 

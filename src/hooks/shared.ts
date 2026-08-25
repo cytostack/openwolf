@@ -152,8 +152,16 @@ export function getSessionFilePath(hookInput: { session_id?: string } | undefine
 /** Restore the complete SessionStart shape when a later hook arrives first. */
 export function readSessionState(sessionFile: string, sessionId?: string): SessionData {
   const existing = readJSON<Partial<SessionData>>(sessionFile, {});
-  return {
-    session_id: sessionId ?? "",
+  const validSessionId = (value: unknown): value is string =>
+    typeof value === "string" && /^[\w.-]{4,128}$/.test(value);
+  const fileSessionId = path.basename(path.dirname(sessionFile)) === "sessions"
+    ? path.basename(sessionFile, ".json")
+    : "";
+  const authoritativeSessionId = validSessionId(sessionId)
+    ? sessionId
+    : validSessionId(fileSessionId) ? fileSessionId : "";
+  const session = {
+    session_id: authoritativeSessionId,
     started: new Date().toISOString(),
     files_read: {},
     files_written: [],
@@ -165,6 +173,39 @@ export function readSessionState(sessionFile: string, sessionId?: string): Sessi
     reminders_sent: {},
     ...existing,
   };
+  if (authoritativeSessionId) session.session_id = authoritativeSessionId;
+  else if (!validSessionId(session.session_id)) session.session_id = "";
+  if (typeof session.started !== "string" || !session.started) session.started = new Date().toISOString();
+  if (!session.files_read || typeof session.files_read !== "object" || Array.isArray(session.files_read)) session.files_read = {};
+  if (!Array.isArray(session.files_written)) session.files_written = [];
+  session.files_read = Object.fromEntries(Object.entries(session.files_read).map(([file, value]) => {
+    const read = value && typeof value === "object" ? value as unknown as Record<string, unknown> : {};
+    return [file, {
+      ...read,
+      count: typeof read.count === "number" && Number.isFinite(read.count) && read.count >= 1 ? Math.floor(read.count) : 1,
+      tokens: typeof read.tokens === "number" && Number.isFinite(read.tokens) && read.tokens >= 0 ? read.tokens : 0,
+      first_read: typeof read.first_read === "string" && read.first_read ? read.first_read : session.started,
+    }];
+  })) as SessionData["files_read"];
+  session.files_written = session.files_written.flatMap((value) => {
+    if (!value || typeof value !== "object") return [];
+    const write = value as unknown as Record<string, unknown>;
+    if (typeof write.file !== "string" || !write.file) return [];
+    return [{
+      ...write,
+      file: write.file,
+      action: typeof write.action === "string" && write.action ? write.action : "write",
+      tokens: typeof write.tokens === "number" && Number.isFinite(write.tokens) && write.tokens >= 0 ? write.tokens : 0,
+      at: typeof write.at === "string" && write.at ? write.at : session.started,
+    }];
+  }) as SessionData["files_written"];
+  if (!session.edit_counts || typeof session.edit_counts !== "object" || Array.isArray(session.edit_counts)) session.edit_counts = {};
+  if (typeof session.anatomy_hits !== "number" || !Number.isFinite(session.anatomy_hits)) session.anatomy_hits = 0;
+  if (typeof session.anatomy_misses !== "number" || !Number.isFinite(session.anatomy_misses)) session.anatomy_misses = 0;
+  if (typeof session.repeated_reads_warned !== "number" || !Number.isFinite(session.repeated_reads_warned)) session.repeated_reads_warned = 0;
+  if (typeof session.stop_count !== "number" || !Number.isFinite(session.stop_count)) session.stop_count = 0;
+  if (!session.reminders_sent || typeof session.reminders_sent !== "object" || Array.isArray(session.reminders_sent)) session.reminders_sent = {};
+  return session;
 }
 
 /** Delete session state files older than maxAgeDays (called from session-start). */
@@ -798,7 +839,7 @@ export function recordInjection(session: InjectionTracking, source: string, text
 export function recordInjectionToSessionFile(sessionFile: string, source: string, text: string): void {
   if (!text) return;
   try {
-    const session = readJSON<InjectionTracking>(sessionFile, {});
+    const session = readSessionState(sessionFile) as InjectionTracking;
     recordInjection(session, source, text);
     writeJSON(sessionFile, session);
   } catch {}

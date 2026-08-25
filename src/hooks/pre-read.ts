@@ -3,7 +3,7 @@ import * as path from "node:path";
 import {
   getWolfDir, ensureWolfDir, readJSON, writeJSON,
   estimateTokens, readStdin, normalizePath, getProjectDir, emitHookJSON, recordInjection,
-  hookMain, getSessionFilePath
+  hookMain, getSessionFilePath, readSessionState
 } from "./shared.js";
 import { lookupEntry } from "./anatomy-store.js";
 
@@ -102,9 +102,7 @@ async function main(): Promise<void> {
         let sizeTokens = 0;
         try { sizeTokens = Math.ceil(fs.statSync(filePath).size / 3.5); } catch {}
         if (sizeTokens > 1500) {
-          const session = readJSON<SessionData>(sessionFile, {
-            session_id: "", files_read: {}, anatomy_hits: 0, anatomy_misses: 0, repeated_reads_warned: 0,
-          });
+          const session = readSessionState(sessionFile, input.session_id) as SessionData;
           const warned = (session.wolf_read_advised ?? {}) as Record<string, boolean>;
           if (!warned[base]) {
             warned[base] = true;
@@ -122,10 +120,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const session = readJSON<SessionData>(sessionFile, {
-    session_id: "", files_read: {}, anatomy_hits: 0, anatomy_misses: 0,
-    repeated_reads_warned: 0,
-  });
+  const session = readSessionState(sessionFile, input.session_id) as SessionData;
 
   if (isRangedRead) {
     // Record the contact so dedupe knows about it, but flagged: a ranged

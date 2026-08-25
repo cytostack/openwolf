@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { getWolfDir, ensureWolfDir, readJSON, appendMarkdown, timeShort, readStdin, hookMain, getSessionFilePath } from "./shared.js";
+import { getWolfDir, ensureWolfDir, writeJSON, appendMarkdown, timeShort, readStdin, hookMain, getSessionFilePath, readSessionState } from "./shared.js";
 import { buildSessionEntry, flushSessionToLedger, type SessionData } from "./ledger.js";
 import { verifyHookDelivery } from "./hook-attachments.js";
 
@@ -19,14 +19,15 @@ async function main(): Promise<void> {
   } catch {}
   const sessionFile = getSessionFilePath(hookInput);
 
-  const session = readJSON<SessionData | null>(sessionFile, null);
-  if (!session || !session.session_id) {
+  const session = readSessionState(sessionFile, hookInput.session_id);
+  if (!session.session_id) {
     return;
   }
 
   const readCount = Object.keys(session.files_read ?? {}).length;
   const writeCount = (session.files_written ?? []).length;
   if (readCount === 0 && writeCount === 0) {
+    writeJSON(sessionFile, session);
     return;
   }
 
@@ -36,6 +37,7 @@ async function main(): Promise<void> {
     if (verified) entry.verified = verified;
   }
   flushSessionToLedger(wolfDir, entry);
+  writeJSON(sessionFile, session);
 
   if (writeCount > 0) {
     try {
