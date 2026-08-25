@@ -99,6 +99,7 @@ async function main(): Promise<void> {
   }
 
   await mutateSession<SessionData>(sessionFile, { files_read: {} }, (session) => {
+    if (!session.files_read) session.files_read = {};
     const existing = session.files_read[normalizedFile];
     if (existing && existing.ranged !== true) {
       existing.tokens = tokens;

@@ -280,6 +280,22 @@ describe("public session transactions", { skip: !haveDist ? "dist/hooks not buil
     }
   });
 
+  test("post-read preserves governor-only session state while adding a read", async () => {
+    const { root, hooksDir } = installHooks();
+    const sessionId = "governor-only";
+    const sessionDir = path.join(hooksDir, "sessions");
+    fs.mkdirSync(sessionDir, { recursive: true });
+    const governor = [{ family: "file_print", action: "replaced", original_tokens: 9, entered_tokens: 4, at: "now" }];
+    fs.writeFileSync(path.join(sessionDir, `${sessionId}.json`), JSON.stringify({ bash_governed: governor }));
+    const target = path.join(root, "after-governor.ts");
+
+    await runHooks(hooksDir, root, [{ file: "post-read.js", payload: postReadPayload(sessionId, target) }]);
+
+    const state = readSession(hooksDir, sessionId);
+    assert.deepStrictEqual(state.bash_governed, governor);
+    assert.ok(state.files_read?.[target]);
+  });
+
   test("retains session recovery, legacy fallback, and post-read response parsing contracts", async () => {
     const { root, hooksDir } = installHooks();
     const sessionDir = path.join(hooksDir, "sessions");
