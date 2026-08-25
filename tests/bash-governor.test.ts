@@ -210,6 +210,32 @@ describe("post-bash compiled hook", { skip: !haveDist ? "dist not built" : false
     assert.ok(!out.includes("Full output preserved"));
   });
 
+  test("issue #4: exact 50 MiB is retained after evicting older logs", async () => {
+    const { root, hooksDir } = setupProject();
+    const cacheDir = path.join(root, ".wolf", "cache", "bash");
+    fs.mkdirSync(cacheDir, { recursive: true });
+    for (let i = 0; i < 200; i++) {
+      const old = path.join(cacheDir, `old-${String(i).padStart(3, "0")}.log`);
+      fs.writeFileSync(old, "old");
+      const when = new Date(1_000 + i * 1_000);
+      fs.utimesSync(old, when, when);
+    }
+    const stdout = "x\n".repeat(25 * 1024 * 1024);
+    const out = await runHook(hooksDir, root, {
+      session_id: "exact-cap", tool_use_id: "exact-cap",
+      tool_input: { command: "cat big.log" },
+      tool_response: { stdout, stderr: "same", interrupted: false, isImage: false },
+    });
+    const updated = JSON.parse(out).hookSpecificOutput.updatedToolOutput;
+    assert.ok(updated, "exact-cap output must be replaced only after retention");
+    const current = path.join(cacheDir, "exact-cap.log");
+    assert.strictEqual(fs.statSync(current).size, Buffer.byteLength(stdout, "utf8"));
+    const logs = fs.readdirSync(cacheDir).filter((f) => f.endsWith(".log"));
+    const bytes = logs.reduce((sum, f) => sum + fs.statSync(path.join(cacheDir, f)).size, 0);
+    assert.ok(logs.length <= 200 && bytes <= 50 * 1024 * 1024);
+    assert.ok(!fs.existsSync(path.join(cacheDir, "old-000.log")), "oldest log must be evicted");
+  });
+
   test("bash read dedupe: second cat of an unchanged file gets a factual advisory", async () => {
     const { root, hooksDir } = setupProject();
     const target = path.join(root, "notes.md");

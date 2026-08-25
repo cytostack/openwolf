@@ -130,11 +130,7 @@ async function main(): Promise<void> {
       if (result) {
         // Preserve the full output regardless of action: the pointer (or the
         // suggestion) must always be honest about where the bytes live.
-        try {
-          fs.mkdirSync(logDir, { recursive: true });
-          fs.writeFileSync(logPath, stdout, "utf-8");
-          pruneLogs(logDir);
-        } catch {}
+        if (retainCompleteLog(logDir, logPath, stdout)) {
 
         const record: GovernedRecord = {
           family,
@@ -161,6 +157,7 @@ async function main(): Promise<void> {
         notes.push(
           `OpenWolf: that ${family.replace("_", " ")} output was ~${result.original_tokens.toLocaleString("en-US")} tokens and now sits in context for the rest of the session. A copy is saved at ${relLog}. Narrower variants (grep with a file filter, head/tail, git show --stat) produce the same information at a fraction of the cost.`
         );
+        }
       }
     }
   }
@@ -170,25 +167,44 @@ async function main(): Promise<void> {
   }
 }
 
-/** Keep the bash log cache bounded (200 files / ~50MB, oldest first). */
-function pruneLogs(logDir: string): void {
+const MAX_LOG_FILES = 200;
+const MAX_LOG_BYTES = 50 * 1024 * 1024;
+
+/** Retain a complete current log while keeping the cache within fixed limits. */
+function retainCompleteLog(logDir: string, logPath: string, stdout: string): boolean {
+  const expectedBytes = Buffer.byteLength(stdout, "utf8");
+  if (expectedBytes > MAX_LOG_BYTES) return false;
   try {
-    const files = fs.readdirSync(logDir)
+    fs.mkdirSync(logDir, { recursive: true });
+    fs.writeFileSync(logPath, stdout, "utf-8");
+    let files = fs.readdirSync(logDir)
       .filter((f) => f.endsWith(".log"))
       .map((f) => {
         const p = path.join(logDir, f);
         const st = fs.statSync(p);
+        if (!st.isFile()) throw new Error("bash cache entry is not a regular file");
         return { p, mtime: st.mtimeMs, size: st.size };
       })
-      .sort((a, b) => b.mtime - a.mtime);
-    let total = 0;
-    files.forEach((f, i) => {
-      total += f.size;
-      if (i >= 200 || total > 50 * 1024 * 1024) {
-        try { fs.unlinkSync(f.p); } catch {}
-      }
-    });
-  } catch {}
+      .sort((a, b) => a.mtime - b.mtime);
+    const current = files.find((f) => f.p === logPath);
+    if (!current || current.size !== expectedBytes) throw new Error("incomplete bash cache write");
+    let total = files.reduce((sum, file) => sum + file.size, 0);
+    for (const file of files) {
+      if (files.length <= MAX_LOG_FILES && total <= MAX_LOG_BYTES) break;
+      if (file.p === logPath) continue;
+      fs.unlinkSync(file.p);
+      files = files.filter((entry) => entry.p !== file.p);
+      total -= file.size;
+    }
+    const verified = fs.statSync(logPath);
+    if (!verified.isFile() || verified.size !== expectedBytes || files.length > MAX_LOG_FILES || total > MAX_LOG_BYTES) {
+      throw new Error("bash cache limits could not be verified");
+    }
+    return true;
+  } catch {
+    try { fs.unlinkSync(logPath); } catch {}
+    return false;
+  }
 }
 
 hookMain("post-bash", main);
