@@ -132,16 +132,55 @@ describe("post-bash compiled hook", { skip: !haveDist ? "dist not built" : false
     return { root, hooksDir };
   }
 
-  const runHook = (hooksDir: string, root: string, payload: unknown): Promise<string> =>
+  const runHook = (hooksDir: string, root: string, payload: unknown, extraEnv: Record<string, string> = {}): Promise<string> =>
     new Promise((resolve, reject) => {
       const child = execFile(
         process.execPath,
         [path.join(hooksDir, "post-bash.js")],
-        { env: { ...process.env, CLAUDE_PROJECT_DIR: root }, timeout: 10000, maxBuffer: 10 * 1024 * 1024 },
+        { env: { ...process.env, CLAUDE_PROJECT_DIR: root, ...extraEnv }, timeout: 30000, maxBuffer: 10 * 1024 * 1024 },
         (err, stdout) => (err ? reject(err) : resolve(stdout))
       );
       child.stdin!.end(JSON.stringify(payload));
     });
+
+  function faultPreload(root: string, method: "writeFileSync" | "statSync" | "unlinkSync", marker: string): string {
+    const preload = path.join(root, `fault-${method}.cjs`);
+    fs.writeFileSync(preload, `
+      const fs = require("node:fs");
+      const { syncBuiltinESMExports } = require("node:module");
+      const original = fs[${JSON.stringify(method)}];
+      let calls = 0;
+      fs[${JSON.stringify(method)}] = function (...args) {
+        const target = String(args[0] ?? "");
+        if (target.includes(".wolf/cache/bash") && calls++ === 0) {
+          fs.appendFileSync(${JSON.stringify(marker)}, target + "\\n");
+          throw new Error("injected ${method} failure");
+        }
+        return original.apply(this, args);
+      };
+      syncBuiltinESMExports();
+    `);
+    return preload;
+  }
+
+  function withPreload(preload: string, marker: string): Record<string, string> {
+    return { NODE_OPTIONS: `--require ${preload}`, WOLF_FAULT_MARKER: marker };
+  }
+
+  function unlinkSpyPreload(root: string, marker: string): string {
+    const preload = path.join(root, "unlink-spy.cjs");
+    fs.writeFileSync(preload, `
+      const fs = require("node:fs");
+      const { syncBuiltinESMExports } = require("node:module");
+      const original = fs.unlinkSync;
+      fs.unlinkSync = function (...args) {
+        fs.appendFileSync(${JSON.stringify(marker)}, String(args[0]) + "\\n");
+        return original.apply(this, args);
+      };
+      syncBuiltinESMExports();
+    `);
+    return preload;
+  }
 
   test("replaces an oversized grep flood and preserves the full log", async () => {
     const { root, hooksDir } = setupProject();
@@ -175,6 +214,21 @@ describe("post-bash compiled hook", { skip: !haveDist ? "dist not built" : false
     assert.ok(session.bash_governed[0].original_tokens > session.bash_governed[0].entered_tokens);
   });
 
+  test("replacement preserves string response shape and token accounting", async () => {
+    const { root, hooksDir } = setupProject();
+    const stdout = Array.from({ length: 900 }, (_, i) => `line ${i} with enough content to condense`).join("\n");
+    const out = await runHook(hooksDir, root, {
+      session_id: "string-replace", tool_use_id: "string-replace",
+      tool_input: { command: "cat string.log" }, tool_response: stdout,
+    });
+    const parsed = JSON.parse(out);
+    assert.strictEqual(typeof parsed.hookSpecificOutput.updatedToolOutput, "string");
+    assert.ok(parsed.hookSpecificOutput.updatedToolOutput.includes("Full output preserved verbatim"));
+    const session = JSON.parse(fs.readFileSync(path.join(hooksDir, "sessions", "string-replace.json"), "utf8"));
+    assert.strictEqual(session.bash_governed[0].action, "replaced");
+    assert.ok(session.bash_governed[0].entered_tokens < session.bash_governed[0].original_tokens);
+  });
+
   test("suggests (never replaces) for test-runner output, and stays silent under threshold", async () => {
     const { root, hooksDir } = setupProject();
     const bigTestOutput = Array.from({ length: 900 }, (_, i) => `PASS test case number ${i} with a description`).join("\n");
@@ -186,6 +240,9 @@ describe("post-bash compiled hook", { skip: !haveDist ? "dist not built" : false
     const parsed = JSON.parse(out);
     assert.strictEqual(parsed.hookSpecificOutput.updatedToolOutput, undefined);
     assert.ok(parsed.hookSpecificOutput.additionalContext.includes("saved at .wolf/cache/bash/"));
+    const session = JSON.parse(fs.readFileSync(path.join(hooksDir, "sessions", "gov2.json"), "utf-8"));
+    assert.deepStrictEqual(session.bash_governed[0].action, "suggested");
+    assert.strictEqual(session.bash_governed[0].entered_tokens, session.bash_governed[0].original_tokens);
 
     const quiet = await runHook(hooksDir, root, {
       session_id: "gov2",
@@ -220,12 +277,14 @@ describe("post-bash compiled hook", { skip: !haveDist ? "dist not built" : false
       const when = new Date(1_000 + i * 1_000);
       fs.utimesSync(old, when, when);
     }
+    const unlinkCalls = path.join(root, "unlink.calls");
+    const unlinkPreload = unlinkSpyPreload(root, unlinkCalls);
     const stdout = "x\n".repeat(25 * 1024 * 1024);
     const out = await runHook(hooksDir, root, {
       session_id: "exact-cap", tool_use_id: "exact-cap",
       tool_input: { command: "cat big.log" },
       tool_response: { stdout, stderr: "same", interrupted: false, isImage: false },
-    });
+    }, { NODE_OPTIONS: `--require ${unlinkPreload}` });
     const updated = JSON.parse(out).hookSpecificOutput.updatedToolOutput;
     assert.ok(updated, "exact-cap output must be replaced only after retention");
     const current = path.join(cacheDir, "exact-cap.log");
@@ -234,6 +293,75 @@ describe("post-bash compiled hook", { skip: !haveDist ? "dist not built" : false
     const bytes = logs.reduce((sum, f) => sum + fs.statSync(path.join(cacheDir, f)).size, 0);
     assert.ok(logs.length <= 200 && bytes <= 50 * 1024 * 1024);
     assert.ok(!fs.existsSync(path.join(cacheDir, "old-000.log")), "oldest log must be evicted");
+    const calls = fs.readFileSync(unlinkCalls, "utf8").trim().split("\n");
+    assert.ok(calls[0].endsWith("old-000.log"), "oldest eligible log must be removed first");
+    assert.ok(!calls.some((call) => call.endsWith("exact-cap.log")), "current log must be protected");
+  });
+
+  test("issue #4: multibyte UTF-8 retention uses encoded bytes", async () => {
+    const { root, hooksDir } = setupProject();
+    const stdout = "é\n".repeat(17_476_265) + "éx";
+    assert.strictEqual(Buffer.byteLength(stdout, "utf8"), 52_428_798);
+    const out = await runHook(hooksDir, root, {
+      session_id: "utf8-cap", tool_use_id: "utf8-cap",
+      tool_input: { command: "cat unicode.log" },
+      tool_response: { stdout, stderr: "same", interrupted: false, isImage: false },
+    });
+    const updated = JSON.parse(out).hookSpecificOutput.updatedToolOutput;
+    assert.ok(updated.stdout.includes("Full output preserved verbatim at .wolf/cache/bash/utf8-cap.log"));
+    const log = fs.readFileSync(path.join(root, ".wolf/cache/bash/utf8-cap.log"));
+    assert.strictEqual(log.byteLength, Buffer.byteLength(stdout, "utf8"));
+    assert.strictEqual(log.toString("utf8"), stdout);
+  });
+
+  for (const method of ["writeFileSync", "statSync", "unlinkSync"] as const) {
+    test(`issue #4: ${method} failure passes through and cleans current artifact`, async () => {
+      const { root, hooksDir } = setupProject();
+      if (method === "unlinkSync") {
+        const cacheDir = path.join(root, ".wolf", "cache", "bash");
+        fs.mkdirSync(cacheDir, { recursive: true });
+        for (let i = 0; i < 200; i++) fs.writeFileSync(path.join(cacheDir, `old-${i}.log`), "old");
+      }
+      const marker = path.join(root, `${method}.calls`);
+      const preload = faultPreload(root, method, marker);
+      const stdout = Array.from({ length: 900 }, (_, i) => `line ${i} with enough content to condense`).join("\n");
+      const response = { stdout, stderr: "failure stays", interrupted: false, isImage: false };
+      const out = await runHook(hooksDir, root, {
+        session_id: `fault-${method}`, tool_use_id: `fault-${method}`,
+        tool_input: { command: "cat failure.log" }, tool_response: response,
+      }, withPreload(preload, marker));
+      const parsed = JSON.parse(out || "{}");
+      assert.deepStrictEqual(parsed.hookSpecificOutput?.updatedToolOutput, undefined);
+      assert.ok(!out.includes("Full output preserved"));
+      assert.ok(!fs.existsSync(path.join(root, ".wolf/cache/bash", `fault-${method}.log`)));
+      const sessionPath = path.join(hooksDir, "sessions", `fault-${method}.json`);
+      const session = fs.existsSync(sessionPath) ? JSON.parse(fs.readFileSync(sessionPath, "utf8")) : {};
+      assert.deepStrictEqual(session.bash_governed ?? [], []);
+      assert.ok(fs.existsSync(marker));
+    });
+  }
+
+  test("issue #4: failed preservation leaves duplicate-read advice independent", async () => {
+    const { root, hooksDir } = setupProject();
+    const target = path.join(root, "repeat.md");
+    fs.writeFileSync(target, "hello world\n".repeat(50));
+    const content = fs.readFileSync(target, "utf8");
+    const first = await runHook(hooksDir, root, {
+      session_id: "fault-advice", tool_input: { command: `cat ${target}` },
+      tool_response: { stdout: content, stderr: "", interrupted: false, isImage: false },
+    });
+    assert.ok(!first.includes("already fully output"));
+    const marker = path.join(root, "advice-fault.calls");
+    const preload = faultPreload(root, "writeFileSync", marker);
+    const big = Array.from({ length: 900 }, (_, i) => `line ${i} with enough content to condense`).join("\n");
+    const out = await runHook(hooksDir, root, {
+      session_id: "fault-advice", tool_use_id: "fault-advice",
+      tool_input: { command: `cat ${target}` },
+      tool_response: { stdout: big, stderr: "", interrupted: false, isImage: false },
+    }, withPreload(preload, marker));
+    assert.ok(out.includes("already fully output"));
+    assert.ok(!out.includes("Full output preserved"));
+    assert.strictEqual(JSON.parse(out).hookSpecificOutput.updatedToolOutput, undefined);
   });
 
   test("bash read dedupe: second cat of an unchanged file gets a factual advisory", async () => {
