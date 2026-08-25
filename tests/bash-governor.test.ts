@@ -195,6 +195,21 @@ describe("post-bash compiled hook", { skip: !haveDist ? "dist not built" : false
     assert.strictEqual(quiet.trim(), "");
   });
 
+  test("issue #4: 50 MiB plus one byte is pass-through without a saved-copy claim", async () => {
+    const { root, hooksDir } = setupProject();
+    const stdout = "x\n".repeat(25 * 1024 * 1024) + "x";
+    const response = { stdout, stderr: "unchanged", interrupted: false, isImage: false };
+    const out = await runHook(hooksDir, root, {
+      session_id: "over-cap",
+      tool_use_id: "over-cap",
+      tool_input: { command: "cat big.log" },
+      tool_response: response,
+    });
+    const parsed = JSON.parse(out || "{}");
+    assert.strictEqual(parsed.hookSpecificOutput?.updatedToolOutput ?? response, response, "issue #4: over-cap output must pass through");
+    assert.ok(!out.includes("Full output preserved"));
+  });
+
   test("bash read dedupe: second cat of an unchanged file gets a factual advisory", async () => {
     const { root, hooksDir } = setupProject();
     const target = path.join(root, "notes.md");
