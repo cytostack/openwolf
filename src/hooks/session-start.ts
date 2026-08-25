@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getWolfDir, ensureWolfDir, writeJSON, appendMarkdown, readJSON, readBugLogFile, timestamp, timeShort, estimateTokens, readStdin, detectAgent, recordInjectionToSessionFile, getProjectDir, hookMain, getSessionFilePath, gcSessionFiles } from "./shared.js";
+import { getWolfDir, ensureWolfDir, writeJSON, appendMarkdown, readJSON, readBugLogFile, timestamp, timeShort, estimateTokens, readStdin, detectAgent, recordInjectionToSessionFile, getProjectDir, hookMain, getSessionFilePath, gcSessionFiles, readSessionState } from "./shared.js";
 import { loadStore } from "./anatomy-store.js";
 import { topRules, scopedRulesForFiles } from "./rule-reinjection.js";
 
@@ -210,7 +210,7 @@ async function main(): Promise<void> {
   // recorded read (the warn path still fires; only denial is disarmed).
   if (continuing && source === "compact") {
     try {
-      const session = readJSON<{ files_read?: Record<string, { compacted?: boolean }> }>(sessionFile, {});
+      const session = readSessionState(sessionFile, hookInput.session_id) as { files_read?: Record<string, { compacted?: boolean }> };
       if (session.files_read) {
         for (const entry of Object.values(session.files_read)) {
           entry.compacted = true;
@@ -308,7 +308,7 @@ async function main(): Promise<void> {
     // scoped rules for files this session already touched, plus the top
     // Do-Not-Repeat rules (decay countermeasure) and the in-flight state.
     if (continuing && source === "compact") {
-      const session = readJSON<{ files_written?: Array<{ file: string }>; files_read?: Record<string, unknown>; edit_counts?: Record<string, number> }>(sessionFile, {});
+      const session = readSessionState(sessionFile, hookInput.session_id) as { files_written?: Array<{ file: string }>; files_read?: Record<string, unknown>; edit_counts?: Record<string, number> };
       const restoreParts: string[] = [];
 
       const files = [...new Set((session.files_written ?? []).map((w) => w.file))];

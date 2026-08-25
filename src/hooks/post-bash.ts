@@ -3,7 +3,7 @@ import * as path from "node:path";
 import * as crypto from "node:crypto";
 import {
   getWolfDir, ensureWolfDir, readJSON, writeJSON, readStdin, emitHookJSON,
-  hookMain, getSessionFilePath, normalizePath
+  hookMain, getSessionFilePath, normalizePath, readSessionState
 } from "./shared.js";
 import {
   classifyCommand, condenseOutput, estimateTokens,
@@ -54,7 +54,7 @@ async function main(): Promise<void> {
   const raw = await readStdin();
   let input: {
     tool_input?: { command?: string };
-    tool_response?: { stdout?: string; stderr?: string; [key: string]: unknown };
+    tool_response?: string | { stdout?: string; stderr?: string; [key: string]: unknown };
     tool_use_id?: string;
     session_id?: string;
   };
@@ -66,7 +66,7 @@ async function main(): Promise<void> {
 
   const command = input.tool_input?.command ?? "";
   const resp = input.tool_response;
-  const stdout = typeof resp?.stdout === "string" ? resp.stdout : "";
+  const stdout = typeof resp === "string" ? resp : typeof resp?.stdout === "string" ? resp.stdout : "";
   if (!command || !resp) return;
 
   const sessionFile = getSessionFilePath(input);
@@ -76,9 +76,11 @@ async function main(): Promise<void> {
   try {
     const read = parseBashRead(command);
     if (read && stdout.length > 0) {
-      const normalized = normalizePath(path.isAbsolute(read.file) ? read.file : path.join(process.env.CLAUDE_PROJECT_DIR ?? process.cwd(), read.file));
+      const normalized = normalizePath(path.isAbsolute(read.file) ? read.file : path.resolve(process.cwd(), read.file));
       if (!normalized.includes("/.wolf/")) {
-        const session = readJSON<{ files_read?: Record<string, { count: number; tokens: number; first_read: string; ranged?: boolean; read_mtime?: number; via_bash?: boolean }> }>(sessionFile, {});
+        const session = readSessionState(sessionFile, input.session_id) as {
+          files_read?: Record<string, { count: number; tokens: number; first_read: string; ranged?: boolean; read_mtime?: number; via_bash?: boolean }>;
+        };
         if (!session.files_read) session.files_read = {};
         const prev = session.files_read[normalized];
         let unchanged = false;
@@ -144,16 +146,16 @@ async function main(): Promise<void> {
           at: new Date().toISOString(),
         };
         try {
-          const session = readJSON<{ bash_governed?: GovernedRecord[] }>(sessionFile, {});
+          const session = readSessionState(sessionFile, input.session_id) as { bash_governed?: GovernedRecord[] };
           session.bash_governed = [...(session.bash_governed ?? []), record].slice(-200);
           writeJSON(sessionFile, session);
         } catch {}
 
         if (effectiveAction === "replace") {
-          // Mirror the received object exactly; change ONLY stdout. A shape
-          // mismatch makes the harness silently ignore the replacement.
+          // Preserve the received response shape. A mismatch makes the
+          // harness silently ignore the replacement.
           emitHookJSON("PostToolUse", {
-            updatedToolOutput: { ...resp, stdout: result.text },
+            updatedToolOutput: typeof resp === "string" ? result.text : { ...resp, stdout: result.text },
             additionalContext: notes.length > 0 ? notes.join("\n") : undefined,
           });
           return;

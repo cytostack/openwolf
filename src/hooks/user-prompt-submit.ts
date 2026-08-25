@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { ensureWolfDir, readJSON, writeJSON, emitHookJSON, recordInjection, readStdin, hookMain, getSessionFilePath } from "./shared.js";
+import { ensureWolfDir, writeJSON, emitHookJSON, recordInjection, readStdin, hookMain, getSessionFilePath, readSessionState } from "./shared.js";
 
 // UserPromptSubmit hook: drains reminders the Stop hook queued last turn.
 //
@@ -20,7 +20,7 @@ async function main(): Promise<void> {
     input = JSON.parse(await readStdin());
   } catch {}
   const sessionFile = getSessionFilePath(input);
-  const session = readJSON<SessionData>(sessionFile, {});
+  const session = readSessionState(sessionFile, input.session_id) as SessionData;
   const pending = session.pending_reminders ?? [];
   if (pending.length === 0) {
     return;

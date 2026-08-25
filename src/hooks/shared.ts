@@ -2,17 +2,30 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
+import type { SessionData } from "./ledger-math.js";
 
 // Prefer the harness-provided project dir so hooks work even if CWD changes
 // during a session. Each supported agent exposes its own env var; hooks are
 // provider-agnostic (Workstream C) so all are checked.
 //
-// None of those vars are guaranteed. Claude Code in particular does not put
-// CLAUDE_PROJECT_DIR in the hook process's environment on any platform: it
-// delivers project context through the stdin JSON payload instead. So before
-// falling back to CWD, derive the root from this script's own location. A hook
-// always runs as <project>/.wolf/hooks/<name>.js, which makes the project root
-// two directories up, verified by the .wolf/ directory being there.
+// None of those vars are guaranteed. Codex runs command hooks from the active
+// request cwd, so its nearest .wolf ancestor must win over a copied script's
+// installation root. Script location and legacy provider vars remain fallbacks.
+function projectDirFromCwd(): string | null {
+  try {
+    let current = fs.realpathSync.native(process.cwd());
+    while (true) {
+      const wolfDir = path.join(current, ".wolf");
+      if (fs.existsSync(wolfDir) && fs.statSync(wolfDir).isDirectory()) return current;
+      const parent = path.dirname(current);
+      if (parent === current) return null;
+      current = parent;
+    }
+  } catch {
+    return null;
+  }
+}
+
 function projectDirFromScriptLocation(): string | null {
   try {
     const here = path.dirname(fileURLToPath(import.meta.url));
@@ -28,9 +41,10 @@ function projectDirFromScriptLocation(): string | null {
 export function getProjectDir(): string {
   return (
     process.env.CLAUDE_PROJECT_DIR ||
+    projectDirFromCwd() ||
+    projectDirFromScriptLocation() ||
     process.env.CODEX_PROJECT_ROOT ||
     process.env.OPENWOLF_PROJECT_ROOT ||
-    projectDirFromScriptLocation() ||
     process.cwd()
   );
 }
@@ -133,6 +147,65 @@ export function getSessionFilePath(hookInput: { session_id?: string } | undefine
   }
   // Legacy fallback for agents that pass no session id.
   return path.join(hooksDir, "_session.json");
+}
+
+/** Restore the complete SessionStart shape when a later hook arrives first. */
+export function readSessionState(sessionFile: string, sessionId?: string): SessionData {
+  const existing = readJSON<Partial<SessionData>>(sessionFile, {});
+  const validSessionId = (value: unknown): value is string =>
+    typeof value === "string" && /^[\w.-]{4,128}$/.test(value);
+  const fileSessionId = path.basename(path.dirname(sessionFile)) === "sessions"
+    ? path.basename(sessionFile, ".json")
+    : "";
+  const authoritativeSessionId = validSessionId(sessionId)
+    ? sessionId
+    : validSessionId(fileSessionId) ? fileSessionId : "";
+  const session = {
+    session_id: authoritativeSessionId,
+    started: new Date().toISOString(),
+    files_read: {},
+    files_written: [],
+    edit_counts: {},
+    anatomy_hits: 0,
+    anatomy_misses: 0,
+    repeated_reads_warned: 0,
+    stop_count: 0,
+    reminders_sent: {},
+    ...existing,
+  };
+  if (authoritativeSessionId) session.session_id = authoritativeSessionId;
+  else if (!validSessionId(session.session_id)) session.session_id = "";
+  if (typeof session.started !== "string" || !session.started) session.started = new Date().toISOString();
+  if (!session.files_read || typeof session.files_read !== "object" || Array.isArray(session.files_read)) session.files_read = {};
+  if (!Array.isArray(session.files_written)) session.files_written = [];
+  session.files_read = Object.fromEntries(Object.entries(session.files_read).map(([file, value]) => {
+    const read = value && typeof value === "object" ? value as unknown as Record<string, unknown> : {};
+    return [file, {
+      ...read,
+      count: typeof read.count === "number" && Number.isFinite(read.count) && read.count >= 1 ? Math.floor(read.count) : 1,
+      tokens: typeof read.tokens === "number" && Number.isFinite(read.tokens) && read.tokens >= 0 ? read.tokens : 0,
+      first_read: typeof read.first_read === "string" && read.first_read ? read.first_read : session.started,
+    }];
+  })) as SessionData["files_read"];
+  session.files_written = session.files_written.flatMap((value) => {
+    if (!value || typeof value !== "object") return [];
+    const write = value as unknown as Record<string, unknown>;
+    if (typeof write.file !== "string" || !write.file) return [];
+    return [{
+      ...write,
+      file: write.file,
+      action: typeof write.action === "string" && write.action ? write.action : "write",
+      tokens: typeof write.tokens === "number" && Number.isFinite(write.tokens) && write.tokens >= 0 ? write.tokens : 0,
+      at: typeof write.at === "string" && write.at ? write.at : session.started,
+    }];
+  }) as SessionData["files_written"];
+  if (!session.edit_counts || typeof session.edit_counts !== "object" || Array.isArray(session.edit_counts)) session.edit_counts = {};
+  if (typeof session.anatomy_hits !== "number" || !Number.isFinite(session.anatomy_hits)) session.anatomy_hits = 0;
+  if (typeof session.anatomy_misses !== "number" || !Number.isFinite(session.anatomy_misses)) session.anatomy_misses = 0;
+  if (typeof session.repeated_reads_warned !== "number" || !Number.isFinite(session.repeated_reads_warned)) session.repeated_reads_warned = 0;
+  if (typeof session.stop_count !== "number" || !Number.isFinite(session.stop_count)) session.stop_count = 0;
+  if (!session.reminders_sent || typeof session.reminders_sent !== "object" || Array.isArray(session.reminders_sent)) session.reminders_sent = {};
+  return session;
 }
 
 /** Delete session state files older than maxAgeDays (called from session-start). */
@@ -766,7 +839,7 @@ export function recordInjection(session: InjectionTracking, source: string, text
 export function recordInjectionToSessionFile(sessionFile: string, source: string, text: string): void {
   if (!text) return;
   try {
-    const session = readJSON<InjectionTracking>(sessionFile, {});
+    const session = readSessionState(sessionFile) as InjectionTracking;
     recordInjection(session, source, text);
     writeJSON(sessionFile, session);
   } catch {}

@@ -27,10 +27,12 @@ function buildCodexHooks(projectRoot: string) {
       ],
       PreToolUse: [
         { matcher: "Read", hooks: [hookEntry(projectRoot, "pre-read.js", 5, "OpenWolf read precheck")] },
+        { matcher: "Bash", hooks: [hookEntry(projectRoot, "pre-bash.js", 5, "OpenWolf Bash precheck")] },
         { matcher: "Edit|Write|MultiEdit|apply_patch", hooks: [hookEntry(projectRoot, "pre-write.js", 5, "OpenWolf write precheck")] },
       ],
       PostToolUse: [
         { matcher: "Read", hooks: [hookEntry(projectRoot, "post-read.js", 5, "OpenWolf read tracking")] },
+        { matcher: "Bash", hooks: [hookEntry(projectRoot, "post-bash.js", 10, "OpenWolf Bash tracking")] },
         { matcher: "Edit|Write|MultiEdit|apply_patch", hooks: [hookEntry(projectRoot, "post-write.js", 10, "OpenWolf anatomy update")] },
       ],
       PreCompact: [

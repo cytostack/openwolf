@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import {
   getWolfDir, ensureWolfDir, readJSON, writeJSON, readStdin, emitHookJSON,
-  hookMain, getSessionFilePath, recordInjection
+  hookMain, getSessionFilePath, recordInjection, readSessionState
 } from "./shared.js";
 import { topRules } from "./rule-reinjection.js";
 
@@ -37,7 +37,7 @@ async function main(): Promise<void> {
   const interval = reinjectionInterval(wolfDir);
   if (interval === 0) return;
 
-  const session = readJSON<{ tool_batches?: number; [k: string]: unknown }>(sessionFile, {});
+  const session = readSessionState(sessionFile, input.session_id) as { tool_batches?: number; [k: string]: unknown };
   session.tool_batches = ((session.tool_batches as number) ?? 0) + 1;
 
   if (session.tool_batches % interval !== 0) {

@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { getWolfDir, ensureWolfDir, readJSON, writeJSON, readStdin, emitHookJSON, recordInjection, hookMain, getSessionFilePath } from "./shared.js";
+import { getWolfDir, ensureWolfDir, readJSON, writeJSON, readStdin, emitHookJSON, recordInjection, hookMain, getSessionFilePath, readSessionState } from "./shared.js";
 import { shouldSuggestFilter } from "./bash-filter.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -52,7 +52,7 @@ async function main(): Promise<void> {
   // Once per session per command family: nagging every test run costs more
   // context than it saves.
   const family = command.trim().split(/\s+/).slice(0, 2).join(" ");
-  const session = readJSON<{ bash_filter_suggested?: Record<string, boolean>; [k: string]: unknown }>(sessionFile, {});
+  const session = readSessionState(sessionFile, input.session_id) as { bash_filter_suggested?: Record<string, boolean>; [k: string]: unknown };
   if (session.bash_filter_suggested?.[family]) { return; }
 
   const note =
