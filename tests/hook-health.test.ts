@@ -140,3 +140,164 @@ describe("compiled hook integration", { skip: !haveDist ? "dist/hooks not built"
     assert.ok(fs.existsSync(path.join(hooksDir, "sessions", "sessB.json")));
   });
 });
+
+describe("public session transactions", { skip: !haveDist ? "dist/hooks not built" : false }, () => {
+  function installHooks(): { root: string; hooksDir: string } {
+    const root = tmpProject();
+    const hooksDir = path.join(root, ".wolf", "hooks");
+    for (const file of fs.readdirSync(DIST_HOOKS)) {
+      if (file.endsWith(".js")) fs.copyFileSync(path.join(DIST_HOOKS, file), path.join(hooksDir, file));
+    }
+    fs.writeFileSync(path.join(hooksDir, "package.json"), JSON.stringify({ type: "module" }));
+    return { root, hooksDir };
+  }
+
+  function startHook(hooksDir: string, root: string, file: string): { child: ReturnType<typeof execFile>; done: Promise<string> } {
+    let resolve!: (stdout: string) => void;
+    let reject!: (error: Error) => void;
+    const done = new Promise<string>((onResolve, onReject) => {
+      resolve = onResolve;
+      reject = onReject;
+    });
+    const child = execFile(
+      process.execPath,
+      [path.join(hooksDir, file)],
+      { env: { ...process.env, CLAUDE_PROJECT_DIR: root }, timeout: 10000, maxBuffer: 10 * 1024 * 1024 },
+      (error, stdout) => error ? reject(error) : resolve(stdout)
+    );
+    return { child, done };
+  }
+
+  async function runHooks(
+    hooksDir: string,
+    root: string,
+    requests: Array<{ file: string; payload: unknown }>
+  ): Promise<string[]> {
+    const started = requests.map(({ file }) => startHook(hooksDir, root, file));
+    for (let index = 0; index < started.length; index++) {
+      started[index].child.stdin!.end(JSON.stringify(requests[index].payload));
+    }
+    return Promise.all(started.map(({ done }) => done));
+  }
+
+  function postReadPayload(sessionId: string, file: string, content = "export const value = 1;\n"): object {
+    return {
+      session_id: sessionId,
+      tool_input: { file_path: file },
+      tool_response: { file: { content } },
+    };
+  }
+
+  function readSession(hooksDir: string, sessionId: string): Record<string, any> {
+    return JSON.parse(fs.readFileSync(path.join(hooksDir, "sessions", `${sessionId}.json`), "utf-8"));
+  }
+
+  test("preserves every sequential and concurrent post-read fact without torn JSON", async () => {
+    const { root, hooksDir } = installHooks();
+    const sequential = "sequential-reads";
+    const concurrent = "concurrent-reads";
+    const sequentialFiles = Array.from({ length: 60 }, (_, i) => path.join(root, `sequential-${i}.ts`));
+    const concurrentFiles = Array.from({ length: 60 }, (_, i) => path.join(root, `concurrent-${i}.ts`));
+
+    for (const file of sequentialFiles) {
+      await runHooks(hooksDir, root, [{ file: "post-read.js", payload: postReadPayload(sequential, file) }]);
+    }
+    assert.deepStrictEqual(Object.keys(readSession(hooksDir, sequential).files_read).sort(), sequentialFiles.sort());
+
+    const sessionDir = path.join(hooksDir, "sessions");
+    const sessionFile = `${concurrent}.json`;
+    const parseFailures: string[] = [];
+    let observedReplacements = 0;
+    const watcher = fs.watch(sessionDir, (_event, changed) => {
+      if (changed === sessionFile && fs.existsSync(path.join(sessionDir, sessionFile))) {
+        observedReplacements++;
+        try {
+          JSON.parse(fs.readFileSync(path.join(sessionDir, sessionFile), "utf-8"));
+        } catch (error) {
+          parseFailures.push(String(error));
+        }
+      }
+    });
+    try {
+      await runHooks(hooksDir, root, concurrentFiles.map((file) => ({ file: "post-read.js", payload: postReadPayload(concurrent, file) })));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    } finally {
+      watcher.close();
+    }
+    const state = readSession(hooksDir, concurrent);
+    assert.deepStrictEqual(Object.keys(state.files_read).sort(), concurrentFiles.sort());
+    assert.ok(observedReplacements > 0, "expected atomic session replacements to be observable");
+    assert.deepStrictEqual(parseFailures, []);
+    assert.deepStrictEqual(fs.readdirSync(sessionDir).filter((file) => file.endsWith(".tmp")), []);
+  });
+
+  test("composes concurrent post-read and post-bash mutations", async () => {
+    const { root, hooksDir } = installHooks();
+    const sessionId = "mixed-hooks";
+    const reads = Array.from({ length: 30 }, (_, i) => path.join(root, `read-${i}.ts`));
+    const bashReads = Array.from({ length: 30 }, (_, i) => path.join(root, `bash-${i}.ts`));
+    const oversized = "line\n".repeat(3000);
+    const output = await runHooks(hooksDir, root, [
+      ...reads.map((file) => ({ file: "post-read.js", payload: postReadPayload(sessionId, file) })),
+      ...bashReads.map((file, index) => ({
+        file: "post-bash.js",
+        payload: {
+          session_id: sessionId,
+          tool_use_id: `mixed-${index}`,
+          tool_input: { command: `cat ${file}` },
+          tool_response: { stdout: oversized, stderr: "", interrupted: false, isImage: false },
+        },
+      })),
+    ]);
+    for (const stdout of output.slice(reads.length)) assert.doesNotThrow(() => JSON.parse(stdout));
+    const state = readSession(hooksDir, sessionId);
+    assert.deepStrictEqual(Object.keys(state.files_read).sort(), [...reads, ...bashReads].sort());
+    assert.strictEqual(state.bash_governed.length, bashReads.length);
+  });
+
+  test("uses session-specific locks and reports same-session exhaustion without mutation", async () => {
+    const { root, hooksDir } = installHooks();
+    const sessionDir = path.join(hooksDir, "sessions");
+    fs.mkdirSync(sessionDir, { recursive: true });
+    const liveLock = JSON.stringify({ pid: process.pid, hostname: os.hostname(), acquiredAt: Date.now() });
+    const locked = "locked-session";
+    const independent = "independent-session";
+    const lockedFile = path.join(sessionDir, `${locked}.json`);
+    const before = JSON.stringify({ files_read: { before: { count: 1, tokens: 1, first_read: "now" } } });
+    fs.writeFileSync(lockedFile, before);
+    fs.writeFileSync(`${lockedFile}.lock`, liveLock);
+    try {
+      await runHooks(hooksDir, root, [{ file: "post-read.js", payload: postReadPayload(independent, path.join(root, "independent.ts")) }]);
+      assert.ok(fs.existsSync(path.join(sessionDir, `${independent}.json`)));
+
+      const output = await runHooks(hooksDir, root, [{ file: "post-read.js", payload: postReadPayload(locked, path.join(root, "blocked.ts")) }]);
+      assert.strictEqual(output[0], "");
+      assert.strictEqual(fs.readFileSync(lockedFile, "utf-8"), before);
+      const heartbeat = JSON.parse(fs.readFileSync(path.join(hooksDir, "_heartbeat.json"), "utf-8"));
+      assert.match(heartbeat["post-read"].last_error_message, /session lock exhausted/i);
+    } finally {
+      fs.unlinkSync(`${lockedFile}.lock`);
+    }
+  });
+
+  test("retains session recovery, legacy fallback, and post-read response parsing contracts", async () => {
+    const { root, hooksDir } = installHooks();
+    const sessionDir = path.join(hooksDir, "sessions");
+    fs.mkdirSync(sessionDir, { recursive: true });
+    const corrupt = "corrupt-session";
+    fs.writeFileSync(path.join(sessionDir, `${corrupt}.json`), "{");
+    const fromArray = path.join(root, "array-response.ts");
+    await runHooks(hooksDir, root, [{
+      file: "post-read.js",
+      payload: { session_id: corrupt, tool_input: { file_path: fromArray }, tool_response: [{ text: "const arrayResponse = true;" }] },
+    }]);
+    const recovered = readSession(hooksDir, corrupt);
+    assert.ok(recovered.files_read[fromArray].tokens > 0);
+
+    await runHooks(hooksDir, root, [{
+      file: "post-read.js",
+      payload: { session_id: "../bad", tool_input: { file_path: path.join(root, "legacy.ts") }, tool_response: "legacy" },
+    }]);
+    assert.ok(fs.existsSync(path.join(hooksDir, "_session.json")));
+  });
+});

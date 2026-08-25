@@ -2,8 +2,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 import {
-  getWolfDir, ensureWolfDir, readJSON, writeJSON, readStdin, emitHookJSON,
-  hookMain, getSessionFilePath, normalizePath
+  getWolfDir, ensureWolfDir, readJSON, mutateSession, readStdin, emitHookJSON,
+  hookMain, getSessionFilePath, normalizePath, SessionLockTimeoutError
 } from "./shared.js";
 import {
   classifyCommand, condenseOutput, estimateTokens,
@@ -78,37 +78,39 @@ async function main(): Promise<void> {
     if (read && stdout.length > 0) {
       const normalized = normalizePath(path.isAbsolute(read.file) ? read.file : path.join(process.env.CLAUDE_PROJECT_DIR ?? process.cwd(), read.file));
       if (!normalized.includes("/.wolf/")) {
-        const session = readJSON<{ files_read?: Record<string, { count: number; tokens: number; first_read: string; ranged?: boolean; read_mtime?: number; via_bash?: boolean }> }>(sessionFile, {});
-        if (!session.files_read) session.files_read = {};
-        const prev = session.files_read[normalized];
-        let unchanged = false;
-        let mtime: number | undefined;
-        try {
-          mtime = fs.statSync(normalized).mtimeMs;
-          unchanged = prev?.read_mtime !== undefined && mtime <= prev.read_mtime!;
-        } catch {}
-        if (read.full && prev && prev.ranged !== true && unchanged && prev.tokens > 0) {
-          notes.push(
-            `OpenWolf: ${path.basename(normalized)} was already fully output this session (~${prev.tokens} tok) and is unchanged on disk since.`
-          );
-          prev.count++;
-        } else if (read.full) {
-          session.files_read[normalized] = {
-            count: (prev?.count ?? 0) + 1,
-            tokens: estimateTokens(stdout),
-            first_read: prev?.first_read ?? new Date().toISOString(),
-            read_mtime: mtime,
-            via_bash: true,
-          };
-        } else if (!prev) {
-          session.files_read[normalized] = {
-            count: 1, tokens: 0, first_read: new Date().toISOString(), ranged: true, read_mtime: mtime, via_bash: true,
-          };
-        }
-        writeJSON(sessionFile, session);
+        await mutateSession<{ files_read?: Record<string, { count: number; tokens: number; first_read: string; ranged?: boolean; read_mtime?: number; via_bash?: boolean }> }>(sessionFile, {}, (session) => {
+          if (!session.files_read) session.files_read = {};
+          const prev = session.files_read[normalized];
+          let unchanged = false;
+          let mtime: number | undefined;
+          try {
+            mtime = fs.statSync(normalized).mtimeMs;
+            unchanged = prev?.read_mtime !== undefined && mtime <= prev.read_mtime!;
+          } catch {}
+          if (read.full && prev && prev.ranged !== true && unchanged && prev.tokens > 0) {
+            notes.push(
+              `OpenWolf: ${path.basename(normalized)} was already fully output this session (~${prev.tokens} tok) and is unchanged on disk since.`
+            );
+            prev.count++;
+          } else if (read.full) {
+            session.files_read[normalized] = {
+              count: (prev?.count ?? 0) + 1,
+              tokens: estimateTokens(stdout),
+              first_read: prev?.first_read ?? new Date().toISOString(),
+              read_mtime: mtime,
+              via_bash: true,
+            };
+          } else if (!prev) {
+            session.files_read[normalized] = {
+              count: 1, tokens: 0, first_read: new Date().toISOString(), ranged: true, read_mtime: mtime, via_bash: true,
+            };
+          }
+        });
       }
     }
-  } catch {}
+  } catch (error) {
+    if (error instanceof SessionLockTimeoutError) throw error;
+  }
 
   // ── Output governor ───────────────────────────────────────────────────────
   const config = governorConfig(wolfDir);
@@ -144,10 +146,12 @@ async function main(): Promise<void> {
           at: new Date().toISOString(),
         };
         try {
-          const session = readJSON<{ bash_governed?: GovernedRecord[] }>(sessionFile, {});
-          session.bash_governed = [...(session.bash_governed ?? []), record].slice(-200);
-          writeJSON(sessionFile, session);
-        } catch {}
+          await mutateSession<{ bash_governed?: GovernedRecord[] }>(sessionFile, {}, (session) => {
+            session.bash_governed = [...(session.bash_governed ?? []), record].slice(-200);
+          });
+        } catch (error) {
+          if (error instanceof SessionLockTimeoutError) throw error;
+        }
 
         if (effectiveAction === "replace") {
           // Mirror the received object exactly; change ONLY stdout. A shape

@@ -189,6 +189,26 @@ export function writeJSON(filePath: string, data: unknown): void {
   }
 }
 
+export class SessionLockTimeoutError extends Error {
+  constructor(sessionFile: string) {
+    super(`Session lock exhausted for ${sessionFile}`);
+    this.name = "SessionLockTimeoutError";
+  }
+}
+
+/** Serialize one session's complete read-mutate-atomic-write transaction. */
+export async function mutateSession<T>(sessionFile: string, fallback: T, mutate: (session: T) => void): Promise<void> {
+  const { HOOK_LOCK_BUDGET_MS, withFileLock } = await import("./anatomy-lock.js");
+  const dir = path.dirname(sessionFile);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const result = withFileLock(`${sessionFile}.lock`, HOOK_LOCK_BUDGET_MS, () => {
+    const session = readJSON<T>(sessionFile, fallback);
+    mutate(session);
+    writeJSON(sessionFile, session);
+  });
+  if (result === null) throw new SessionLockTimeoutError(sessionFile);
+}
+
 export function readMarkdown(filePath: string): string {
   try {
     return fs.readFileSync(filePath, "utf-8");
