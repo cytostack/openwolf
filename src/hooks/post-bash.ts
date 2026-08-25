@@ -54,7 +54,7 @@ async function main(): Promise<void> {
   const raw = await readStdin();
   let input: {
     tool_input?: { command?: string };
-    tool_response?: { stdout?: string; stderr?: string; [key: string]: unknown };
+    tool_response?: string | { stdout?: string; stderr?: string; [key: string]: unknown };
     tool_use_id?: string;
     session_id?: string;
   };
@@ -66,7 +66,7 @@ async function main(): Promise<void> {
 
   const command = input.tool_input?.command ?? "";
   const resp = input.tool_response;
-  const stdout = typeof resp?.stdout === "string" ? resp.stdout : "";
+  const stdout = typeof resp === "string" ? resp : typeof resp?.stdout === "string" ? resp.stdout : "";
   if (!command || !resp) return;
 
   const sessionFile = getSessionFilePath(input);
@@ -152,10 +152,10 @@ async function main(): Promise<void> {
         } catch {}
 
         if (effectiveAction === "replace") {
-          // Mirror the received object exactly; change ONLY stdout. A shape
-          // mismatch makes the harness silently ignore the replacement.
+          // Preserve the received response shape. A mismatch makes the
+          // harness silently ignore the replacement.
           emitHookJSON("PostToolUse", {
-            updatedToolOutput: { ...resp, stdout: result.text },
+            updatedToolOutput: typeof resp === "string" ? result.text : { ...resp, stdout: result.text },
             additionalContext: notes.length > 0 ? notes.join("\n") : undefined,
           });
           return;

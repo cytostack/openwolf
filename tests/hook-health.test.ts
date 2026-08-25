@@ -156,9 +156,11 @@ describe("compiled hook integration", { skip: !haveDist ? "dist/hooks not built"
     const exercise = async (runtime: "claude" | "codex") => {
       const root = tmpProject();
       const decoyRoot = tmpProject();
-      const hooksDir = path.join(root, ".wolf", "hooks");
+      const hooksDir = path.join(runtime === "codex" ? decoyRoot : root, ".wolf", "hooks");
       fs.cpSync(DIST_HOOKS, hooksDir, { recursive: true });
       fs.writeFileSync(path.join(hooksDir, "package.json"), JSON.stringify({ type: "module" }));
+      const nestedCwd = path.join(root, "nested", "work");
+      fs.mkdirSync(nestedCwd, { recursive: true });
 
       const readTarget = path.join(root, "read.ts");
       const writeTarget = path.join(root, "write.ts");
@@ -166,45 +168,86 @@ describe("compiled hook integration", { skip: !haveDist ? "dist/hooks not built"
       fs.writeFileSync(writeTarget, "export const write = 1;\n");
 
       const sessionId = `${runtime}-missed-start`;
-      const runHook = (file: string, payload: unknown): Promise<void> =>
+      const runHook = (file: string, payload: unknown, cwd = root): Promise<{ stdout: string }> =>
         new Promise((resolve, reject) => {
           const env = { ...process.env };
           delete env.CLAUDE_PROJECT_DIR;
           delete env.CODEX_PROJECT_ROOT;
           delete env.OPENWOLF_PROJECT_ROOT;
-          env[runtime === "claude" ? "CLAUDE_PROJECT_DIR" : "CODEX_PROJECT_ROOT"] = root;
+          if (runtime === "claude") env.CLAUDE_PROJECT_DIR = root;
 
           const child = execFile(
             process.execPath,
             [path.join(hooksDir, file)],
-            { env, timeout: 10000 },
-            (err) => (err ? reject(err) : resolve())
+            { cwd, env, timeout: 10000 },
+            (err, stdout) => (err ? reject(err) : resolve({ stdout }))
           );
           child.stdin!.end(JSON.stringify(payload));
         });
 
-      await runHook(runtime === "claude" ? "post-read.js" : "post-bash.js", {
-        session_id: sessionId,
-        tool_name: runtime === "claude" ? "Read" : "Bash",
-        tool_input: runtime === "claude" ? { file_path: readTarget } : { command: `cat ${readTarget}` },
-        tool_response: runtime === "claude" ? { file: { content: "export const read = 1;\n" } } : { stdout: "export const read = 1;\n" },
-      });
+      if (runtime === "claude") {
+        await runHook("post-read.js", {
+          session_id: sessionId,
+          tool_name: "Read",
+          tool_input: { file_path: readTarget },
+          tool_response: { file: { content: "export const read = 1;\n" } },
+        });
+      } else {
+        const largeOutput = Array.from({ length: 240 }, (_, i) => `line ${i} ${"x".repeat(40)}`).join("\n");
+        const stringRun = await runHook("post-bash.js", {
+          session_id: sessionId,
+          tool_name: "Bash",
+          tool_input: { command: `cat ${readTarget}` },
+          tool_response: largeOutput,
+        }, nestedCwd);
+        assert.notStrictEqual(stringRun.stdout, "", "official string response must produce hook output");
+        const stringHookOutput = JSON.parse(stringRun.stdout);
+        assert.strictEqual(typeof stringHookOutput.hookSpecificOutput.updatedToolOutput, "string");
+
+        const objectResponse = {
+          stdout: Array.from({ length: 240 }, (_, i) => `diff line ${i} ${"y".repeat(40)}`).join("\n"),
+          stderr: "sentinel stderr\n",
+          exit_code: 17,
+          metadata: { sentinel: "preserve-byte-for-byte" },
+        };
+        const objectRun = await runHook("post-bash.js", {
+          session_id: sessionId,
+          tool_name: "Bash",
+          tool_input: { command: "git show HEAD" },
+          tool_response: objectResponse,
+        }, nestedCwd);
+        assert.notStrictEqual(objectRun.stdout, "", "object response must produce hook output");
+        const objectReplacement = JSON.parse(objectRun.stdout).hookSpecificOutput.updatedToolOutput;
+        assert.strictEqual(typeof objectReplacement, "object");
+        assert.notStrictEqual(objectReplacement.stdout, objectResponse.stdout);
+        assert.deepStrictEqual({ ...objectReplacement, stdout: objectResponse.stdout }, objectResponse);
+      }
       if (runtime === "codex") {
-        const recovered = JSON.parse(fs.readFileSync(path.join(hooksDir, "sessions", `${sessionId}.json`), "utf-8"));
+        const recoveredPath = path.join(root, ".wolf", "hooks", "sessions", `${sessionId}.json`);
+        assert.ok(fs.existsSync(recoveredPath), "Codex session must exist under the active cwd root");
+        const recovered = JSON.parse(fs.readFileSync(recoveredPath, "utf-8"));
         assert.strictEqual(recovered.session_id, sessionId, "Bash recovery keeps the session ID before the write hook");
       }
       await runHook("post-write.js", {
         session_id: sessionId,
         tool_name: runtime === "claude" ? "Edit" : "apply_patch",
         tool_input: { file_path: writeTarget, old_string: "1", new_string: "2" },
-      });
-      await runHook("stop.js", { session_id: sessionId });
+      }, runtime === "codex" ? nestedCwd : root);
+
+      const sessionPath = path.join(root, ".wolf", "hooks", "sessions", `${sessionId}.json`);
+      const session = JSON.parse(fs.readFileSync(sessionPath, "utf-8"));
+      assert.strictEqual(Object.keys(session.files_read).length, 1, `${runtime} unique read accounting`);
+      assert.strictEqual(Object.values(session.files_read)[0].count, 1, `${runtime} read count`);
+      assert.strictEqual(session.files_written.length, 1, `${runtime} unique write accounting`);
+
+      await runHook("stop.js", { session_id: sessionId }, runtime === "codex" ? nestedCwd : root);
 
       const ledgerPath = path.join(root, ".wolf", "token-ledger.json");
       assert.ok(fs.existsSync(ledgerPath), `${runtime} Stop must persist the ledger`);
       const ledger = JSON.parse(fs.readFileSync(ledgerPath, "utf-8"));
       assert.strictEqual(ledger.lifetime.total_reads, 1, `${runtime} read accounting`);
       assert.strictEqual(ledger.lifetime.total_writes, 1, `${runtime} write accounting`);
+      assert.ok(!fs.existsSync(path.join(decoyRoot, ".wolf", "hooks", "sessions", `${sessionId}.json`)), `${runtime} must not create a decoy session`);
       assert.ok(!fs.existsSync(path.join(decoyRoot, ".wolf", "token-ledger.json")), `${runtime} must not create a decoy ledger`);
     };
 

@@ -8,12 +8,24 @@ import type { SessionData } from "./ledger-math.js";
 // during a session. Each supported agent exposes its own env var; hooks are
 // provider-agnostic (Workstream C) so all are checked.
 //
-// None of those vars are guaranteed. Claude Code in particular does not put
-// CLAUDE_PROJECT_DIR in the hook process's environment on any platform: it
-// delivers project context through the stdin JSON payload instead. So before
-// falling back to CWD, derive the root from this script's own location. A hook
-// always runs as <project>/.wolf/hooks/<name>.js, which makes the project root
-// two directories up, verified by the .wolf/ directory being there.
+// None of those vars are guaranteed. Codex runs command hooks from the active
+// request cwd, so its nearest .wolf ancestor must win over a copied script's
+// installation root. Script location and legacy provider vars remain fallbacks.
+function projectDirFromCwd(): string | null {
+  try {
+    let current = fs.realpathSync.native(process.cwd());
+    while (true) {
+      const wolfDir = path.join(current, ".wolf");
+      if (fs.existsSync(wolfDir) && fs.statSync(wolfDir).isDirectory()) return current;
+      const parent = path.dirname(current);
+      if (parent === current) return null;
+      current = parent;
+    }
+  } catch {
+    return null;
+  }
+}
+
 function projectDirFromScriptLocation(): string | null {
   try {
     const here = path.dirname(fileURLToPath(import.meta.url));
@@ -29,9 +41,10 @@ function projectDirFromScriptLocation(): string | null {
 export function getProjectDir(): string {
   return (
     process.env.CLAUDE_PROJECT_DIR ||
+    projectDirFromCwd() ||
+    projectDirFromScriptLocation() ||
     process.env.CODEX_PROJECT_ROOT ||
     process.env.OPENWOLF_PROJECT_ROOT ||
-    projectDirFromScriptLocation() ||
     process.cwd()
   );
 }
