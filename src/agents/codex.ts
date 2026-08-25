@@ -59,6 +59,7 @@ export const codexAdapter: AgentAdapter = {
     const hooksPath = path.join(codexDir, "hooks.json");
     const ours = buildCodexHooks(ctx.projectRoot);
     let merged: { hooks: Record<string, unknown[]> } = ours;
+    let hooksRegistrationEligible = true;
     try {
       if (fs.existsSync(hooksPath)) {
         const existing = JSON.parse(fs.readFileSync(hooksPath, "utf-8")) as { hooks?: Record<string, unknown[]> };
@@ -78,10 +79,13 @@ export const codexAdapter: AgentAdapter = {
         }
       }
     } catch {
-      // Unparseable existing file: fall back to writing just our hooks.
+      hooksRegistrationEligible = false;
+      warnings.push(".codex/hooks.json registration was skipped because its JSON is invalid or unreadable; the file was left unchanged. Repair it and rerun Codex adapter initialization.");
     }
-    fs.writeFileSync(hooksPath, JSON.stringify(merged, null, 2) + "\n", "utf-8");
-    actions.push("Codex hooks registered (.codex/hooks.json)");
+    if (hooksRegistrationEligible) {
+      fs.writeFileSync(hooksPath, JSON.stringify(merged, null, 2) + "\n", "utf-8");
+      actions.push("Codex hooks registered (.codex/hooks.json)");
+    }
 
     // 2. Enable the hooks feature — but never corrupt an existing config.toml.
     const configPath = path.join(codexDir, "config.toml");
