@@ -62,8 +62,11 @@ export function writeJSON(filePath: string, data: unknown): void {
   } catch {
     // On Windows, rename can fail if another process holds a handle.
     // Fall back to direct write and clean up the tmp file.
-    try { fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8"); } catch {}
-    try { fs.unlinkSync(tmp); } catch {}
+    try {
+      fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+    } finally {
+      try { fs.unlinkSync(tmp); } catch {}
+    }
   }
 }
 
