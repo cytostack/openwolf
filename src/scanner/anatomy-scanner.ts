@@ -299,6 +299,10 @@ export function buildMergedStore(
 
 export async function scanProject(wolfDir: string, projectRoot: string): Promise<number> {
   const { fileCount, store: fresh } = await buildAnatomy(wolfDir, projectRoot);
+  let gitHead: string | null = null;
+  try {
+    gitHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: projectRoot, encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {}
 
   const result = withAnatomyLock(wolfDir, CLI_LOCK_BUDGET_MS, () => {
     const existing = buildMergedStore(wolfDir, projectRoot, fresh);
@@ -308,10 +312,6 @@ export async function scanProject(wolfDir: string, projectRoot: string): Promise
     // Record scan state so hooks can detect staleness (git switches, editor
     // edits outside an agent) without rescanning — Workstream F2b.
     try {
-      let gitHead: string | null = null;
-      try {
-        gitHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: projectRoot, encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-      } catch {}
       writeJSON(path.join(wolfDir, "_scan-state.json"), {
         last_scanned: new Date().toISOString(),
         git_head: gitHead,

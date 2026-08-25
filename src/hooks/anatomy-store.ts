@@ -165,8 +165,11 @@ export function saveStore(wolfDir: string, store: AnatomyStoreData): void {
     fs.writeFileSync(tmp, body, "utf-8");
     fs.renameSync(tmp, filePath);
   } catch {
-    try { fs.writeFileSync(filePath, body, "utf-8"); } catch {}
-    try { fs.unlinkSync(tmp); } catch {}
+    try {
+      fs.writeFileSync(filePath, body, "utf-8");
+    } finally {
+      try { fs.unlinkSync(tmp); } catch {}
+    }
   }
 }
 
@@ -298,8 +301,11 @@ export function renderToFile(wolfDir: string, store: AnatomyStoreData): void {
     fs.writeFileSync(tmp, content, "utf-8");
     fs.renameSync(tmp, anatomyPath);
   } catch {
-    try { fs.writeFileSync(anatomyPath, content, "utf-8"); } catch {}
-    try { fs.unlinkSync(tmp); } catch {}
+    try {
+      fs.writeFileSync(anatomyPath, content, "utf-8");
+    } finally {
+      try { fs.unlinkSync(tmp); } catch {}
+    }
   }
 }
 
