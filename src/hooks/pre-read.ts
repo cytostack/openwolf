@@ -3,7 +3,7 @@ import * as path from "node:path";
 import {
   getWolfDir, ensureWolfDir, readJSON, writeJSON,
   estimateTokens, readStdin, normalizePath, getProjectDir, emitHookJSON, recordInjection,
-  hookMain, getSessionFilePath
+  hookMain, getSessionFilePath, isPathWithinProject
 } from "./shared.js";
 import { lookupEntry } from "./anatomy-store.js";
 
@@ -71,6 +71,9 @@ async function main(): Promise<void> {
   const filePath = input.tool_input?.file_path ?? input.tool_input?.path ?? "";
   if (!filePath) { return; }
 
+  const projectDir = normalizePath(path.resolve(getProjectDir()));
+  if (!isPathWithinProject(projectDir, filePath)) return;
+
   // Ranged reads (offset/limit) are exactly what the symbol hints steer the
   // model toward — never warn about, deny, or record them as full reads (a
   // ranged first contact must not make a later legitimate full read look like
@@ -81,11 +84,10 @@ async function main(): Promise<void> {
   // handling stays hands-off for them.
   const isSubagent = typeof input.agent_id === "string" && input.agent_id.length > 0;
 
-  const normalizedFile = normalizePath(filePath);
+  const normalizedFile = normalizePath(path.resolve(filePath));
 
   // Skip tracking for .wolf/ internal files — they're infrastructure, not project files.
   // Counting them inflates anatomy miss rates since .wolf/ is excluded from anatomy scanning.
-  const projectDir = normalizePath(getProjectDir());
   const relToProject = normalizedFile.startsWith(projectDir)
     ? normalizedFile.slice(projectDir.length).replace(/^\//, "")
     : "";

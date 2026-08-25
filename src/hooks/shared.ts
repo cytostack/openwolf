@@ -35,6 +35,11 @@ export function getProjectDir(): string {
   );
 }
 
+export function isPathWithinProject(projectRoot: string, candidate: string, candidateCwd = process.cwd()): boolean {
+  const relative = path.relative(path.resolve(projectRoot), path.resolve(candidateCwd, candidate));
+  return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
 export function getWolfDir(): string {
   return path.join(getProjectDir(), ".wolf");
 }

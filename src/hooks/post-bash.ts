@@ -3,7 +3,7 @@ import * as path from "node:path";
 import * as crypto from "node:crypto";
 import {
   getWolfDir, ensureWolfDir, readJSON, writeJSON, readStdin, emitHookJSON,
-  hookMain, getSessionFilePath, normalizePath
+  hookMain, getSessionFilePath, normalizePath, getProjectDir, isPathWithinProject
 } from "./shared.js";
 import {
   classifyCommand, condenseOutput, estimateTokens,
@@ -75,8 +75,8 @@ async function main(): Promise<void> {
   // ── Bash-channel read registration + dedupe advisory ──────────────────────
   try {
     const read = parseBashRead(command);
-    if (read && stdout.length > 0) {
-      const normalized = normalizePath(path.isAbsolute(read.file) ? read.file : path.join(process.env.CLAUDE_PROJECT_DIR ?? process.cwd(), read.file));
+    if (read && stdout.length > 0 && isPathWithinProject(getProjectDir(), read.file, process.cwd())) {
+      const normalized = normalizePath(path.resolve(process.cwd(), read.file));
       if (!normalized.includes("/.wolf/")) {
         const session = readJSON<{ files_read?: Record<string, { count: number; tokens: number; first_read: string; ranged?: boolean; read_mtime?: number; via_bash?: boolean }> }>(sessionFile, {});
         if (!session.files_read) session.files_read = {};

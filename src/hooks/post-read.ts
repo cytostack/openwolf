@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { getWolfDir, ensureWolfDir, readJSON, writeJSON, estimateTokens, readStdin, normalizePath, getProjectDir, hookMain, getSessionFilePath } from "./shared.js";
+import { getWolfDir, ensureWolfDir, readJSON, writeJSON, estimateTokens, readStdin, normalizePath, getProjectDir, hookMain, getSessionFilePath, isPathWithinProject } from "./shared.js";
 import { lookupEntry } from "./anatomy-store.js";
 
 interface SessionData {
@@ -52,6 +52,9 @@ async function main(): Promise<void> {
   const content = extractToolResponseText(input.tool_response) || input.tool_output?.content || "";
   if (!filePath) { return; }
 
+  const projectDir = normalizePath(path.resolve(getProjectDir()));
+  if (!isPathWithinProject(projectDir, filePath)) return;
+
   // Ranged reads: pre-read already recorded the contact with ranged:true.
   // Registering them as full reads here is what used to make a later
   // legitimate full read look like a duplicate (~20x warning inflation).
@@ -59,10 +62,9 @@ async function main(): Promise<void> {
     return;
   }
 
-  const normalizedFile = normalizePath(filePath);
+  const normalizedFile = normalizePath(path.resolve(filePath));
 
   // Skip tracking for .wolf/ internal files — consistent with pre-read
-  const projectDir = normalizePath(getProjectDir());
   const relToProject = normalizedFile.startsWith(projectDir)
     ? normalizedFile.slice(projectDir.length).replace(/^\//, "")
     : "";
