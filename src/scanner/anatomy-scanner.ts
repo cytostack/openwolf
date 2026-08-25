@@ -305,6 +305,19 @@ export async function scanProject(wolfDir: string, projectRoot: string): Promise
     existing.meta.lastScanned = new Date().toISOString();
     renderToFile(wolfDir, existing);
     saveStore(wolfDir, existing);
+    // Record scan state so hooks can detect staleness (git switches, editor
+    // edits outside an agent) without rescanning — Workstream F2b.
+    try {
+      let gitHead: string | null = null;
+      try {
+        gitHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: projectRoot, encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+      } catch {}
+      writeJSON(path.join(wolfDir, "_scan-state.json"), {
+        last_scanned: new Date().toISOString(),
+        git_head: gitHead,
+        file_count: fileCount,
+      });
+    } catch {}
     return true;
   });
   if (result === null) {
@@ -314,20 +327,5 @@ export async function scanProject(wolfDir: string, projectRoot: string): Promise
     console.warn("  ! anatomy is being updated by another process; scan results not written (re-run to converge)");
   }
 
-  // Record scan state so hooks can detect staleness (git switches, editor
-  // edits outside an agent) without rescanning — Workstream F2b.
-  try {
-    let gitHead: string | null = null;
-    try {
-      gitHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: projectRoot, encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-    } catch {}
-    writeJSON(path.join(wolfDir, "_scan-state.json"), {
-      last_scanned: new Date().toISOString(),
-      git_head: gitHead,
-      file_count: fileCount,
-    });
-  } catch {}
-
   return fileCount;
 }
-
