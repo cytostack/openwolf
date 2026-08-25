@@ -78,19 +78,28 @@ test("scanProject publishes freshness only with a completed anatomy commit", asy
   assert.strictEqual(store.meta.fileCount, count);
 });
 
-test("scanProject does not advance freshness when saveStore fails", async (t) => {
+test("scanProject does not advance freshness when render fallback fails", async (t) => {
   const fixture = createFixture();
   t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
   const original = "{\"last_scanned\":\"before\"}\n";
   fs.writeFileSync(statePath(fixture), original, "utf-8");
   const before = fs.statSync(statePath(fixture), { bigint: true }).mtimeNs;
-  const toISOString = Date.prototype.toISOString;
-  t.mock.method(Date.prototype, "toISOString", function (this: Date): string {
-    if (new Error().stack?.includes("saveStore")) throw new Error("saveStore timestamp fault");
-    return toISOString.call(this);
-  });
+  fs.mkdirSync(path.join(fixture.wolfDir, "anatomy.md"));
 
-  await assert.rejects(scanProject(fixture.wolfDir, fixture.root), /saveStore timestamp fault/);
+  await assert.rejects(scanProject(fixture.wolfDir, fixture.root));
+  assert.strictEqual(fs.readFileSync(statePath(fixture), "utf-8"), original);
+  assert.strictEqual(fs.statSync(statePath(fixture), { bigint: true }).mtimeNs, before);
+});
+
+test("scanProject does not advance freshness when store fallback fails", async (t) => {
+  const fixture = createFixture();
+  t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
+  const original = "{\"last_scanned\":\"before\"}\n";
+  fs.writeFileSync(statePath(fixture), original, "utf-8");
+  const before = fs.statSync(statePath(fixture), { bigint: true }).mtimeNs;
+  fs.mkdirSync(path.join(fixture.wolfDir, "anatomy-index.json"));
+
+  await assert.rejects(scanProject(fixture.wolfDir, fixture.root));
   assert.strictEqual(fs.readFileSync(statePath(fixture), "utf-8"), original);
   assert.strictEqual(fs.statSync(statePath(fixture), { bigint: true }).mtimeNs, before);
 });
