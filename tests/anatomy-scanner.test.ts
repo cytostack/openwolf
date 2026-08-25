@@ -73,6 +73,7 @@ test("scanProject publishes freshness only with a completed anatomy commit", asy
   const store = JSON.parse(fs.readFileSync(path.join(existing.wolfDir, "anatomy-index.json"), "utf-8"));
   const freshness = JSON.parse(fs.readFileSync(statePath(existing), "utf-8"));
   assert.ok(fs.existsSync(path.join(existing.wolfDir, "anatomy.md")));
+  assert.strictEqual(freshness.last_scanned, store.meta.lastScanned);
   assert.strictEqual(freshness.git_head, existing.head);
   assert.strictEqual(freshness.file_count, count);
   assert.strictEqual(store.meta.fileCount, count);
@@ -102,4 +103,12 @@ test("scanProject does not advance freshness when store fallback fails", async (
   await assert.rejects(scanProject(fixture.wolfDir, fixture.root));
   assert.strictEqual(fs.readFileSync(statePath(fixture), "utf-8"), original);
   assert.strictEqual(fs.statSync(statePath(fixture), { bigint: true }).mtimeNs, before);
+});
+
+test("scanProject rejects when freshness fallback fails", async (t) => {
+  const fixture = createFixture();
+  t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
+  fs.mkdirSync(statePath(fixture));
+
+  await assert.rejects(scanProject(fixture.wolfDir, fixture.root));
 });
