@@ -45,8 +45,13 @@
         ".netlify",
         ".output",
         "*.min.js",
-        "*.min.css"
-      ]
+        "*.min.css",
+        ".venv",
+        "venv",
+        "site-packages",
+        ".tox"
+      ],
+      "extra_roots": []
     },
     "token_audit": {
       "enabled": true,

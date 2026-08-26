@@ -89,6 +89,17 @@ untrue.
 
 ## [Unreleased]
 
+### Added
+
+- `openwolf.anatomy.extra_roots` (opt-in, default `[]`): sibling directories
+  outside the project root to index alongside it, under `../sibling/...`
+  keys. 2.5.0's "never index outside the project root" rule conflated kind
+  (scratch/temp noise) with location — it also evicted a sibling repo one
+  real project works in daily, so `find` could no longer see that code.
+  The write-tracking hook honors the same list; scratch dirs stay excluded;
+  the `max_files` budget is shared with the project's own files, which are
+  scanned first.
+
 ### Fixed
 
 - Multi-writer safety for sessions sharing one `.wolf` (TIK-System field
@@ -106,6 +117,10 @@ untrue.
   `venv`, `site-packages`, `__pycache__`, `.tox`, `node_modules`) regardless
   of `exclude_patterns`: projects with a customized exclude list keep it on
   update, which let a scan fill 55% of one real index with virtualenv files.
+  Worse than noise: under the `max_files` cap (500 by default) those entries
+  *displace* real source — the same project indexed 283 venv files against a
+  516-file cap-bound scan, and 552 real files once excluded — so the symptom
+  is `find` silently missing your own code, not a visibly noisy index.
 
 ## [2.4.1] - 2026-08-21
 

@@ -98,7 +98,12 @@ async function main(): Promise<void> {
   // Never track files outside the project root (e.g. the Claude Code scratchpad under
   // /private/tmp). path.relative() yields ../.. section keys that pollute anatomy.md and are
   // wiped again by every full `openwolf scan`, so the index churns instead of converging.
-  if (relPath.startsWith("..") || path.isAbsolute(relPath)) { return; }
+  // Exception: paths under a configured `extra_roots` sibling — the scan
+  // indexes those under the same `../sibling/...` keys, so tracking them
+  // here converges instead of churning.
+  if (relPath.startsWith("..") || path.isAbsolute(relPath)) {
+    if (!isWithinExtraRoots(wolfDir, projectRoot, absolutePath)) { return; }
+  }
 
   // Never track secret-bearing files in anatomy/memory (issue #54): .env is
   // not the only file whose *description* would leak sensitive content.
@@ -339,6 +344,30 @@ function extractCalls(code: string): string[] {
       .map(m => m.match(/(\w+)/)?.[1] || "")
       .filter(n => n.length > 2 && !["if", "for", "while", "switch", "catch", "function", "return", "new", "typeof", "instanceof", "const", "let", "var"].includes(n))
   )];
+}
+
+/**
+ * True when `absolutePath` sits inside one of the opt-in sibling roots
+ * declared in `.wolf/config.json` (`openwolf.anatomy.extra_roots`). Mirrors
+ * the scan-side rule in src/scanner/anatomy-scanner.ts — hooks are standalone
+ * scripts and cannot import from the scanner build.
+ */
+function isWithinExtraRoots(wolfDir: string, projectRoot: string, absolutePath: string): boolean {
+  try {
+    const cfg = readJSON<{ openwolf?: { anatomy?: { extra_roots?: string[] } } }>(
+      path.join(wolfDir, "config.json"),
+      {}
+    );
+    const roots = cfg.openwolf?.anatomy?.extra_roots;
+    if (!Array.isArray(roots)) return false;
+    const target = path.resolve(absolutePath);
+    for (const r of roots) {
+      if (typeof r !== "string" || r.trim() === "") continue;
+      const absRoot = path.resolve(projectRoot, r);
+      if (target === absRoot || target.startsWith(absRoot + path.sep)) return true;
+    }
+  } catch {}
+  return false;
 }
 
 // ─── Auto Bug Detection ──────────────────────────────────────────
