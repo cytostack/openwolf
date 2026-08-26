@@ -3,7 +3,11 @@ import * as assert from "node:assert";
 import * as path from "node:path";
 import * as fs from "node:fs";
 import * as os from "node:os";
+import * as crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { createRequire, syncBuiltinESMExports } from "node:module";
+
+const require = createRequire(import.meta.url);
 
 // Security regression suite. Origin: PR #34 (riverwolf67), extended when
 // reconciling with PR #30 (svanack404).
@@ -58,6 +62,120 @@ describe("dashboard auth", () => {
     assert.strictEqual(validateDashboardToken(wolfDir, "0".repeat(64)), false);
     assert.strictEqual(validateDashboardToken(wolfDir, null), false);
     assert.strictEqual(validateDashboardToken(wolfDir, ""), false);
+  });
+
+  test("repairs accepted existing dashboard token mode", { skip: process.platform === "win32" }, async () => {
+    const { getDashboardToken } = await import("../src/utils/dashboard-auth.ts");
+    const wolfDir = fs.mkdtempSync(path.join(os.tmpdir(), "wolf-sec-"));
+    const tokenPath = path.join(wolfDir, "dashboard-token");
+    const token = "a".repeat(64);
+    const tokenBytes = `${token}\n`;
+    try {
+      fs.writeFileSync(tokenPath, tokenBytes, { mode: 0o600 });
+      fs.chmodSync(tokenPath, 0o644);
+
+      assert.strictEqual(getDashboardToken(wolfDir), token);
+      assert.strictEqual(fs.readFileSync(tokenPath, "utf-8"), tokenBytes);
+      assert.strictEqual(fs.statSync(tokenPath).mode & 0o777, 0o600);
+    } finally {
+      fs.rmSync(wolfDir, { recursive: true, force: true });
+    }
+  });
+
+  test("surfaces accepted-token permission repair failures without replacing the token", async () => {
+    const { getDashboardToken } = await import("../src/utils/dashboard-auth.ts");
+    const wolfDir = fs.mkdtempSync(path.join(os.tmpdir(), "wolf-sec-"));
+    const tokenPath = path.join(wolfDir, "dashboard-token");
+    const token = "b".repeat(64);
+    const tokenBytes = `${token}\n`;
+    const fsRequire = require("node:fs") as typeof fs;
+    const cryptoRequire = require("node:crypto") as typeof crypto;
+    const originalChmodSync = fsRequire.chmodSync;
+    const originalWriteFileSync = fsRequire.writeFileSync;
+    const originalRandomBytes = cryptoRequire.randomBytes;
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
+    const permissionError = new Error("permission repair failed");
+    let writeCalls = 0;
+    let randomCalls = 0;
+    if (!platformDescriptor) throw new Error("process.platform descriptor is unavailable");
+
+    try {
+      fs.writeFileSync(tokenPath, tokenBytes, { mode: 0o600 });
+      Object.defineProperty(process, "platform", { ...platformDescriptor, value: "linux" });
+      fsRequire.chmodSync = ((filePath: fs.PathLike, mode: fs.Mode) => {
+        if (filePath === tokenPath && mode === 0o600) throw permissionError;
+        return originalChmodSync(filePath, mode);
+      }) as typeof fs.chmodSync;
+      fsRequire.writeFileSync = ((...args: Parameters<typeof fs.writeFileSync>) => {
+        writeCalls++;
+        return originalWriteFileSync(...args);
+      }) as typeof fs.writeFileSync;
+      cryptoRequire.randomBytes = ((...args: Parameters<typeof crypto.randomBytes>) => {
+        randomCalls++;
+        return originalRandomBytes(...args);
+      }) as typeof crypto.randomBytes;
+      syncBuiltinESMExports();
+
+      assert.throws(() => getDashboardToken(wolfDir), (error: unknown) => error === permissionError);
+      assert.strictEqual(fs.readFileSync(tokenPath, "utf-8"), tokenBytes);
+      assert.strictEqual(writeCalls, 0);
+      assert.strictEqual(randomCalls, 0);
+    } finally {
+      fsRequire.chmodSync = originalChmodSync;
+      fsRequire.writeFileSync = originalWriteFileSync;
+      cryptoRequire.randomBytes = originalRandomBytes;
+      syncBuiltinESMExports();
+      Object.defineProperty(process, "platform", platformDescriptor);
+      fs.rmSync(wolfDir, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps accepted dashboard tokens unchanged on Windows without chmod", async () => {
+    const { getDashboardToken } = await import("../src/utils/dashboard-auth.ts");
+    const wolfDir = fs.mkdtempSync(path.join(os.tmpdir(), "wolf-sec-"));
+    const tokenPath = path.join(wolfDir, "dashboard-token");
+    const token = "c".repeat(64);
+    const tokenBytes = `${token}\n`;
+    const fsRequire = require("node:fs") as typeof fs;
+    const originalChmodSync = fsRequire.chmodSync;
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
+    let chmodCalls = 0;
+    if (!platformDescriptor) throw new Error("process.platform descriptor is unavailable");
+
+    try {
+      fs.writeFileSync(tokenPath, tokenBytes, { mode: 0o600 });
+      Object.defineProperty(process, "platform", { ...platformDescriptor, value: "win32" });
+      fsRequire.chmodSync = ((...args: Parameters<typeof fs.chmodSync>) => {
+        chmodCalls++;
+        return originalChmodSync(...args);
+      }) as typeof fs.chmodSync;
+      syncBuiltinESMExports();
+
+      assert.strictEqual(getDashboardToken(wolfDir), token);
+      assert.strictEqual(fs.readFileSync(tokenPath, "utf-8"), tokenBytes);
+      assert.strictEqual(chmodCalls, 0);
+    } finally {
+      fsRequire.chmodSync = originalChmodSync;
+      syncBuiltinESMExports();
+      Object.defineProperty(process, "platform", platformDescriptor);
+      fs.rmSync(wolfDir, { recursive: true, force: true });
+    }
+  });
+
+  test("replaces an invalid existing dashboard token", async () => {
+    const { getDashboardToken } = await import("../src/utils/dashboard-auth.ts");
+    const wolfDir = fs.mkdtempSync(path.join(os.tmpdir(), "wolf-sec-"));
+    const tokenPath = path.join(wolfDir, "dashboard-token");
+    const invalidToken = "invalid-dashboard-token";
+    try {
+      fs.writeFileSync(tokenPath, `${invalidToken}\n`, { mode: 0o600 });
+
+      const token = getDashboardToken(wolfDir);
+      assert.match(token, /^[a-f0-9]{64}$/);
+      assert.notStrictEqual(token, invalidToken);
+    } finally {
+      fs.rmSync(wolfDir, { recursive: true, force: true });
+    }
   });
 });
 
