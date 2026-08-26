@@ -5,6 +5,7 @@ Build it from the session's actual state, not from memory of the conversation al
 1. Read the current `.wolf/STATUS.md` to preserve its structure and any still-relevant open items.
 2. Run `git status --short` and `git log --oneline -8` to see what actually changed.
 3. Skim the latest session block of `.wolf/memory.md` for the action log.
+4. Archive the current file before rewriting: copy `.wolf/STATUS.md` to `.wolf/plans/STATUS-<YYYY-MM-DD-HHMM>.md` (create `plans/` if needed). STATUS.md is a whole-file rewrite, and when several sessions share one `.wolf` a concurrent regeneration silently clobbers the other session's handoff — the archive makes that overwrite cost nothing. If the session digest warned that other sessions are active, mention their work in `## Context` rather than merging guesses about it.
 
 Then rewrite `.wolf/STATUS.md` with:
 

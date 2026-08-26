@@ -65,6 +65,11 @@ const NOISE_DIRS = new Set([
   // via the index is noise (audit: .claude/*.md topped a project's importance
   // ranking), and the agent already knows these files natively.
   ".claude", ".codex", ".opencode", ".gemini", ".cursor", ".agents",
+  // Vendored language environments: hard-excluded here (not just in the
+  // config defaults) because existing projects keep their customized
+  // exclude_patterns on update — a TIK-System scan indexed 283 .venv files
+  // (55% of the index) through exactly that gap.
+  ".venv", "venv", "site-packages", "__pycache__", ".tox", "node_modules",
 ]);
 
 function isNoiseFile(relPath: string): boolean {

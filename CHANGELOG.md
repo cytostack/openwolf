@@ -87,6 +87,26 @@ untrue.
 - Hook count corrected to 12 everywhere. The docs said 10 while documenting
   12.
 
+## [Unreleased]
+
+### Fixed
+
+- Multi-writer safety for sessions sharing one `.wolf` (TIK-System field
+  report): buglog writes are now serialized through `buglog.json.lock` (the
+  CLI falls back to an unlocked write on lock timeout so a user-requested log
+  is never dropped; the auto-detect hook skips on contention), the
+  `total_sessions` increment reuses the token-ledger lock, and the auto-detect
+  hook assigns bug ids from the max existing id instead of the array length,
+  which collided under concurrent writers.
+- The session digest now warns when other sessions are active on the same
+  `.wolf` (sibling state files under `hooks/sessions/` touched within 30
+  minutes), and `/handoff` archives the previous `STATUS.md` to
+  `.wolf/plans/` before rewriting so a concurrent regeneration costs nothing.
+- The anatomy scanner hard-excludes vendored language environments (`.venv`,
+  `venv`, `site-packages`, `__pycache__`, `.tox`, `node_modules`) regardless
+  of `exclude_patterns`: projects with a customized exclude list keep it on
+  update, which let a scan fill 55% of one real index with virtualenv files.
+
 ## [2.4.1] - 2026-08-21
 
 ### Fixed

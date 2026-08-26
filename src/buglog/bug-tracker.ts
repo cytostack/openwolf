@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import { readJSON, writeJSON } from "../utils/fs-safe.js";
+import { withFileLock, CLI_LOCK_BUDGET_MS } from "../hooks/anatomy-lock.js";
 
 interface BugEntry {
   id: string;
@@ -41,6 +42,28 @@ export function readBugLog(wolfDir: string): BugLog {
 }
 
 export function logBug(
+  wolfDir: string,
+  bug: {
+    error_message: string;
+    file: string;
+    line?: number;
+    root_cause: string;
+    fix: string;
+    tags: string[];
+  }
+): void {
+  // Locked read-modify-write: two sessions sharing one .wolf logged bugs
+  // concurrently and the second write clobbered the first (TIK-System field
+  // report). On lock timeout we fall back to the unlocked path — a
+  // user-requested bug log must never be silently dropped.
+  const locked = withFileLock(getBugLogPath(wolfDir) + ".lock", CLI_LOCK_BUDGET_MS, () => {
+    logBugUnlocked(wolfDir, bug);
+    return true;
+  });
+  if (!locked) logBugUnlocked(wolfDir, bug);
+}
+
+function logBugUnlocked(
   wolfDir: string,
   bug: {
     error_message: string;
