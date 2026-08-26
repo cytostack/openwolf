@@ -20,6 +20,7 @@ interface WolfConfig {
       max_description_length: number;
       max_files: number;
       exclude_patterns: string[];
+      extra_roots?: string[];
     };
     token_audit: {
       chars_per_token_code: number;
@@ -65,6 +66,11 @@ const NOISE_DIRS = new Set([
   // via the index is noise (audit: .claude/*.md topped a project's importance
   // ranking), and the agent already knows these files natively.
   ".claude", ".codex", ".opencode", ".gemini", ".cursor", ".agents",
+  // Vendored language environments: hard-excluded here (not just in the
+  // config defaults) because existing projects keep their customized
+  // exclude_patterns on update — a TIK-System scan indexed 283 .venv files
+  // (55% of the index) through exactly that gap.
+  ".venv", "venv", "site-packages", "__pycache__", ".tox", "node_modules",
 ]);
 
 function isNoiseFile(relPath: string): boolean {
@@ -231,6 +237,34 @@ export async function buildAnatomy(wolfDir: string, projectRoot: string): Promis
     store.files,
     contents
   );
+
+  // Opt-in sibling roots (`extra_roots` in config): "never index outside the
+  // project root" is about scratch/temp locations, but a sibling repo the
+  // user works in daily is a legitimate target — the TIK-System index lost
+  // its entire macOS client when 2.5.0 dropped out-of-root paths (kind vs
+  // location: the rule conflated them). Entries are resolved against the
+  // project root and indexed under their `../sibling/...` keys; roots inside
+  // the project are skipped (the main walk covered them), and the max_files
+  // budget is shared across all roots so extras can't displace own-project
+  // files that were walked first.
+  for (const extra of config.openwolf.anatomy.extra_roots ?? []) {
+    if (typeof extra !== "string" || extra.trim() === "") continue;
+    const absRoot = path.resolve(projectRoot, extra);
+    if (!path.relative(projectRoot, absRoot).startsWith("..")) continue;
+    try {
+      if (!fs.statSync(absRoot).isDirectory()) continue;
+    } catch {
+      continue;
+    }
+    walkDir(
+      absRoot,
+      projectRoot,
+      config.openwolf.anatomy.exclude_patterns,
+      config.openwolf.anatomy.max_files,
+      store.files,
+      contents
+    );
+  }
 
   // J2: upgrade regex symbols to exact tree-sitter results where a grammar is
   // available, and emit a signature skeleton for large files. Failure of the

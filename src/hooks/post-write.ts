@@ -7,7 +7,7 @@ import {
   isSensitiveFile, getProjectDir, emitHookJSON, recordInjection, hookMain, getSessionFilePath
 } from "./shared.js";
 import { loadStoreReconciled, saveStore, renderToFile, sha256 } from "./anatomy-store.js";
-import { withAnatomyLock, HOOK_LOCK_BUDGET_MS } from "./anatomy-lock.js";
+import { withAnatomyLock, withFileLock, HOOK_LOCK_BUDGET_MS } from "./anatomy-lock.js";
 import { extractSymbols, symbolsSupported, SYMBOL_MIN_TOKENS } from "./symbol-extractor.js";
 
 // File types where a value/string change is normal content editing, not a bug
@@ -98,7 +98,12 @@ async function main(): Promise<void> {
   // Never track files outside the project root (e.g. the Claude Code scratchpad under
   // /private/tmp). path.relative() yields ../.. section keys that pollute anatomy.md and are
   // wiped again by every full `openwolf scan`, so the index churns instead of converging.
-  if (relPath.startsWith("..") || path.isAbsolute(relPath)) { return; }
+  // Exception: paths under a configured `extra_roots` sibling — the scan
+  // indexes those under the same `../sibling/...` keys, so tracking them
+  // here converges instead of churning.
+  if (relPath.startsWith("..") || path.isAbsolute(relPath)) {
+    if (!isWithinExtraRoots(wolfDir, projectRoot, absolutePath)) { return; }
+  }
 
   // Never track secret-bearing files in anatomy/memory (issue #54): .env is
   // not the only file whose *description* would leak sensitive content.
@@ -341,6 +346,30 @@ function extractCalls(code: string): string[] {
   )];
 }
 
+/**
+ * True when `absolutePath` sits inside one of the opt-in sibling roots
+ * declared in `.wolf/config.json` (`openwolf.anatomy.extra_roots`). Mirrors
+ * the scan-side rule in src/scanner/anatomy-scanner.ts — hooks are standalone
+ * scripts and cannot import from the scanner build.
+ */
+function isWithinExtraRoots(wolfDir: string, projectRoot: string, absolutePath: string): boolean {
+  try {
+    const cfg = readJSON<{ openwolf?: { anatomy?: { extra_roots?: string[] } } }>(
+      path.join(wolfDir, "config.json"),
+      {}
+    );
+    const roots = cfg.openwolf?.anatomy?.extra_roots;
+    if (!Array.isArray(roots)) return false;
+    const target = path.resolve(absolutePath);
+    for (const r of roots) {
+      if (typeof r !== "string" || r.trim() === "") continue;
+      const absRoot = path.resolve(projectRoot, r);
+      if (target === absRoot || target.startsWith(absRoot + path.sep)) return true;
+    }
+  } catch {}
+  return false;
+}
+
 // ─── Auto Bug Detection ──────────────────────────────────────────
 
 function bugAutoDetectEnabled(wolfDir: string): boolean {
@@ -365,50 +394,63 @@ function autoDetectBugFix(wolfDir: string, absolutePath: string, projectRoot: st
   // Respect an explicit opt-out in .wolf/config.json (default: enabled).
   if (!bugAutoDetectEnabled(wolfDir)) return;
 
-  const bugLogPath = path.join(wolfDir, "buglog.json");
-  const bugLog = readBugLogFile(wolfDir) as BugLog;
-  const relFile = normalizePath(path.relative(projectRoot, absolutePath));
-
   // Detect what kind of fix this is
   const detection = detectFixPattern(oldStr, newStr, ext, basename);
   if (!detection) return;
 
-  // Check for recent duplicate (same file + same category within 5 min)
-  const recentDupe = bugLog.bugs.find(b => {
-    if (path.basename(b.file) !== basename) return false;
-    if (!b.tags.includes("auto-detected")) return false;
-    if (!b.tags.includes(detection.category)) return false;
-    const bugTime = new Date(b.last_seen).getTime();
-    return (Date.now() - bugTime) < 5 * 60 * 1000;
-  });
+  const bugLogPath = path.join(wolfDir, "buglog.json");
+  const relFile = normalizePath(path.relative(projectRoot, absolutePath));
 
-  if (recentDupe) {
-    recentDupe.occurrences++;
-    recentDupe.last_seen = new Date().toISOString();
-    // Append additional context
-    if (detection.context && !recentDupe.fix.includes(detection.context)) {
-      recentDupe.fix += ` | Also: ${detection.context}`;
+  // Locked read-modify-write: concurrent sessions share buglog.json and an
+  // unlocked interleave loses entries. On contention we skip — auto-detection
+  // is best-effort and the next qualifying edit fires again.
+  withFileLock(bugLogPath + ".lock", HOOK_LOCK_BUDGET_MS, () => {
+    const bugLog = readBugLogFile(wolfDir) as BugLog;
+
+    // Check for recent duplicate (same file + same category within 5 min)
+    const recentDupe = bugLog.bugs.find(b => {
+      if (path.basename(b.file ?? "") !== basename) return false;
+      if (!b.tags.includes("auto-detected")) return false;
+      if (!b.tags.includes(detection.category)) return false;
+      const bugTime = new Date(b.last_seen).getTime();
+      return (Date.now() - bugTime) < 5 * 60 * 1000;
+    });
+
+    if (recentDupe) {
+      recentDupe.occurrences++;
+      recentDupe.last_seen = new Date().toISOString();
+      // Append additional context
+      if (detection.context && !recentDupe.fix.includes(detection.context)) {
+        recentDupe.fix += ` | Also: ${detection.context}`;
+      }
+      writeJSON(bugLogPath, bugLog);
+      return;
     }
+
+    // Next id from the max existing numeric id, not the array length — same
+    // rule as bug-tracker.ts: deletions and concurrent writers made
+    // length-based ids collide.
+    const maxId = bugLog.bugs.reduce((max, b) => {
+      const n = parseInt(String(b.id ?? "").replace(/^bug-/, ""), 10);
+      return Number.isFinite(n) && n > max ? n : max;
+    }, 0);
+    const nextId = `bug-${String(maxId + 1).padStart(3, "0")}`;
+
+    bugLog.bugs.push({
+      id: nextId,
+      timestamp: new Date().toISOString(),
+      error_message: detection.summary,
+      file: relFile,
+      root_cause: detection.rootCause,
+      fix: detection.fix,
+      tags: ["auto-detected", detection.category, ext.replace(".", "") || "unknown"],
+      related_bugs: [],
+      occurrences: 1,
+      last_seen: new Date().toISOString(),
+    });
+
     writeJSON(bugLogPath, bugLog);
-    return;
-  }
-
-  const nextId = `bug-${String(bugLog.bugs.length + 1).padStart(3, "0")}`;
-
-  bugLog.bugs.push({
-    id: nextId,
-    timestamp: new Date().toISOString(),
-    error_message: detection.summary,
-    file: relFile,
-    root_cause: detection.rootCause,
-    fix: detection.fix,
-    tags: ["auto-detected", detection.category, ext.replace(".", "") || "unknown"],
-    related_bugs: [],
-    occurrences: 1,
-    last_seen: new Date().toISOString(),
   });
-
-  writeJSON(bugLogPath, bugLog);
 }
 
 interface FixDetection {

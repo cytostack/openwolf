@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { getWolfDir, ensureWolfDir, writeJSON, appendMarkdown, readJSON, readBugLogFile, timestamp, timeShort, estimateTokens, readStdin, detectAgent, recordInjectionToSessionFile, getProjectDir, hookMain, getSessionFilePath, gcSessionFiles } from "./shared.js";
 import { loadStore } from "./anatomy-store.js";
+import { withFileLock, HOOK_LOCK_BUDGET_MS } from "./anatomy-lock.js";
 import { topRules, scopedRulesForFiles } from "./rule-reinjection.js";
 
 // ─── Session digest (Workstream E/F: model-aware context budgeting) ─────────
@@ -14,6 +15,31 @@ import { topRules, scopedRulesForFiles } from "./rule-reinjection.js";
 interface ContextConfig {
   session_digest_budget_tokens?: number;
   budgets?: Record<string, number>;
+}
+
+// A sibling session file touched within this window means another agent is
+// live on the same .wolf right now (per-session state files are upserted
+// every turn by the Stop hook).
+const ACTIVE_SESSION_WINDOW_MS = 30 * 60 * 1000;
+
+/** Count other sessions' state files recently touched under hooks/sessions/. */
+function countOtherActiveSessions(wolfDir: string, ownSessionFile: string): number {
+  try {
+    const dir = path.join(wolfDir, "hooks", "sessions");
+    const own = path.resolve(ownSessionFile);
+    let n = 0;
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.endsWith(".json")) continue;
+      const full = path.join(dir, f);
+      if (path.resolve(full) === own) continue;
+      try {
+        if (Date.now() - fs.statSync(full).mtimeMs < ACTIVE_SESSION_WINDOW_MS) n++;
+      } catch {}
+    }
+    return n;
+  } catch {
+    return 0;
+  }
 }
 
 function digestBudget(wolfDir: string): number {
@@ -278,13 +304,19 @@ async function main(): Promise<void> {
   // counted, which used to inflate the lifetime count.
   if (!continuing) {
     const ledgerPath = path.join(wolfDir, "token-ledger.json");
-    const ledger = readJSON(ledgerPath, { version: 1, lifetime: { total_sessions: 0 } }) as {
-      version: number;
-      lifetime: { total_sessions: number };
-      [key: string]: unknown;
-    };
-    ledger.lifetime.total_sessions++;
-    writeJSON(ledgerPath, ledger);
+    // Same lock as flushSessionToLedger: two sessions starting at once on a
+    // shared .wolf interleave this read-modify-write and lose an increment
+    // (or worse, clobber a concurrent Stop flush). On contention, skip — an
+    // undercounted lifetime total is cheaper than a corrupted ledger.
+    withFileLock(ledgerPath + ".lock", HOOK_LOCK_BUDGET_MS, () => {
+      const ledger = readJSON(ledgerPath, { version: 1, lifetime: { total_sessions: 0 } }) as {
+        version: number;
+        lifetime: { total_sessions: number };
+        [key: string]: unknown;
+      };
+      ledger.lifetime.total_sessions++;
+      writeJSON(ledgerPath, ledger);
+    });
   }
 
   // Inject the budget-capped digest into the model's context.
@@ -300,6 +332,15 @@ async function main(): Promise<void> {
     // install silently loses every feature (happened for 3 weeks once).
     if (brokenHooks.length > 0) {
       digest = `OpenWolf hooks are degraded: ${brokenHooks.join("; ")}. Run \`openwolf update\` in this project to repair the install.\n\n` + digest;
+    }
+
+    // Multi-writer awareness (TIK-System field report): two sessions sharing
+    // one .wolf overwrote each other's STATUS.md and plan files without
+    // either knowing the other existed. Appends and locked JSON writes are
+    // safe; whole-file rewrites are the hazard worth a warning.
+    const otherSessions = countOtherActiveSessions(wolfDir, sessionFile);
+    if (otherSessions > 0) {
+      digest = `${otherSessions} other active session(s) share this project's .wolf. Log appends (memory, buglog) are concurrency-safe, but whole-file rewrites are not: before regenerating .wolf/STATUS.md or writing shared plan files, coordinate via ListAgents/SendMessage, and prefer per-session plan files under .wolf/plans/.\n\n` + digest;
     }
 
     // Post-compaction restore (F3 + 2.4): resurface what compaction erased.

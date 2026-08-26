@@ -84,10 +84,20 @@ The project scanner.
 | `max_description_length` | `100` | Max characters per file description |
 | `max_files` | `500` | Stop scanning after this many files |
 | `exclude_patterns` | node_modules, .git, dist, ... | Directories and globs to skip |
+| `extra_roots` | `[]` | Sibling directories outside the project root to index as well, e.g. `["../mac-os-native"]` |
 
-Lockfiles, OS junk, caches, coverage, minified files, and agent-config
+Lockfiles, OS junk, caches, coverage, minified files, vendored language
+environments (`.venv`, `site-packages`, and friends), and agent-config
 directories (`.claude`, `.codex`, and friends) are excluded built-in,
 regardless of this list.
+
+`extra_roots` is for a repo you work in daily that has no `.wolf` of its own —
+a sibling client or service of the same product. Its files are indexed under
+`../sibling/...` keys, so `openwolf find` covers them from this project, and
+the write-tracking hooks keep their entries fresh. Everything else outside the
+project root (scratch dirs, temp files) stays excluded. The `max_files` budget
+is shared, and the project's own files are scanned first, so an extra root can
+never displace them.
 
 ## `token_audit`
 
