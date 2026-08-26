@@ -370,9 +370,15 @@ function shutdown(): void {
   clearInterval(heartbeatTimer);
   if (cronEngine) cronEngine.stop();
 
-  const state = readJSON<Record<string, unknown>>(cronStatePath, {});
-  state.engine_status = "stopped";
-  writeJSON(cronStatePath, state);
+  const stopped = withFileLock(cronStatePath + ".lock", 2000, () => {
+    const state = readJSON<Record<string, unknown>>(cronStatePath, {});
+    state.engine_status = "stopped";
+    writeJSON(cronStatePath, state);
+    return true;
+  });
+  if (stopped === null) {
+    logger.error("Cron state lock acquisition timed out while persisting daemon shutdown state");
+  }
 
   for (const client of wsClients) {
     client.close();

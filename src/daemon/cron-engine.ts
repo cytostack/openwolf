@@ -126,7 +126,7 @@ export class CronEngine {
    * websocket handlers write it concurrently, and unlocked interleaves
    * dropped execution-log / dead-letter entries.
    */
-  private mutateState(mutator: (state: CronState) => void): void {
+  private mutateState(mutator: (state: CronState) => void): boolean {
     const lockPath = path.join(this.wolfDir, "cron-state.json.lock");
     const done = withFileLock(lockPath, 2000, () => {
       const state = this.readState();
@@ -134,12 +134,7 @@ export class CronEngine {
       this.writeState(state);
       return true;
     });
-    if (done === null) {
-      // Contention beyond budget: apply last-writer-wins rather than losing the entry.
-      const state = this.readState();
-      mutator(state);
-      this.writeState(state);
-    }
+    return done !== null;
   }
 
   private async executeTask(task: CronTask): Promise<void> {
@@ -148,30 +143,6 @@ export class CronEngine {
 
     try {
       await this.runAction(task.action);
-      const duration = Date.now() - startTime;
-
-      // Log success
-      this.mutateState((state) => {
-        state.execution_log.push({
-          task_id: task.id,
-          status: "success",
-          timestamp: new Date().toISOString(),
-          duration_ms: duration,
-        });
-        // Keep last 100 entries
-        if (state.execution_log.length > 100) {
-          state.execution_log = state.execution_log.slice(-100);
-        }
-      });
-
-      this.failureCounts.set(task.id, 0);
-      this.broadcast({
-        type: "cron_executed",
-        task_id: task.id,
-        status: "success",
-        duration_ms: duration,
-      });
-      this.logger.info(`Task ${task.name} completed in ${duration}ms`);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       const duration = Date.now() - startTime;
@@ -189,7 +160,7 @@ export class CronEngine {
         }, delay);
       } else {
         // Dead letter or skip
-        this.mutateState((state) => {
+        const persisted = this.mutateState((state) => {
           state.execution_log.push({
             task_id: task.id,
             status: "failed",
@@ -207,6 +178,9 @@ export class CronEngine {
             });
           }
         });
+        if (!persisted) {
+          throw new Error("Cron state lock acquisition timed out while persisting task result");
+        }
         this.failureCounts.set(task.id, 0);
       }
 
@@ -216,7 +190,34 @@ export class CronEngine {
         status: "failed",
         duration_ms: duration,
       });
+      return;
     }
+
+    const duration = Date.now() - startTime;
+    const persisted = this.mutateState((state) => {
+      state.execution_log.push({
+        task_id: task.id,
+        status: "success",
+        timestamp: new Date().toISOString(),
+        duration_ms: duration,
+      });
+      // Keep last 100 entries
+      if (state.execution_log.length > 100) {
+        state.execution_log = state.execution_log.slice(-100);
+      }
+    });
+    if (!persisted) {
+      throw new Error("Cron state lock acquisition timed out while persisting task result");
+    }
+
+    this.failureCounts.set(task.id, 0);
+    this.broadcast({
+      type: "cron_executed",
+      task_id: task.id,
+      status: "success",
+      duration_ms: duration,
+    });
+    this.logger.info(`Task ${task.name} completed in ${duration}ms`);
   }
 
   private calculateDelay(backoff: string, baseSec: number, attempt: number): number {
@@ -406,4 +407,3 @@ export class CronEngine {
   }
 
 }
-

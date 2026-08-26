@@ -5,6 +5,7 @@ import { readJSON, writeJSON } from "../utils/fs-safe.js";
 import { getDashboardToken } from "../utils/dashboard-auth.js";
 import { Logger } from "../utils/logger.js";
 import { CronEngine } from "../daemon/cron-engine.js";
+import { CLI_LOCK_BUDGET_MS, withFileLock } from "../hooks/anatomy-lock.js";
 import { hasPm2 } from "./daemon-cmd.js";
 
 interface CronTask {
@@ -193,19 +194,28 @@ export function cronRetry(id: string): void {
   }
 
   const statePath = path.join(wolfDir, "cron-state.json");
-  const state = readJSON<CronState>(statePath, {
-    engine_status: "unknown",
-    execution_log: [],
-    dead_letter_queue: [],
+  const result = withFileLock(statePath + ".lock", CLI_LOCK_BUDGET_MS, () => {
+    const state = readJSON<CronState>(statePath, {
+      engine_status: "unknown",
+      execution_log: [],
+      dead_letter_queue: [],
+    });
+
+    const idx = state.dead_letter_queue.findIndex((d) => d.task_id === id);
+    if (idx === -1) return "missing";
+
+    state.dead_letter_queue.splice(idx, 1);
+    writeJSON(statePath, state);
+    return "removed";
   });
 
-  const idx = state.dead_letter_queue.findIndex((d) => d.task_id === id);
-  if (idx === -1) {
+  if (result === null) {
+    throw new Error("Cron state lock acquisition timed out while retrying dead-letter task");
+  }
+  if (result === "missing") {
     console.log(`Task ${id} not found in dead letter queue.`);
     return;
   }
 
-  state.dead_letter_queue.splice(idx, 1);
-  writeJSON(statePath, state);
   console.log(`Removed ${id} from dead letter queue. It will retry on next schedule.`);
 }
