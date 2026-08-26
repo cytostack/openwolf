@@ -87,7 +87,7 @@ untrue.
 - Hook count corrected to 12 everywhere. The docs said 10 while documenting
   12.
 
-## [Unreleased]
+## [2.6.0] - 2026-08-26
 
 ### Added
 
