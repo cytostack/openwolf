@@ -5,6 +5,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { CLI_LOCK_BUDGET_MS, withFileLock } from "../hooks/anatomy-lock.js";
 
 export interface RegisteredProject {
   root: string;
@@ -61,36 +62,42 @@ export function writeRegistry(registry: Registry): void {
  * Updates existing entry if the project root matches.
  */
 export function registerProject(projectRoot: string, name: string, version: string): void {
-  const registry = readRegistry();
-  const normalized = normalizePath(projectRoot);
-  const now = new Date().toISOString();
+  fs.mkdirSync(getRegistryDir(), { recursive: true });
+  withFileLock(getRegistryPath() + ".lock", CLI_LOCK_BUDGET_MS, () => {
+    const registry = readRegistry();
+    const normalized = normalizePath(projectRoot);
+    const now = new Date().toISOString();
 
-  const existing = registry.projects.find(p => normalizePath(p.root) === normalized);
-  if (existing) {
-    existing.name = name;
-    existing.last_updated = now;
-    existing.version = version;
-  } else {
-    registry.projects.push({
-      root: projectRoot,
-      name,
-      registered_at: now,
-      last_updated: now,
-      version,
-    });
-  }
+    const existing = registry.projects.find(p => normalizePath(p.root) === normalized);
+    if (existing) {
+      existing.name = name;
+      existing.last_updated = now;
+      existing.version = version;
+    } else {
+      registry.projects.push({
+        root: projectRoot,
+        name,
+        registered_at: now,
+        last_updated: now,
+        version,
+      });
+    }
 
-  writeRegistry(registry);
+    writeRegistry(registry);
+  });
 }
 
 /**
  * Remove a project from the registry (e.g., if the directory no longer exists).
  */
 export function unregisterProject(projectRoot: string): void {
-  const registry = readRegistry();
-  const normalized = normalizePath(projectRoot);
-  registry.projects = registry.projects.filter(p => normalizePath(p.root) !== normalized);
-  writeRegistry(registry);
+  fs.mkdirSync(getRegistryDir(), { recursive: true });
+  withFileLock(getRegistryPath() + ".lock", CLI_LOCK_BUDGET_MS, () => {
+    const registry = readRegistry();
+    const normalized = normalizePath(projectRoot);
+    registry.projects = registry.projects.filter(p => normalizePath(p.root) !== normalized);
+    writeRegistry(registry);
+  });
 }
 
 /**
