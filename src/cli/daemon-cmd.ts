@@ -75,7 +75,11 @@ export function daemonStop(): void {
 
   const name = getPm2Name();
   try {
-    execFileSync(pm2Bin(), ["stop", name], { stdio: "ignore" });
+    if (isWindows()) {
+      execFileSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", "pm2.cmd", "stop", name], { stdio: "ignore" });
+    } else {
+      execFileSync("pm2", ["stop", name], { stdio: "ignore" });
+    }
     console.log(`  ✓ Daemon stopped (PM2): ${name}`);
   } catch {
     console.error(`Failed to stop daemon (${name}). Run 'pm2 status'; if it is not registered, run 'openwolf daemon start', then retry.`);
@@ -100,7 +104,11 @@ export function daemonRestart(): void {
 
   const name = getPm2Name();
   try {
-    execFileSync(pm2Bin(), ["restart", name], { stdio: "ignore" });
+    if (isWindows()) {
+      execFileSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", "pm2.cmd", "restart", name], { stdio: "ignore" });
+    } else {
+      execFileSync("pm2", ["restart", name], { stdio: "ignore" });
+    }
     console.log(`  ✓ Daemon restarted (PM2): ${name}`);
   } catch {
     console.error(`Failed to restart daemon (${name}). Run 'pm2 status'; if it is not registered, run 'openwolf daemon start', then retry.`);
