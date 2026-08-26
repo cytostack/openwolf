@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { execFileSync } from "node:child_process";
-import { extractDescription, capDescription } from "./description-extractor.js";
+import { extractDescription, capDescription, READ_BYTES } from "./description-extractor.js";
 import {
   newStore, renderStore, renderToFile, saveStore, loadStoreReconciled, sha256,
   type AnatomyStoreData, type StoreFileEntry,
@@ -170,14 +170,16 @@ function walkDir(
       }
 
       // Read file for token estimation
+      let bytes: Buffer;
       let content: string;
       try {
-        content = fs.readFileSync(fullPath, "utf-8");
+        bytes = fs.readFileSync(fullPath);
+        content = bytes.toString("utf-8");
       } catch {
         continue;
       }
 
-      const desc = capDescription(extractDescription(fullPath));
+      const desc = capDescription(extractDescription(fullPath, bytes.subarray(0, READ_BYTES).toString("utf-8")));
       const tokens = estimateTokens(content, fullPath);
       const symbols =
         tokens >= SYMBOL_MIN_TOKENS && symbolsSupported(ext)
@@ -330,4 +332,3 @@ export async function scanProject(wolfDir: string, projectRoot: string): Promise
 
   return fileCount;
 }
-
