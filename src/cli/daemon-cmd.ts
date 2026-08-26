@@ -1,25 +1,12 @@
-import { execFileSync, execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
-import * as net from "node:net";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { findProjectRoot } from "../scanner/project-root.js";
-import { readJSON } from "../utils/fs-safe.js";
 import { isWindows } from "../utils/platform.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-function getDashboardPort(): number {
-  const projectRoot = findProjectRoot();
-  const wolfDir = path.join(projectRoot, ".wolf");
-  const config = readJSON<{ openwolf: { dashboard: { port: number } } }>(
-    path.join(wolfDir, "config.json"),
-    { openwolf: { dashboard: { port: 18791 } } }
-  );
-  const port = Number(config.openwolf.dashboard.port);
-  return Number.isInteger(port) && port > 0 && port <= 65535 ? port : 18791;
-}
 
 function getPm2Name(): string {
   const projectRoot = findProjectRoot();
@@ -33,47 +20,6 @@ function pm2Bin(): string {
 export function hasPm2(): boolean {
   try {
     execFileSync(isWindows() ? "where" : "which", ["pm2"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function findPidsOnPort(port: number): number[] {
-  const pids = new Set<number>();
-  try {
-    if (isWindows()) {
-      const output = execFileSync("netstat", ["-ano", "-p", "tcp"], { encoding: "utf-8" });
-      for (const line of output.split("\n")) {
-        // Match the local-address column only; a bare `:port` substring also
-        // matched the foreign-address column and killed unrelated processes.
-        if (!line.includes("LISTENING")) continue;
-        const parts = line.trim().split(/\s+/);
-        const local = parts[1] ?? "";
-        if (!local.endsWith(`:${port}`)) continue;
-        const pid = parseInt(parts[parts.length - 1], 10);
-        if (pid > 0) pids.add(pid);
-      }
-    } else {
-      // lsof -ti can return several newline-separated pids; the old parseInt
-      // of the whole output killed only the first and left stale listeners.
-      const output = execFileSync("lsof", ["-ti", `:${port}`], { encoding: "utf-8" });
-      for (const part of output.split("\n")) {
-        const pid = parseInt(part.trim(), 10);
-        if (pid > 0) pids.add(pid);
-      }
-    }
-  } catch {}
-  return [...pids];
-}
-
-function killPid(pid: number): boolean {
-  try {
-    if (isWindows()) {
-      execFileSync("taskkill", ["/PID", String(pid), "/F"], { stdio: "ignore" });
-    } else {
-      process.kill(pid, "SIGTERM");
-    }
     return true;
   } catch {
     return false;
@@ -121,31 +67,19 @@ export function daemonStop(): void {
     return;
   }
 
-  // First try PM2
-  if (hasPm2()) {
-    const name = getPm2Name();
-    try {
-      execFileSync(pm2Bin(), ["stop", name], { stdio: "ignore" });
-      console.log(`  ✓ Daemon stopped (PM2): ${name}`);
-      return;
-    } catch {
-      // PM2 process not found — fall through to port-based stop
-    }
+  if (!hasPm2()) {
+    console.error("Failed to stop daemon: pm2 not found. Install with: pnpm add -g pm2");
+    process.exitCode = 1;
+    return;
   }
 
-  // Fall back to killing whatever is listening on the dashboard port
-  const port = getDashboardPort();
-  const pids = findPidsOnPort(port);
-  if (pids.length > 0) {
-    for (const pid of pids) {
-      if (killPid(pid)) {
-        console.log(`  ✓ Daemon stopped (PID ${pid} on port ${port})`);
-      } else {
-        console.error(`  Failed to kill process ${pid} on port ${port}.`);
-      }
-    }
-  } else {
-    console.log(`  No daemon running on port ${port}.`);
+  const name = getPm2Name();
+  try {
+    execFileSync(pm2Bin(), ["stop", name], { stdio: "ignore" });
+    console.log(`  ✓ Daemon stopped (PM2): ${name}`);
+  } catch {
+    console.error(`Failed to stop daemon (${name}). Run 'pm2 status'; if it is not registered, run 'openwolf daemon start', then retry.`);
+    process.exitCode = 1;
   }
 }
 
@@ -158,25 +92,20 @@ export function daemonRestart(): void {
     return;
   }
 
-  // First try PM2
-  if (hasPm2()) {
-    const name = getPm2Name();
-    try {
-      execFileSync(pm2Bin(), ["restart", name], { stdio: "ignore" });
-      console.log(`  ✓ Daemon restarted (PM2): ${name}`);
-      return;
-    } catch {
-      // PM2 process not found — fall through
-    }
+  if (!hasPm2()) {
+    console.error("Failed to restart daemon: pm2 not found. Install with: pnpm add -g pm2");
+    process.exitCode = 1;
+    return;
   }
 
-  // Fall back: stop then start via dashboard command flow
-  const port = getDashboardPort();
-  for (const pid of findPidsOnPort(port)) {
-    killPid(pid);
-    console.log(`  Stopped old daemon (PID ${pid}).`);
+  const name = getPm2Name();
+  try {
+    execFileSync(pm2Bin(), ["restart", name], { stdio: "ignore" });
+    console.log(`  ✓ Daemon restarted (PM2): ${name}`);
+  } catch {
+    console.error(`Failed to restart daemon (${name}). Run 'pm2 status'; if it is not registered, run 'openwolf daemon start', then retry.`);
+    process.exitCode = 1;
   }
-  console.log("  Use 'openwolf dashboard' to start a new daemon.");
 }
 
 export function daemonStatus(): void {

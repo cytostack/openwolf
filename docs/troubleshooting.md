@@ -111,19 +111,15 @@ tree-sitter pass.
 
 ## Daemon will not stop
 
-`openwolf daemon stop` handles both PM2-managed and forked daemons, falling
-back to killing the process on the dashboard port. Manual fallback:
+`openwolf daemon stop` and `openwolf daemon restart` control only the current
+project's exact PM2 registration. Check whether that registration exists:
 
-::: code-group
-```bash [macOS/Linux]
-lsof -ti :<port> | xargs kill
+```bash
+pm2 status
 ```
 
-```bash [Windows]
-netstat -ano -p tcp | findstr :<port>
-taskkill /PID <pid> /F
-```
-:::
+If the project is not registered, run `openwolf daemon start`, then retry the
+stop or restart command. Install PM2 with `pnpm add -g pm2` if it is unavailable.
 
 ## Commands say "OpenWolf not initialized"
 

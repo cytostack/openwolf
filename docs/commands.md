@@ -161,10 +161,13 @@ PM2 required. Each project gets its own port and token.
 
 ```bash
 openwolf daemon start     # persistent daemon via PM2
-openwolf daemon stop      # stops PM2 or forked daemons alike
-openwolf daemon restart
+openwolf daemon stop      # stop this project's exact PM2 registration
+openwolf daemon restart   # restart this project's exact PM2 registration
 openwolf daemon logs      # last 50 lines
 ```
+
+Stop and restart control only the current project's PM2 registration. They
+do not discover or terminate processes by dashboard port.
 
 The daemon handles stale-gated anatomy rescans, measured-usage refresh,
 memory consolidation, and the dashboard server. It makes no network calls.
