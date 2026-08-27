@@ -11,7 +11,7 @@ import { auditContextHealth } from "./context-audit.js";
 import { withFileLock } from "../hooks/anatomy-lock.js";
 import { Logger } from "../utils/logger.js";
 import { getDashboardToken, validateDashboardToken } from "../utils/dashboard-auth.js";
-import { CronEngine } from "./cron-engine.js";
+import { CronEngine, CronTaskNotFoundError } from "./cron-engine.js";
 import { startFileWatcher } from "./file-watcher.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -193,6 +193,10 @@ app.post("/api/cron/run/:taskId", (req, res) => {
   cronEngine.runTask(taskId).then(() => {
     res.json({ status: "ok", task_id: taskId });
   }).catch((err) => {
+    if (err instanceof CronTaskNotFoundError) {
+      res.status(404).json({ error: "Task not found", task_id: err.taskId });
+      return;
+    }
     res.status(500).json({ error: String(err) });
   });
 });

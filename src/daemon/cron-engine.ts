@@ -48,6 +48,13 @@ interface CronState {
   upcoming: unknown[];
 }
 
+export class CronTaskNotFoundError extends Error {
+  constructor(readonly taskId: string) {
+    super(`Task not found: ${taskId}`);
+    this.name = "CronTaskNotFoundError";
+  }
+}
+
 export class CronEngine {
   private wolfDir: string;
   private projectRoot: string;
@@ -98,7 +105,7 @@ export class CronEngine {
     const task = manifest.tasks.find((t) => t.id === taskId);
     if (!task) {
       this.logger.warn(`Task not found: ${taskId}`);
-      return;
+      throw new CronTaskNotFoundError(taskId);
     }
     await this.executeTask(task);
   }
@@ -406,4 +413,3 @@ export class CronEngine {
   }
 
 }
-

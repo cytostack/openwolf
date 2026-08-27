@@ -127,32 +127,36 @@ export async function cronRun(id: string): Promise<void> {
   const token = getDashboardToken(wolfDir);
 
   // Try calling the daemon's HTTP endpoint first
+  let res: Response;
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/cron/run/${encodeURIComponent(id)}`, {
+    res = await fetch(`http://127.0.0.1:${port}/api/cron/run/${encodeURIComponent(id)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     });
-    const body = await res.json() as { status?: string; error?: string };
-    if (res.ok) {
-      console.log(`Task ${id} triggered via daemon.`);
-      return;
-    }
-    console.log(`Daemon returned error: ${body.error ?? res.statusText}`);
-    console.log("Falling back to direct execution...");
   } catch {
     console.log("Daemon not reachable. Running task directly...");
+    const logger = new Logger(path.join(wolfDir, "daemon.log"), "info");
+    const engine = new CronEngine(wolfDir, projectRoot, logger, () => {});
+    try {
+      await engine.runTask(id);
+      console.log(`Task ${id} executed successfully.`);
+    } catch (err) {
+      console.error(`Task ${id} failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exitCode = 1;
+    }
+    return;
   }
 
-  // Fallback: run the task directly via CronEngine
-  const logger = new Logger(path.join(wolfDir, "daemon.log"), "info");
-  const engine = new CronEngine(wolfDir, projectRoot, logger, () => {});
-  try {
-    await engine.runTask(id);
-    console.log(`Task ${id} executed successfully.`);
-  } catch (err) {
-    console.error(`Task ${id} failed: ${err instanceof Error ? err.message : String(err)}`);
-    process.exit(1);
+  if (res.ok) {
+    console.log(`Task ${id} triggered via daemon.`);
+    return;
   }
+  let error = res.statusText;
+  try {
+    error = (await res.json() as { error?: string }).error ?? error;
+  } catch {}
+  console.log(`Daemon returned error: ${error}`);
+  process.exitCode = 1;
 }
 
 export function cronSetEnabled(id: string, enabled: boolean): void {
