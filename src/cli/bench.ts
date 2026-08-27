@@ -30,6 +30,7 @@ interface ArmResult {
   task: string;
   arm: "openwolf" | "bare";
   repeat: number;
+  source_commit: string;
   completed: boolean;
   input_tokens: number;
   output_tokens: number;
@@ -129,6 +130,18 @@ export function benchCommand(opts: BenchOptions): void {
     return;
   }
 
+  let sourceCommit: string;
+  try {
+    const advertisedHead = String(execFileSync("git", ["ls-remote", repo, "HEAD"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }));
+    const match = /^([0-9a-f]{40}|[0-9a-f]{64})\tHEAD\n?$/.exec(advertisedHead);
+    if (!match) throw new Error("expected one full lowercase HEAD object ID");
+    sourceCommit = match[1];
+  } catch (err) {
+    console.log(`source resolution failed: ${String(err).slice(0, 120)}`);
+    process.exitCode = 1;
+    return;
+  }
+
   const ownBin = findOwnBin();
   const results: ArmResult[] = [];
 
@@ -138,52 +151,63 @@ export function benchCommand(opts: BenchOptions): void {
         const workDir = fs.mkdtempSync(path.join(os.tmpdir(), `owbench-${task.name}-${arm}-`));
         try {
           execFileSync("git", ["clone", "--depth", "1", "--quiet", repo, workDir + "/repo"], { stdio: "ignore" });
+          const repoDir = path.join(workDir, "repo");
+          let checkedCommit = String(execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoDir, encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] })).trim();
+          if (checkedCommit !== sourceCommit) {
+            // Some servers refuse an object-ID fetch after it is no longer advertised; fail closed rather than use moved HEAD.
+            execFileSync("git", ["fetch", "--depth", "1", "origin", sourceCommit], { cwd: repoDir, stdio: "ignore" });
+            execFileSync("git", ["checkout", "--detach", sourceCommit], { cwd: repoDir, stdio: "ignore" });
+          }
+          checkedCommit = String(execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoDir, encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] })).trim();
+          if (checkedCommit !== sourceCommit) throw new Error("checked-out HEAD differs from resolved source commit");
+          if (arm === "openwolf") {
+            try {
+              execFileSync(process.execPath, [ownBin, "init"], { cwd: repoDir, stdio: "ignore", timeout: 120000 });
+            } catch {}
+          }
+
+          console.log(`[${task.name}] repeat ${r + 1}/${repeats} arm=${arm} ...`);
+          let completed = true;
+          try {
+            execFileSync("claude", ["-p", task.prompt, "--output-format", "json"], {
+              cwd: repoDir, stdio: ["ignore", "ignore", "inherit"], timeout: 30 * 60 * 1000,
+            });
+          } catch {
+            completed = false;
+          }
+
+          const usage = scanProjectUsage(repoDir) ?? {
+            input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0, api_calls: 0,
+          };
+          const rerun = bashRerunStats(repoDir);
+          results.push({
+            task: task.name,
+            arm,
+            repeat: r,
+            source_commit: sourceCommit,
+            completed,
+            input_tokens: usage.input_tokens,
+            output_tokens: usage.output_tokens,
+            cache_read_input_tokens: usage.cache_read_input_tokens,
+            cache_creation_input_tokens: usage.cache_creation_input_tokens,
+            api_calls: usage.api_calls,
+            bash_commands: rerun.commands,
+            bash_reruns: rerun.reruns,
+          });
         } catch (err) {
-          console.log(`clone failed: ${String(err).slice(0, 120)}`);
+          console.log(`source preparation failed: ${String(err).slice(0, 120)}`);
           process.exitCode = 1;
           return;
+        } finally {
+          try { fs.rmSync(workDir, { recursive: true, force: true }); } catch {}
         }
-        const repoDir = path.join(workDir, "repo");
-        if (arm === "openwolf") {
-          try {
-            execFileSync(process.execPath, [ownBin, "init"], { cwd: repoDir, stdio: "ignore", timeout: 120000 });
-          } catch {}
-        }
-
-        console.log(`[${task.name}] repeat ${r + 1}/${repeats} arm=${arm} ...`);
-        let completed = true;
-        try {
-          execFileSync("claude", ["-p", task.prompt, "--output-format", "json"], {
-            cwd: repoDir, stdio: ["ignore", "ignore", "inherit"], timeout: 30 * 60 * 1000,
-          });
-        } catch {
-          completed = false;
-        }
-
-        const usage = scanProjectUsage(repoDir) ?? {
-          input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0,
-          cache_creation_input_tokens: 0, api_calls: 0,
-        };
-        const rerun = bashRerunStats(repoDir);
-        results.push({
-          task: task.name,
-          arm,
-          repeat: r,
-          completed,
-          input_tokens: usage.input_tokens,
-          output_tokens: usage.output_tokens,
-          cache_read_input_tokens: usage.cache_read_input_tokens,
-          cache_creation_input_tokens: usage.cache_creation_input_tokens,
-          api_calls: usage.api_calls,
-          bash_commands: rerun.commands,
-          bash_reruns: rerun.reruns,
-        });
-        try { fs.rmSync(workDir, { recursive: true, force: true }); } catch {}
       }
     }
   }
 
   // ── Report: medians per task per arm, cache dimensions separate ───────────
+  console.log(`Source commit: ${sourceCommit}`);
   console.log("\n================ BENCH RESULTS (medians) ================");
   const dims = ["input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens", "api_calls"] as const;
   for (const task of tasks) {
