@@ -11,11 +11,15 @@ export function startFileWatcher(
 ): void {
   const watcher = watch(wolfDir, {
     ignoreInitial: true,
-    ignored: [
-      "**/hooks/_session.json",
-      "**/*.tmp",
-      "**/daemon.log",
-    ],
+    ignored: (candidatePath: string) => {
+      const relativePath = path.relative(wolfDir, candidatePath);
+      const sessionsPath = path.join("hooks", "sessions");
+      return relativePath === sessionsPath ||
+        relativePath.startsWith(sessionsPath + path.sep) ||
+        relativePath === path.join("hooks", "_session.json") ||
+        relativePath.endsWith(".tmp") ||
+        path.basename(relativePath) === "daemon.log";
+    },
     persistent: true,
     awaitWriteFinish: {
       stabilityThreshold: 500,
