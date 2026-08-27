@@ -6,6 +6,27 @@ export function getWolfDir(directory: string): string {
   return path.join(directory, ".wolf")
 }
 
+export function getSessionFilePath(directory: string, sessionId: string): string {
+  const hooksDir = path.join(getWolfDir(directory), "hooks")
+  return /^[\w.-]{4,128}$/.test(sessionId)
+    ? path.join(hooksDir, "sessions", `${sessionId}.json`)
+    : path.join(hooksDir, "_session.json")
+}
+
+export function gcSessionFiles(directory: string, maxAgeDays = 7): void {
+  try {
+    const dir = path.join(getWolfDir(directory), "hooks", "sessions")
+    const cutoff = Date.now() - maxAgeDays * 24 * 3600 * 1000
+    for (const file of fs.readdirSync(dir)) {
+      if (!file.endsWith(".json")) continue
+      try {
+        const filePath = path.join(dir, file)
+        if (fs.statSync(filePath).mtimeMs < cutoff) fs.unlinkSync(filePath)
+      } catch {}
+    }
+  } catch {}
+}
+
 export function wolfDirExists(directory: string): boolean {
   return fs.existsSync(getWolfDir(directory))
 }

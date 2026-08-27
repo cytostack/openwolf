@@ -1,7 +1,7 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 import * as crypto from "node:crypto"
-import { getWolfDir, writeJSON, readJSON, appendMarkdown, timeShort, normalizePath, estimateTokens, isSensitiveFile } from "./fs.js"
+import { getWolfDir, getSessionFilePath, writeJSON, readJSON, appendMarkdown, timeShort, normalizePath, estimateTokens, isSensitiveFile } from "./fs.js"
 import { extractDescription, withAnatomyLock, loadStoreReconciled, saveStore, renderToFile, sha256, LOCK_BUDGET_MS } from "./anatomy.js"
 import type { PartialSessionState, FixDetection } from "./types.js"
 
@@ -28,8 +28,7 @@ export function handlePostWrite(
   const wolfDir = getWolfDir(directory)
   if (!fs.existsSync(wolfDir)) return
 
-  const hooksDir = path.join(wolfDir, "hooks")
-  const sessionFile = path.join(hooksDir, "_session.json")
+  const sessionFile = getSessionFilePath(directory, sessionId)
   const projectRoot = directory
 
   const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(projectRoot, filePath)

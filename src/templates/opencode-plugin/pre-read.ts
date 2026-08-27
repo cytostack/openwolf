@@ -1,6 +1,6 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { getWolfDir, writeJSON, readJSON, normalizePath } from "./fs.js"
+import { getWolfDir, getSessionFilePath, writeJSON, readJSON, normalizePath } from "./fs.js"
 import { lookupEntry } from "./anatomy.js"
 import type { PartialSessionState } from "./types.js"
 
@@ -8,8 +8,7 @@ export function handlePreRead(directory: string, sessionId: string, filePath: st
   const wolfDir = getWolfDir(directory)
   if (!fs.existsSync(wolfDir)) return
 
-  const hooksDir = path.join(wolfDir, "hooks")
-  const sessionFile = path.join(hooksDir, "_session.json")
+  const sessionFile = getSessionFilePath(directory, sessionId)
   const normalizedFile = normalizePath(filePath)
 
   const projectDir = normalizePath(directory)
