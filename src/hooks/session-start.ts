@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { HOOK_LOCK_BUDGET_MS, withFileLock } from "./anatomy-lock.js";
 import { getWolfDir, ensureWolfDir, writeJSON, appendMarkdown, readJSON, readBugLogFile, timestamp, timeShort, estimateTokens, readStdin, detectAgent, recordInjectionToSessionFile, getProjectDir, hookMain, getSessionFilePath, gcSessionFiles } from "./shared.js";
 import { loadStore } from "./anatomy-store.js";
 import { topRules, scopedRulesForFiles } from "./rule-reinjection.js";
@@ -278,13 +279,17 @@ async function main(): Promise<void> {
   // counted, which used to inflate the lifetime count.
   if (!continuing) {
     const ledgerPath = path.join(wolfDir, "token-ledger.json");
-    const ledger = readJSON(ledgerPath, { version: 1, lifetime: { total_sessions: 0 } }) as {
-      version: number;
-      lifetime: { total_sessions: number };
-      [key: string]: unknown;
-    };
-    ledger.lifetime.total_sessions++;
-    writeJSON(ledgerPath, ledger);
+    const updated = withFileLock(ledgerPath + ".lock", HOOK_LOCK_BUDGET_MS, () => {
+      const ledger = readJSON(ledgerPath, { version: 1, lifetime: { total_sessions: 0 } }) as {
+        version: number;
+        lifetime: { total_sessions: number };
+        [key: string]: unknown;
+      };
+      ledger.lifetime.total_sessions++;
+      writeJSON(ledgerPath, ledger);
+      return true;
+    });
+    if (updated === null) throw new Error("SessionStart token-ledger lock acquisition timed out");
   }
 
   // Inject the budget-capped digest into the model's context.
