@@ -32,6 +32,7 @@ function buildCodexHooks(projectRoot: string) {
       PostToolUse: [
         { matcher: "Read", hooks: [hookEntry(projectRoot, "post-read.js", 5, "OpenWolf read tracking")] },
         { matcher: "Edit|Write|MultiEdit|apply_patch", hooks: [hookEntry(projectRoot, "post-write.js", 10, "OpenWolf anatomy update")] },
+        { matcher: "Bash|execute|Run|tool", hooks: [hookEntry(projectRoot, "post-test.js", 10, "OpenWolf test outcome tracking")] },
       ],
       PreCompact: [
         { matcher: "", hooks: [hookEntry(projectRoot, "precompact.js", 5, "OpenWolf compaction snapshot")] },

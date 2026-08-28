@@ -19,7 +19,7 @@ interface Ledger {
   sessions: Array<{
     id: string;
     ended: string;
-    totals: { input_tokens_estimated: number; output_tokens_estimated: number; reads_count: number; writes_count: number };
+    totals: { input_tokens_estimated: number; output_tokens_estimated: number; reads_count: number; writes_count: number; recurrences?: number; negative_writes?: number };
     real_usage?: RealUsage;
   }>;
 }
@@ -44,6 +44,24 @@ export function reportCommand(): void {
   console.log("  Estimated (char-ratio heuristic)");
   console.log(`    Total tokens:           ${fmt(lt.total_tokens_estimated)}`);
   console.log(`    Est. savings vs bare:   ${fmt(lt.estimated_savings_vs_bare_cli)}`);
+  const recurrences = lt.recurrences ?? 0;
+  const negativeWrites = lt.negative_writes ?? 0;
+  if (negativeWrites > 0 || recurrences > 0) {
+    const rate = negativeWrites > 0 ? (100 * recurrences) / negativeWrites : 0;
+    console.log("  Hippocampus learning");
+    console.log(`    Recurrences / negative writes:  ${recurrences} / ${negativeWrites}  (${rate.toFixed(1)}%)`);
+    const recent = ledger.sessions.slice(-5);
+    if (recent.length > 0) {
+      const trend = recent.map((s) => {
+        const r = s.totals?.recurrences ?? 0;
+        const n = s.totals?.negative_writes ?? 0;
+        return n > 0 ? `${r}/${n}` : "-";
+      });
+      console.log(`    Last ${recent.length} sessions:  ${trend.join(" | ")}`);
+    }
+    console.log("    Trend: improving when recurrence rate falls as memory accumulates");
+  }
+
   console.log("");
   if (lt.real_api_calls) {
     console.log("  Measured (from harness transcripts)");

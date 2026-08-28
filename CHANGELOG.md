@@ -4,6 +4,15 @@ All notable changes to OpenWolf are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and OpenWolf uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Kilo harness adapter: `openwolf init --agent kilo` installs an in-process
+  plugin at `.kilo/plugin/` that maintains the same `.wolf/` files as the
+  OpenCode plugin (session start/idle, read/write/edit/multiedit, compact
+  snapshot, `OPENWOLF.md` injection). Skills land in `.kilo/command/`.
+
 ## [2.0.2] - 2026-07-15
 
 ### Added

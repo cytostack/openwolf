@@ -2,6 +2,8 @@ import * as path from "node:path";
 import { Command } from "commander";
 import { Hippocampus } from "../hippocampus/index.js";
 import type {
+  ClaimCandidate,
+  ClaimCandidateStatus,
   ClaimObservation,
   ClaimProvenanceSource,
   ClaimRelation,
@@ -67,6 +69,54 @@ function fail(message: string): void {
   process.exitCode = 1;
 }
 
+function observationFromOptions(
+  statement: string,
+  options: {
+    event: string;
+    relation?: string;
+    target?: string;
+    quality?: string;
+    verification?: string;
+    source?: string;
+    authority?: number;
+    label?: string;
+    paths?: string;
+    platforms?: string;
+    versions?: string;
+    contexts?: string;
+    note?: string;
+  }
+): ClaimObservation {
+  const relation = (options.relation ?? "confirms") as ClaimRelation;
+  const quality = (options.quality ?? "unverified-assumption") as EvidenceQuality;
+  const verification = (options.verification ?? quality) as EvidenceQuality;
+  const source = (options.source ?? "manual") as ClaimProvenanceSource;
+  if (!CLAIM_RELATIONS.has(relation)) throw new Error(`Unknown relation: ${relation}`);
+  if (!EVIDENCE_QUALITIES.has(quality)) throw new Error(`Unknown evidence quality: ${quality}`);
+  if (!EVIDENCE_QUALITIES.has(verification)) throw new Error(`Unknown verification method: ${verification}`);
+  if (!PROVENANCE_SOURCES.has(source)) throw new Error(`Unknown provenance source: ${source}`);
+  return {
+    statement,
+    event_id: options.event,
+    relation,
+    target_claim_id: options.target,
+    quality,
+    verification_method: verification,
+    provenance: {
+      source,
+      authority: options.authority ?? 1,
+      label: options.label,
+    },
+    scope: {
+      paths: validateScopePaths(commaList(options.paths)),
+      platforms: commaList(options.platforms),
+      versions: commaList(options.versions),
+      contexts: commaList(options.contexts),
+    },
+    note: options.note,
+  };
+}
+
 export function recordClaimCommand(
   statement: string,
   options: {
@@ -86,37 +136,9 @@ export function recordClaimCommand(
     json?: boolean;
   }
 ): void {
-  const relation = (options.relation ?? "confirms") as ClaimRelation;
-  const quality = (options.quality ?? "unverified-assumption") as EvidenceQuality;
-  const verification = (options.verification ?? quality) as EvidenceQuality;
-  const source = (options.source ?? "manual") as ClaimProvenanceSource;
-  if (!CLAIM_RELATIONS.has(relation)) return fail(`Unknown relation: ${relation}`);
-  if (!EVIDENCE_QUALITIES.has(quality)) return fail(`Unknown evidence quality: ${quality}`);
-  if (!EVIDENCE_QUALITIES.has(verification)) return fail(`Unknown verification method: ${verification}`);
-  if (!PROVENANCE_SOURCES.has(source)) return fail(`Unknown provenance source: ${source}`);
-
   let observation: ClaimObservation;
   try {
-    observation = {
-      statement,
-      event_id: options.event,
-      relation,
-      target_claim_id: options.target,
-      quality,
-      verification_method: verification,
-      provenance: {
-        source,
-        authority: options.authority ?? 1,
-        label: options.label,
-      },
-      scope: {
-        paths: validateScopePaths(commaList(options.paths)),
-        platforms: commaList(options.platforms),
-        versions: commaList(options.versions),
-        contexts: commaList(options.contexts),
-      },
-      note: options.note,
-    };
+    observation = observationFromOptions(statement, options);
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));
     return;
@@ -194,6 +216,97 @@ export function recallClaimsCommand(
   }
 }
 
+export function candidateAddCommand(
+  statement: string,
+  options: Parameters<typeof recordClaimCommand>[1]
+): void {
+  try {
+    const report = new Hippocampus(process.cwd()).addClaimCandidate(
+      observationFromOptions(statement, options)
+    );
+    if (options.json) console.log(JSON.stringify(report, null, 2));
+    else {
+      console.log(`${report.kind}: ${report.candidate.id} [${report.candidate.status}]`);
+      console.log(`  ${report.candidate.observation.statement}`);
+      console.log(`  evidence ${report.candidate.observation.event_id}`);
+    }
+  } catch (error) {
+    fail(`candidate update failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function printCandidates(candidates: ClaimCandidate[]): void {
+  if (candidates.length === 0) {
+    console.log("No claim candidates found.");
+    return;
+  }
+  console.log(`Found ${candidates.length} claim candidate(s)`);
+  console.log();
+  candidates.forEach((candidate, index) => {
+    console.log(`${index + 1}. [${candidate.status}] ${candidate.observation.statement}`);
+    console.log(`   id: ${candidate.id}`);
+    console.log(`   relation: ${candidate.observation.relation ?? "confirms"}`);
+    console.log(`   evidence: ${candidate.observation.event_id}`);
+    console.log(`   quality: ${candidate.observation.quality}`);
+    if (candidate.observation.target_claim_id) {
+      console.log(`   target: ${candidate.observation.target_claim_id}`);
+    }
+    if (candidate.resolution_note) console.log(`   resolution: ${candidate.resolution_note}`);
+    console.log();
+  });
+}
+
+export function candidateListCommand(
+  query: string | undefined,
+  options: {
+    paths?: string;
+    statuses?: string;
+    all?: boolean;
+    limit?: number;
+    json?: boolean;
+  }
+): void {
+  try {
+    const statuses = commaList(options.statuses) as ClaimCandidateStatus[] | undefined;
+    const allowed = new Set<ClaimCandidateStatus>(["pending", "approved", "rejected"]);
+    if (statuses?.some((status) => !allowed.has(status))) {
+      throw new Error("Candidate statuses must be pending, approved, or rejected");
+    }
+    const candidates = new Hippocampus(process.cwd()).listClaimCandidates({
+      query,
+      paths: validateScopePaths(commaList(options.paths)),
+      statuses,
+      include_resolved: options.all || Boolean(statuses?.some((status) => status !== "pending")),
+      limit: options.limit ?? 20,
+    });
+    if (options.json) console.log(JSON.stringify(candidates, null, 2));
+    else printCandidates(candidates);
+  } catch (error) {
+    fail(`candidate list failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function resolveCandidateCommand(
+  candidateId: string,
+  status: "approved" | "rejected",
+  options: { note?: string; json?: boolean }
+): void {
+  try {
+    const hippocampus = new Hippocampus(process.cwd());
+    const report = status === "approved"
+      ? hippocampus.approveClaimCandidate(candidateId, options.note)
+      : hippocampus.rejectClaimCandidate(candidateId, options.note);
+    if (options.json) console.log(JSON.stringify(report, null, 2));
+    else {
+      console.log(`${report.kind}: ${report.candidate.id} [${report.candidate.status}]`);
+      console.log(`  ${report.candidate.observation.statement}`);
+      if (report.claim) console.log(`  claim ${report.claim.id} [${report.claim.status}]`);
+    }
+  } catch (error) {
+    fail(`candidate ${status === "approved" ? "approval" : "rejection"} failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 export function createClaimCommand(): Command {
   const claim = new Command("claim").description(
     "Record and recall provenance-aware current knowledge claims"
@@ -231,6 +344,61 @@ export function createClaimCommand(): Command {
     .option("--limit <n>", "Maximum claims", (value) => parseInt(value, 10), 5)
     .option("--json", "Output JSON", false)
     .action(recallClaimsCommand);
+
+  const candidate = claim
+    .command("candidate")
+    .description("Queue and review non-authoritative claim candidates");
+
+  candidate
+    .command("add")
+    .description("Queue an evidence-backed candidate for explicit review")
+    .argument("<statement>", "Proposed claim statement")
+    .requiredOption("--event <id>", "Existing evidence event ID")
+    .option("--relation <relation>", "confirms, contradicts, or refines", "confirms")
+    .option("--target <id>", "Target claim ID; required for contradicts/refines")
+    .option("--quality <quality>", "Evidence quality", "unverified-assumption")
+    .option("--verification <method>", "Verification method; defaults to quality")
+    .option("--source <source>", "user, hook, daemon, manual, or agent", "manual")
+    .option("--authority <n>", "Source authority from 0 to 1", Number, 1)
+    .option("--label <label>", "Provenance label")
+    .option("--paths <paths>", "Comma-separated project-relative paths")
+    .option("--platforms <platforms>", "Comma-separated platforms")
+    .option("--versions <versions>", "Comma-separated versions")
+    .option("--contexts <contexts>", "Comma-separated context labels")
+    .option("--note <note>", "Evidence note")
+    .option("--json", "Output JSON", false)
+    .action(candidateAddCommand);
+
+  candidate
+    .command("list")
+    .description("List pending candidates by default")
+    .argument("[query]", "Statement words to match")
+    .option("--paths <paths>", "Comma-separated project-relative paths")
+    .option("--statuses <statuses>", "Comma-separated candidate statuses")
+    .option("--all", "Include approved and rejected candidates", false)
+    .option("--limit <n>", "Maximum candidates", (value) => parseInt(value, 10), 20)
+    .option("--json", "Output JSON", false)
+    .action(candidateListCommand);
+
+  candidate
+    .command("approve")
+    .description("Promote a pending candidate through claim truth maintenance")
+    .argument("<id>", "Candidate ID")
+    .option("--note <note>", "Resolution note")
+    .option("--json", "Output JSON", false)
+    .action((id: string, options: { note?: string; json?: boolean }) =>
+      resolveCandidateCommand(id, "approved", options)
+    );
+
+  candidate
+    .command("reject")
+    .description("Reject a pending candidate without mutating claims")
+    .argument("<id>", "Candidate ID")
+    .option("--note <note>", "Resolution note")
+    .option("--json", "Output JSON", false)
+    .action((id: string, options: { note?: string; json?: boolean }) =>
+      resolveCandidateCommand(id, "rejected", options)
+    );
 
   return claim;
 }

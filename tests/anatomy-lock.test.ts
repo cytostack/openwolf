@@ -98,4 +98,17 @@ describe("anatomy lock", () => {
     assert.doesNotMatch(source, /LOCK_STALE_MS|\.stale|process\.kill/);
     assert.doesNotMatch(source, /writeFileSync\(filePath, body/);
   });
+
+  test("Kilo anatomy template uses the directory lock protocol", () => {
+    const source = fs.readFileSync(
+      path.resolve(import.meta.dirname, "../src/templates/kilo-plugin/anatomy.ts"),
+      "utf-8"
+    );
+
+    assert.match(source, /fs\.mkdirSync\(lockPath\)/);
+    assert.match(source, /path\.join\(lockPath, OWNER_FILE\)/);
+    assert.match(source, /fs\.rmdirSync\(lockPath\)/);
+    assert.doesNotMatch(source, /LOCK_STALE_MS|\.stale|process\.kill/);
+    assert.doesNotMatch(source, /writeFileSync\(filePath, body/);
+  });
 });

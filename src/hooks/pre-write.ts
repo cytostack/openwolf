@@ -201,6 +201,24 @@ function checkHippocampus(wolfDir: string, filePath: string): void {
 
     const highIntensity = allTraumas.filter(t => t.outcome.intensity >= 0.6);
 
+    const activeClaims = hippocampus.recallClaims({
+      paths: [relativeFile],
+      statuses: ["active"],
+      limit: 3,
+    }).claims;
+    if (activeClaims.length > 0) {
+      process.stderr.write(`\n📚 OpenWolf current knowledge for ${relativeFile}:\n`);
+      for (const claim of activeClaims) {
+        const source = claim.provenance.label
+          ? `${claim.provenance.source} (${claim.provenance.label})`
+          : claim.provenance.source;
+        process.stderr.write(
+          `   ✓ [${Math.round(claim.confidence * 100)}%] ${claim.statement}\n` +
+          `     provenance: ${source}; evidence: ${claim.evidence_event_ids.join(", ") || "none"}\n`
+        );
+      }
+    }
+
     if (highIntensity.length > 0) {
       const fileLabel = highIntensityExact.length > 0 ? path.basename(filePath) : `related in ${path.dirname(absolutePath).split("/").pop()}`;
       process.stderr.write(

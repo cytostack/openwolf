@@ -27,6 +27,8 @@ export function createEmptyStore(projectRoot: string): HippocampusStore {
       penalty_count: 0,
       trauma_count: 0,
       neutral_count: 0,
+      recurrences: 0,
+      negative_writes: 0,
       oldest_event: null,
       newest_event: null,
     },
@@ -41,7 +43,23 @@ export function loadStore(
   hippocampusPath: string,
   recoverCorrupt: boolean = false
 ): HippocampusStore | null {
-  return readJsonFile<HippocampusStore>(hippocampusPath, recoverCorrupt);
+  const store = readJsonFile<HippocampusStore>(hippocampusPath, recoverCorrupt);
+  return store ? normalizeStoreStats(store) : null;
+}
+
+/**
+ * Backfill recurrence counters on stores written before they existed so
+ * legacy projects never read or persist NaN/null for the new stats.
+ */
+function normalizeStoreStats(store: HippocampusStore): HippocampusStore {
+  const stats = store.stats;
+  if (typeof stats.recurrences !== "number" || !Number.isFinite(stats.recurrences)) {
+    stats.recurrences = 0;
+  }
+  if (typeof stats.negative_writes !== "number" || !Number.isFinite(stats.negative_writes)) {
+    stats.negative_writes = 0;
+  }
+  return store;
 }
 
 export function saveStore(hippocampusPath: string, store: HippocampusStore): void {
@@ -53,6 +71,10 @@ export function saveStore(hippocampusPath: string, store: HippocampusStore): voi
 export function addEventToStore(store: HippocampusStore, event: WolfEvent): void {
   store.buffer.push(event);
   store.stats.total_events++;
+
+  if (event.outcome.valence === "penalty" || event.outcome.valence === "trauma") {
+    store.stats.negative_writes = (store.stats.negative_writes ?? 0) + 1;
+  }
 
   // Update valence counts
   switch (event.outcome.valence) {
@@ -112,6 +134,11 @@ export function getTraumaEventsForPath(
       (f) => f === filePath || f.startsWith(filePath + "/") || filePath.startsWith(f + "/")
     )
   );
+}
+
+/** Increment the durable recurrence counter for repeated negative outcomes. */
+export function incrementRecurrences(store: HippocampusStore): void {
+  store.stats.recurrences = (store.stats.recurrences ?? 0) + 1;
 }
 
 export function filterEvents(

@@ -9,6 +9,7 @@ import { dashboardCommand } from "./dashboard.js";
 import { createRecallCommand } from "./recall.js";
 import { reportCommand } from "./report.js";
 import { createClaimCommand } from "./claim.js";
+import { surveyCommand } from "./survey.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,7 +37,7 @@ export function createProgram(): Command {
     .description("Initialize .wolf/ in current project")
     .option(
       "--agent <agents...>",
-      "agents to wire up alongside Claude Code: codex, opencode, gemini, cursor, all. Default: auto-detect what's installed; pass 'claude' to wire Claude Code only"
+      "agents to wire up alongside Claude Code: codex, opencode, kilo, gemini, cursor, all. Default: auto-detect what's installed; pass 'claude' to wire Claude Code only"
     )
     .action((opts: { agent?: string[] }) => initCommand(opts));
 
@@ -59,6 +60,11 @@ export function createProgram(): Command {
   // --- Recall and current-knowledge commands ---
   program.addCommand(createRecallCommand());
   program.addCommand(createClaimCommand());
+
+  program
+    .command("survey [paths...]")
+    .description("Cross-repo hippocampus performance survey (reads .wolf from any repos)")
+    .action(surveyCommand);
 
   program
     .command("report")

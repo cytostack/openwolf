@@ -137,6 +137,50 @@ describe("hippocampus persistence and index consistency", () => {
     assert.strictEqual(indexNeedsRebuild(legacy, events), true);
   });
 
+
+
+  test("legacy stores without recurrence counters are backfilled on load", () => {
+    const root = tmpProject();
+    const wolfDir = path.join(root, ".wolf");
+    fs.mkdirSync(wolfDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(wolfDir, "hippocampus.json"),
+      JSON.stringify({
+        version: 1,
+        schema_version: 1,
+        project_root: root,
+        created_at: new Date().toISOString(),
+        last_updated: new Date().toISOString(),
+        buffer: [],
+        stats: {
+          total_events: 0,
+          reward_count: 0,
+          penalty_count: 0,
+          trauma_count: 0,
+          neutral_count: 0,
+          oldest_event: null,
+          newest_event: null,
+        },
+        size_bytes: 0,
+        max_size_bytes: 5000000,
+        retention_days: 7,
+        max_buffer_size: 500,
+      }),
+      "utf-8"
+    );
+
+    const hippo = new Hippocampus(root);
+    hippo.addEvent(eventData(root, "src/a.ts", { valence: "trauma", intensity: 0.9 }));
+
+    const stats = hippo.getStats();
+    assert.strictEqual(stats.negative_writes, 1);
+    assert.strictEqual(stats.recurrences, 0);
+    assert.strictEqual(stats.recurrence_rate, 0);
+
+    const persisted = loadStore(path.join(wolfDir, "hippocampus.json"));
+    assert.strictEqual(persisted?.stats.negative_writes, 1);
+    assert.strictEqual(persisted?.stats.recurrences, 0);
+  });
   test("recall repairs a stale persisted index", () => {
     const root = tmpProject();
     const hippo = new Hippocampus(root);
@@ -556,6 +600,71 @@ describe("hippocampus recall and hook integration", () => {
     assert.deepStrictEqual(session.files_written, []);
   });
 
+
+
+  test("addEvent counts negative writes; recordRecurrence bumps the durable counter", () => {
+    const root = tmpProject();
+    const hippo = new Hippocampus(root);
+    hippo.addEvent(eventData(root, "src/ok.ts"));
+    hippo.addEvent(eventData(root, "src/fail.ts", { valence: "penalty", intensity: 0.8 }));
+    hippo.addEvent(eventData(root, "src/fail2.ts", { valence: "trauma", intensity: 0.9 }));
+
+    let stats = hippo.getStats();
+    assert.strictEqual(stats.negative_writes, 2);
+    assert.strictEqual(stats.recurrences, 0);
+    assert.strictEqual(stats.recurrence_rate, 0);
+
+    hippo.recordRecurrence();
+    hippo.recordRecurrence();
+    stats = hippo.getStats();
+    assert.strictEqual(stats.recurrences, 2);
+    assert.strictEqual(stats.recurrence_rate, 1);
+
+    const persisted = loadStore(path.join(root, ".wolf", "hippocampus.json"));
+    assert.strictEqual(persisted?.stats.recurrences, 2);
+    assert.strictEqual(persisted?.stats.negative_writes, 2);
+  });
+
+  test("post-write records a recurrence when a fix-shaped edit matches a past trauma", () => {
+    const root = tmpProject();
+    const wolfDir = path.join(root, ".wolf");
+    const hooksDir = path.join(wolfDir, "hooks");
+    fs.mkdirSync(path.join(root, "src"), { recursive: true });
+    fs.mkdirSync(hooksDir, { recursive: true });
+    const target = path.join(root, "src", "fix.ts");
+    fs.writeFileSync(target, "export const value = 1;", "utf-8");
+    fs.writeFileSync(path.join(wolfDir, "memory.md"), "", "utf-8");
+    fs.writeFileSync(
+      path.join(hooksDir, "_session.json"),
+      JSON.stringify({ files_written: [], edit_counts: { "src/fix.ts": 3 } }),
+      "utf-8"
+    );
+    new Hippocampus(root).addEvent(eventData(root, "src/fix.ts", {
+      valence: "trauma",
+      intensity: 0.9,
+      reflection: "cfg.tts does not exist; use cfg.talk",
+    }));
+
+    const result = spawnSync(process.execPath, [hookPath], {
+      cwd: root,
+      env: { ...process.env, CLAUDE_PROJECT_DIR: root, CLAUDE_SESSION_ID: "recurrence-test" },
+      input: JSON.stringify({
+        tool_name: "Edit",
+        tool_input: {
+          file_path: target,
+          old_string: "const cfg = { tts: 1 };",
+          new_string: "const cfg = { talk: 1 };",
+        },
+      }),
+      encoding: "utf-8",
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+    const persisted = loadStore(path.join(wolfDir, "hippocampus.json"));
+    assert.ok(persisted);
+    assert.strictEqual(persisted!.stats.recurrences, 1);
+    // The fix-shaped edit is neutral; only the seeded trauma counts as negative.
+    assert.strictEqual(persisted!.stats.negative_writes, 1);
+  });
   test("post-write surfaces a seeded past learning", () => {
     const root = tmpProject();
     const wolfDir = path.join(root, ".wolf");

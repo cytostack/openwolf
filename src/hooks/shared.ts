@@ -688,11 +688,78 @@ export function wasFileUpdatedSince(filePath: string, sessionStarted: string): b
     return false;
   }
 }
+// Outcome detectors (hippocampus impact)
+// These turn observable user/tool signals into penalty/reward events. They are
+// deliberately conservative: false positives pollute the recurrence counter.
 
-// ─── Real token usage (Workstream F1) ────────────────────────────────────────
-// The Stop payload carries transcript_path; the transcript JSONL records the
-// harness's actual per-message API usage. Summing it gives *measured* session
-// tokens — the verifiable numbers the estimated ledger can be checked against.
+export interface CorrectionSignal {
+  path?: string;
+  error: string;
+  message: string;
+}
+
+const CORRECTION_VERBS = [
+  "fix", "correct", "wrong", "incorrect", "mistake", "error", "bug",
+  "revert", "undo", "redo", "try again", "not what i", "don't do",
+  "that's not", "this is wrong", "you're wrong", "you made",
+];
+
+const CODE_EXT_PATTERN = "(?:ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|c|cpp|cc|h|hpp|css|scss|json|md|mdx|yaml|yml|toml|sh|rb|php|sql|vue|svelte|xml|html)";
+
+/**
+ * Detect whether a user message is a correction of the agent's prior work.
+ * Conservative: requires a correction verb AND a target (a path with a known
+ * extension, or a backtick/quoted identifier). Returns a signal or null.
+ */
+export function detectCorrection(text: string): CorrectionSignal | null {
+  if (!text || text.trim().length < 4) return null;
+  const lower = text.toLowerCase();
+  const hasVerb = CORRECTION_VERBS.some((v) => lower.includes(v));
+  if (!hasVerb) return null;
+
+  // Path with a known code/prose extension, e.g. "in src/hooks/shared.ts"
+  const pathRe = new RegExp(
+    "(?:in|at|for|of|on|edit(?:ing)?|change(?:ing)?|fix(?:ing)?|read(?:ing)?|inside)\\s+" +
+    "([`'\" ]?[\\w./\\\\-]+\\.(" + CODE_EXT_PATTERN + "))",
+    "i"
+  );
+  const pathMatch = text.match(pathRe);
+  const rawPath = pathMatch?.[1]?.replace(/[`'\" ]/g, "");
+  const path = rawPath && rawPath.length > 1 ? rawPath : undefined;
+
+  // Identifier target, e.g. `renderAll`, "loadStore", or a bare function name.
+  const idMatch = text.match(/`([a-zA-Z_][\w.]*)`|"([a-zA-Z_][\w.]*)"/);
+  const identifier = idMatch ? (idMatch[1] ?? idMatch[2]) : undefined;
+
+  const message = text.trim().slice(0, 200);
+  const error = path ?? identifier ?? "correction";
+  return { path, error, message };
+}
+
+/**
+ * Extract failed test names/assertions from tool output. Returns the raw
+ * failure lines (capped), or null when nothing failed.
+ */
+export function extractTestFailures(output: string): string[] | null {
+  if (!output || output.trim().length === 0) return null;
+  const failures: string[] = [];
+  for (const rawLine of output.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const isFailure =
+      /^(FAIL|FAILED|✗|✘|×|X)\b/.test(line) ||
+      /:\s*(fail|failed|failure|failing)\b/.test(line) ||
+      /^Error:\s/.test(line) ||
+      /AssertionError/.test(line) ||
+      /\b(?:expected|received|actual):/.test(line);
+    if (isFailure) {
+      failures.push(line.slice(0, 200));
+      if (failures.length >= 10) break;
+    }
+  }
+  return failures.length > 0 ? failures : null;
+}
+
 
 export interface RealUsage {
   input_tokens: number;

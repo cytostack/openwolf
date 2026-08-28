@@ -13,6 +13,7 @@ import {
   loadClaimIndex,
 } from "../dist/hooks/hippocampus/claim-index.js";
 import { loadClaimStore } from "../dist/hooks/hippocampus/claim-store.js";
+import { loadClaimCandidateStore } from "../dist/hooks/hippocampus/claim-candidate-store.js";
 import type {
   ClaimObservation,
   ClaimScope,
@@ -405,6 +406,98 @@ describe("hippocampus truth maintenance", () => {
       event.id,
       "--paths",
       ".env",
+    ], { cwd: root, encoding: "utf-8" });
+    assert.strictEqual(sensitive.status, 1);
+    assert.match(sensitive.stderr, /Sensitive paths cannot be used/);
+  });
+
+  test("queues, deduplicates, approves, and rejects evidence-backed candidates", () => {
+    const root = tmpProject();
+    const hippo = new Hippocampus(root);
+    const firstEvent = hippo.addEvent(eventData(root, "candidate-first"));
+    const secondEvent = hippo.addEvent(eventData(root, "candidate-second"));
+    const firstObservation = observation(
+      "Candidate approval creates current knowledge",
+      firstEvent.id,
+      "automated-test",
+      { scope: { paths: ["src/candidate.ts"] } }
+    );
+
+    const created = hippo.addClaimCandidate(firstObservation);
+    const reinforced = hippo.addClaimCandidate({ ...firstObservation, note: "verified again" });
+    assert.strictEqual(created.kind, "created");
+    assert.strictEqual(reinforced.kind, "reinforced");
+    assert.strictEqual(created.candidate.id, reinforced.candidate.id);
+    assert.strictEqual(hippo.getClaims().length, 0);
+
+    const approved = hippo.approveClaimCandidate(created.candidate.id, "accepted after review");
+    assert.strictEqual(approved.kind, "approved");
+    assert.strictEqual(approved.candidate.status, "approved");
+    assert.strictEqual(approved.claim?.statement, firstObservation.statement);
+    assert.strictEqual(hippo.listClaimCandidates().length, 0);
+    assert.strictEqual(hippo.listClaimCandidates({ include_resolved: true }).length, 1);
+
+    const rejectedCandidate = hippo.addClaimCandidate(observation(
+      "Rejected candidates do not become claims",
+      secondEvent.id,
+      "direct-tool-result",
+      { scope: { paths: ["src/candidate.ts"] } }
+    )).candidate;
+    const rejected = hippo.rejectClaimCandidate(rejectedCandidate.id, "not generally applicable");
+    assert.strictEqual(rejected.candidate.status, "rejected");
+    assert.strictEqual(hippo.getClaims().length, 1);
+    assert.throws(() => hippo.approveClaimCandidate(rejectedCandidate.id), /already rejected/);
+
+    const persisted = loadClaimCandidateStore(path.join(root, ".wolf", "claim-candidates.json"));
+    assert.ok(persisted);
+    assert.strictEqual(persisted!.stats.approved_count, 1);
+    assert.strictEqual(persisted!.stats.rejected_count, 1);
+  });
+
+  test("candidate creation fails closed when evidence is missing", () => {
+    const root = tmpProject();
+    const hippo = new Hippocampus(root);
+    assert.throws(
+      () => hippo.addClaimCandidate(observation(
+        "Unsupported candidate",
+        "evt-missing",
+        "direct-tool-result"
+      )),
+      /Evidence event not found/
+    );
+    assert.strictEqual(hippo.candidatesExist(), false);
+  });
+
+  test("candidate CLI queues, lists, approves, and rejects sensitive scope", () => {
+    const root = tmpProject();
+    const event = new Hippocampus(root).addEvent(eventData(root, "candidate-cli"));
+    const add = spawnSync(process.execPath, [
+      cliPath, "claim", "candidate", "add", "Candidate CLI works",
+      "--event", event.id,
+      "--quality", "automated-test",
+      "--paths", "src/candidate.ts",
+      "--json",
+    ], { cwd: root, encoding: "utf-8" });
+    assert.strictEqual(add.status, 0, add.stderr);
+    const added = JSON.parse(add.stdout) as { candidate: { id: string; status: string } };
+    assert.strictEqual(added.candidate.status, "pending");
+
+    const list = spawnSync(process.execPath, [
+      cliPath, "claim", "candidate", "list", "CLI works", "--json",
+    ], { cwd: root, encoding: "utf-8" });
+    assert.strictEqual(list.status, 0, list.stderr);
+    assert.strictEqual((JSON.parse(list.stdout) as unknown[]).length, 1);
+
+    const approve = spawnSync(process.execPath, [
+      cliPath, "claim", "candidate", "approve", added.candidate.id, "--json",
+    ], { cwd: root, encoding: "utf-8" });
+    assert.strictEqual(approve.status, 0, approve.stderr);
+    assert.strictEqual(JSON.parse(approve.stdout).claim.statement, "Candidate CLI works");
+
+    const sensitive = spawnSync(process.execPath, [
+      cliPath, "claim", "candidate", "add", "Sensitive candidate",
+      "--event", event.id,
+      "--paths", ".env",
     ], { cwd: root, encoding: "utf-8" });
     assert.strictEqual(sensitive.status, 1);
     assert.match(sensitive.stderr, /Sensitive paths cannot be used/);

@@ -1,6 +1,6 @@
 # How It Works
 
-OpenWolf operates as invisible middleware between you and your coding agent (Codex, OpenCode, Claude Code, and others). It has three layers: the `.wolf/` directory (state), lifecycle hooks (enforcement), and optional features (Reframe, bundled skills, daemon).
+OpenWolf operates as invisible middleware between you and your coding agent (Codex, OpenCode, Kilo, Claude Code, and others). It has three layers: the `.wolf/` directory (state), lifecycle hooks (enforcement), and optional features (Reframe, bundled skills, daemon).
 
 ## The `.wolf/` Directory
 
@@ -27,7 +27,7 @@ The durable JSON stores are the source of truth; the Markdown files are human-re
 
 ## Hooks, The Enforcement Layer
 
-OpenWolf registers 7 lifecycle hooks via the agent's own hook system (`.claude/settings.json` for Claude Code, `.codex/hooks.json` for Codex, a native plugin for OpenCode). These fire automatically:
+OpenWolf registers 7 lifecycle hooks via the agent's own hook system (`.claude/settings.json` for Claude Code, `.codex/hooks.json` for Codex, a native plugin for OpenCode and Kilo). These fire automatically:
 
 ```
 SessionStart ──→ session-start.js    Injects the budgeted context digest, flags stale anatomy

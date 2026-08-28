@@ -11,6 +11,8 @@
     "penalty_count": 0,
     "trauma_count": 0,
     "neutral_count": 0,
+    "recurrences": 0,
+    "negative_writes": 0,
     "oldest_event": null,
     "newest_event": null
   },

@@ -37,6 +37,82 @@ describe("readTranscriptUsage", () => {
   });
 });
 
+
+
+describe("hippocampus ledger deltas", () => {
+  test("addSessionToLedger accumulates recurrence counters into lifetime", async () => {
+    const { addSessionToLedger } = await import("../dist/src/tracker/token-ledger.js");
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "wolf-ledger-"));
+    const wolfDir = path.join(root, ".wolf");
+    fs.mkdirSync(wolfDir, { recursive: true });
+
+    addSessionToLedger(wolfDir, {
+      id: "s1",
+      started: new Date().toISOString(),
+      ended: new Date().toISOString(),
+      reads: [],
+      writes: [],
+      totals: {
+        input_tokens_estimated: 10,
+        output_tokens_estimated: 5,
+        reads_count: 1,
+        writes_count: 1,
+        repeated_reads_blocked: 0,
+        anatomy_lookups: 0,
+        recurrences: 2,
+        negative_writes: 4,
+      },
+    });
+    addSessionToLedger(wolfDir, {
+      id: "s2",
+      started: new Date().toISOString(),
+      ended: new Date().toISOString(),
+      reads: [],
+      writes: [],
+      totals: {
+        input_tokens_estimated: 0,
+        output_tokens_estimated: 0,
+        reads_count: 0,
+        writes_count: 0,
+        repeated_reads_blocked: 0,
+        anatomy_lookups: 0,
+        recurrences: 1,
+        negative_writes: 1,
+      },
+    });
+
+    const ledger = JSON.parse(fs.readFileSync(path.join(wolfDir, "token-ledger.json"), "utf-8"));
+    assert.strictEqual(ledger.lifetime.recurrences, 3);
+    assert.strictEqual(ledger.lifetime.negative_writes, 5);
+    assert.strictEqual(ledger.sessions[0].totals.recurrences, 2);
+  });
+
+  test("openwolf report shows the last-5 session recurrence trend", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "wolf-report-"));
+    const wolfDir = path.join(root, ".wolf");
+    fs.mkdirSync(wolfDir, { recursive: true });
+    const ledger = {
+      version: 1,
+      lifetime: { recurrences: 3, negative_writes: 6, total_sessions: 3 },
+      sessions: [
+        { id: "a", ended: "2026-01-01", totals: { recurrences: 2, negative_writes: 2 } },
+        { id: "b", ended: "2026-01-02", totals: { recurrences: 1, negative_writes: 2 } },
+        { id: "c", ended: "2026-01-03", totals: { recurrences: 0, negative_writes: 2 } },
+      ],
+    };
+    fs.writeFileSync(path.join(wolfDir, "token-ledger.json"), JSON.stringify(ledger), "utf-8");
+
+    const { spawnSync } = await import("node:child_process");
+    const cli = path.resolve(import.meta.dirname, "../dist/bin/openwolf.js");
+    const result = spawnSync(process.execPath, [cli, "report"], {
+      cwd: root,
+      encoding: "utf-8",
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Recurrences \/ negative writes:\s+3 \/ 6/);
+    assert.match(result.stdout, /Last 3 sessions:\s+2\/2 \| 1\/2 \| 0\/2/);
+  });
+});
 describe("stop reminder bookkeeping", () => {
   test("counts time-only semantic memory rows written during the session", async () => {
     const { countSemanticEntries } = await import("../src/hooks/shared.ts");

@@ -1,6 +1,6 @@
 # Hooks
 
-OpenWolf registers 7 lifecycle hooks. They fire automatically on every action, and the same scripts serve Claude Code and Codex (OpenCode uses a native plugin with equivalent behavior). No user interaction required.
+OpenWolf registers 7 lifecycle hooks. They fire automatically on every action, and the same scripts serve Claude Code and Codex (OpenCode and Kilo use a native plugin with equivalent behavior). No user interaction required.
 
 All hooks are **pure Node.js file I/O**. No network calls, no AI, no external dependencies. They read JSON on stdin from the agent and communicate via stdout, exit codes, and stderr.
 

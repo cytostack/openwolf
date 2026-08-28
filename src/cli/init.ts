@@ -54,6 +54,7 @@ const CREATE_IF_MISSING = [
   "neocortex.json",
   "claims.json",
   "claim-index.json",
+  "claim-candidates.json",
 ];
 
 // Use $CLAUDE_PROJECT_DIR so hooks resolve correctly even if CWD changes during a session
@@ -66,6 +67,18 @@ const HOOK_SETTINGS = {
           {
             type: "command",
             command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/session-start.js"',
+            timeout: 5,
+          },
+        ],
+      },
+    ],
+    UserPromptSubmit: [
+      {
+        matcher: "",
+        hooks: [
+          {
+            type: "command",
+            command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/user-prompt.js"',
             timeout: 5,
           },
         ],
@@ -110,6 +123,16 @@ const HOOK_SETTINGS = {
           {
             type: "command",
             command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/post-write.js"',
+            timeout: 10,
+          },
+        ],
+      },
+      {
+        matcher: "Bash|Terminal|Shell|ExecCommand|Run|execute|tool",
+        hooks: [
+          {
+            type: "command",
+            command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/post-test.js"',
             timeout: 10,
           },
         ],
@@ -249,6 +272,14 @@ export async function initCommand(options?: { agent?: string[] }): Promise<void>
   const claimIndex = readJSON<Record<string, unknown>>(claimIndexPath, {});
   if (!claimIndex.last_updated) { claimIndex.last_updated = now; }
   writeJSON(claimIndexPath, claimIndex);
+
+  // --- Candidate queue: fill project_root and timestamps ---
+  const candidatesPath = path.join(wolfDir, "claim-candidates.json");
+  const candidates = readJSON<Record<string, unknown>>(candidatesPath, {});
+  if (!candidates.project_root) { candidates.project_root = projectRoot; }
+  if (!candidates.created_at) { candidates.created_at = now; }
+  if (!candidates.last_updated) { candidates.last_updated = now; }
+  writeJSON(candidatesPath, candidates);
 
   // --- Hook scripts: always update (bug fixes, new features) ---
   copyHookScripts(wolfDir);
@@ -531,7 +562,7 @@ function generateTemplate(destPath: string, file: string): void {
         buglog: { auto_detect: true },
       },
     }, null, 2),
-    "token-ledger.json": JSON.stringify({ version: 1, created_at: "", lifetime: { total_tokens_estimated: 0, total_reads: 0, total_writes: 0, total_sessions: 0, anatomy_hits: 0, anatomy_misses: 0, repeated_reads_blocked: 0, estimated_savings_vs_bare_cli: 0 }, sessions: [], daemon_usage: [], waste_flags: [], optimization_report: { last_generated: null, patterns: [] } }, null, 2),
+    "token-ledger.json": JSON.stringify({ version: 1, created_at: "", lifetime: { total_tokens_estimated: 0, total_reads: 0, total_writes: 0, total_sessions: 0, anatomy_hits: 0, anatomy_misses: 0, repeated_reads_blocked: 0, estimated_savings_vs_bare_cli: 0, recurrences: 0, negative_writes: 0 }, sessions: [], daemon_usage: [], waste_flags: [], optimization_report: { last_generated: null, patterns: [] } }, null, 2),
     "buglog.json": JSON.stringify({ version: 1, bugs: [] }, null, 2),
     "cron-manifest.json": JSON.stringify({ version: 1, tasks: [] }, null, 2),
     "cron-state.json": JSON.stringify({ last_heartbeat: null, engine_status: "initialized", execution_log: [], dead_letter_queue: [], upcoming: [] }, null, 2),
@@ -620,10 +651,12 @@ function copyHookScripts(wolfDir: string): void {
 
   const hookFiles = [
     "session-start.js",
+    "user-prompt.js",
     "pre-read.js",
     "pre-write.js",
     "post-read.js",
     "post-write.js",
+    "post-test.js",
     "precompact.js",
     "stop.js",
     "shared.js",

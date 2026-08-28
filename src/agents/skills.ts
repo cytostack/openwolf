@@ -6,6 +6,7 @@ import { safeCopyFile } from "../utils/fs-safe.js";
 // installed into each agent's project-level command surface on init.
 //   Claude Code → .claude/commands/<name>.md   (slash command, $ARGUMENTS)
 //   OpenCode    → .opencode/command/<name>.md  (custom command, $ARGUMENTS)
+//   Kilo        → .kilo/command/<name>.md      (custom command, $ARGUMENTS)
 //   Codex       → .codex/prompts/<name>.md     (custom prompt)
 // Gemini CLI and Cursor have no project-level command surface we target yet.
 
@@ -20,6 +21,9 @@ export function installSkills(projectRoot: string, templatesDir: string, agents:
   ];
   if (agents.includes("opencode")) {
     destinations.push({ agent: "opencode", dir: path.join(projectRoot, ".opencode", "command") });
+  }
+  if (agents.includes("kilo")) {
+    destinations.push({ agent: "kilo", dir: path.join(projectRoot, ".kilo", "command") });
   }
   if (agents.includes("codex")) {
     destinations.push({ agent: "codex", dir: path.join(projectRoot, ".codex", "prompts") });

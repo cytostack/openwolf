@@ -152,6 +152,24 @@ async function main(): Promise<void> {
           process.stderr.write(`\n🧠 OpenWolf hippocampus: ${warnings}\n`);
         }
       }
+
+      const activeClaims = hippocampus.recallClaims({
+        paths: [relativeFile],
+        statuses: ["active"],
+        limit: 3,
+      }).claims;
+      if (activeClaims.length > 0) {
+        process.stderr.write(`\n📚 OpenWolf current knowledge for ${relativeFile}:\n`);
+        for (const claim of activeClaims) {
+          const source = claim.provenance.label
+            ? `${claim.provenance.source} (${claim.provenance.label})`
+            : claim.provenance.source;
+          process.stderr.write(
+            `   ✓ [${Math.round(claim.confidence * 100)}%] ${claim.statement}\n` +
+            `     provenance: ${source}; evidence: ${claim.evidence_event_ids.join(", ") || "none"}\n`
+          );
+        }
+      }
     }
   } catch {
     // Fail silently - hippocampus should not break existing functionality

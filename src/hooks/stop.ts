@@ -26,6 +26,8 @@ interface SessionData {
   repeated_reads_warned: number;
   cerebrum_warnings: number;
   stop_count: number;
+  hippocampus_start_recurrences?: number;
+  hippocampus_start_negative_writes?: number;
 }
 
 interface SessionEntry {
@@ -47,6 +49,8 @@ interface SessionEntry {
     writes_count: number;
     repeated_reads_blocked: number;
     anatomy_lookups: number;
+    recurrences: number;
+    negative_writes: number;
   };
 }
 
@@ -97,6 +101,13 @@ async function main(): Promise<void> {
   // Check if STATUS.md is stale relative to this session
   checkStatusFreshness(wolfDir, session);
 
+  // Hippocampus learning deltas: snapshot stats at session start, diff at stop.
+  const hippoStats = readHippoStats(wolfDir);
+  const hippoDelta = {
+    recurrences: Math.max(0, (hippoStats?.recurrences ?? 0) - (session.hippocampus_start_recurrences ?? 0)),
+    negative_writes: Math.max(0, (hippoStats?.negative_writes ?? 0) - (session.hippocampus_start_negative_writes ?? 0)),
+  };
+
   // Build session entry for ledger
   const reads = Object.entries(session.files_read).map(([file, data]) => ({
     file,
@@ -128,6 +139,8 @@ async function main(): Promise<void> {
       writes_count: writeCount,
       repeated_reads_blocked: session.repeated_reads_warned,
       anatomy_lookups: session.anatomy_hits,
+      recurrences: hippoDelta.recurrences,
+      negative_writes: hippoDelta.negative_writes,
     },
   };
 
@@ -178,6 +191,8 @@ async function main(): Promise<void> {
   ledger.lifetime.anatomy_hits += session.anatomy_hits;
   ledger.lifetime.anatomy_misses += session.anatomy_misses;
   ledger.lifetime.repeated_reads_blocked += session.repeated_reads_warned;
+  ledger.lifetime.recurrences = (ledger.lifetime.recurrences ?? 0) + hippoDelta.recurrences;
+  ledger.lifetime.negative_writes = (ledger.lifetime.negative_writes ?? 0) + hippoDelta.negative_writes;
 
   // Estimate savings: anatomy hits save ~200 tokens each, repeated reads blocked save their token count
   const savedFromAnatomy = session.anatomy_hits * 200;
@@ -298,6 +313,25 @@ function checkSemanticSummaries(wolfDir: string, session: SessionData): string |
     return `ACTION REQUIRED: ${writeCount} files were modified this session but no semantic summary was written to memory.md. Append a one-line summary: | HH:MM | description | file(s) | outcome | ~tokens |`;
   }
   return null;
+}
+
+
+/**
+ * Read durable hippocampus recurrence counters without creating files.
+ * Returns null when the store does not exist yet.
+ */
+function readHippoStats(wolfDir: string): { recurrences: number; negative_writes: number } | null {
+  try {
+    const raw = fs.readFileSync(path.join(wolfDir, "hippocampus.json"), "utf-8");
+    const store = JSON.parse(raw);
+    if (!store?.stats) return null;
+    return {
+      recurrences: store.stats.recurrences ?? 0,
+      negative_writes: store.stats.negative_writes ?? 0,
+    };
+  } catch {
+    return null;
+  }
 }
 
 // Run only when executed as a hook script — never on import (tests import

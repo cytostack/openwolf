@@ -1,6 +1,6 @@
 # Hippocampus Memory System — Implementation Plan
 
-> **Status**: Phases 1–3 ✅ | Hardening ✅ | Truth maintenance in progress
+> **Status**: Phases 1–3 ✅ | Hardening ✅ | Truth maintenance ✅ | Trusted learning loop CLI slice ✅
 > **Goal**: Maintain immutable historical events and a provenance-aware, revisable current-knowledge projection.
 > **Docs**: [truth-maintenance.md](./truth-maintenance.md) and [hippocampus-hardening-overview.md](./hippocampus-hardening-overview.md)
 
@@ -30,17 +30,18 @@ The hippocampus system extends OpenWolf's flat, append-only memory with:
 - [x] Sensitive path-scope rejection at the CLI boundary.
 - [x] Regression coverage for identity, correction, dispute, refinement, evidence ranking, recovery, concurrency, and CLI behavior.
 
-### Acceptance rules
+### Trusted learning loop slice — implemented
 
-1. Historical event payloads and evidence provenance are immutable.
-2. Newer or repeated low-quality inference cannot outrank stronger test-backed evidence.
-3. Contradiction and refinement require an explicit target; free-form semantic opposition is not guessed.
-4. Active claims are the default recall surface; disputed/superseded history is opt-in.
-5. The authoritative claim store is persisted before the derived index.
-6. Corrupt or stale derived data is backed up and rebuilt from authoritative data.
-7. Normal post-write hooks remain event-only.
+- [x] Active-only path-relevant claim recall in pre-read and pre-write hooks, including provenance and evidence IDs.
+- [x] Dedicated `.wolf/claim-candidates.json` queue with strict validation, corrupt-file backup, atomic persistence, and stats.
+- [x] Evidence-gated candidate add/list/approve/reject APIs under the existing Hippocampus lock.
+- [x] Approval delegates to the existing claim truth-maintenance transaction; rejection never mutates claims.
+- [x] CLI commands: `openwolf claim candidate add|list|approve|reject` with JSON/text output and sensitive-scope checks.
+- [x] Init/update preserve the candidate queue as user data.
+- [x] Regression tests cover candidate lifecycle, missing evidence, CLI behavior, active-only hook surfacing, and disputed-claim suppression.
 
-## Completed historical phases
+Automatic candidate producers from tests, user corrections, and tool results, semantic embeddings, dashboard management, and broad latency optimization remain deferred until dogfood measurements define stable event-generation contracts.
+
 
 The original three phases remain complete:
 

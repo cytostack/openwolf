@@ -23,7 +23,7 @@ The dashboard has nine panels, accessible from the top navigation: Overview, Tok
 The home screen. Shows:
 - **Tokens saved** (estimated), as the hero tile
 - **Measured usage** from the agent transcripts: input, output, cache read, and API calls
-- **Agents** wired to this project (Claude Code, Codex, OpenCode, and others)
+- **Agents** wired to this project (Claude Code, Codex, OpenCode, Kilo, and others)
 - **Stat row**: sessions, files tracked, reads/writes, re-reads blocked, anatomy hit rate, bugs on file
 - **Context health**: anatomy scan freshness, pinned git HEAD, session digest budget
 - **Next phase** from STATUS.md, and a weekly sessions dot chart

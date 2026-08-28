@@ -89,6 +89,26 @@ A claim observation fails closed when its `event_id` cannot be found in either s
 
 Claim scope accepts paths, platforms, versions, and contexts. The CLI rejects sensitive path scopes such as `.env`, private-key files, credential stores, and state files. Existing hook sensitivity boundaries remain unchanged.
 
+## Reviewable claim candidates
+
+A claim candidate is a non-authoritative proposal stored separately in `.wolf/claim-candidates.json`. Candidates use the same observation fields as direct claim updates, including an existing evidence event, relation, explicit target for contradiction/refinement, quality, verification method, scope, and provenance.
+
+Candidate lifecycle:
+
+```text
+verified observation
+    -> candidate add validates the existing evidence event
+    -> pending candidate is reviewable but never recalled as current truth
+    -> approve revalidates evidence and runs the existing claim update transaction
+    -> reject preserves the candidate decision without mutating claims
+```
+
+Equivalent candidates are deduplicated by normalized statement/scope identity, evidence event, relation, and target claim. Approval persists the authoritative claim and derived claim index before marking the candidate approved. If claim persistence fails, the candidate remains pending. Rejection marks it rejected; default candidate listing shows only pending work, while `--all` exposes decision history.
+
+Pre-read and pre-write hooks automatically recall at most three active claims whose path scope matches the canonical project-relative file. Output includes confidence, provenance, and evidence event IDs. Disputed and superseded claims are never auto-injected, and hook errors remain fail-open.
+
+This first trusted-loop slice deliberately exposes candidate creation through an explicit CLI. Automatic producers for test results, user corrections, and reproducible tool results require deterministic event-generation contracts and dogfood measurements before activation. Ordinary file writes remain historical events only.
+
 ## CLI
 
 Record an explicit observation:
@@ -118,7 +138,19 @@ Recall active current claims:
 openwolf claim recall "retry limit" --json
 ```
 
-Include disputed or superseded historical claims explicitly with `--disputed` or `--superseded`. JSON output includes claim status, confidence, evidence event IDs, contradiction links, supersession links, scope, provenance, and match details for automation.
+Queue and review a candidate before it becomes current knowledge:
+
+```bash
+openwolf claim candidate add "The retry limit is five" \
+  --event evt-... \
+  --quality automated-test \
+  --paths src/retry.ts
+openwolf claim candidate list
+openwolf claim candidate approve can-... --note "Reviewed test evidence"
+openwolf claim candidate reject can-... --note "Too environment-specific"
+```
+
+Include disputed or superseded historical claims explicitly with `--disputed` or `--superseded`. Use candidate `list --all` for approved/rejected queue history. JSON output includes claim status, confidence, evidence event IDs, contradiction links, supersession links, scope, provenance, and match details for automation.
 
 ## Testing guarantees
 
@@ -134,6 +166,8 @@ The claim regression suite covers:
 - malformed, corrupt, and stale index/store recovery;
 - fail-closed missing evidence;
 - concurrent writers;
+- candidate deduplication, evidence validation, approval/rejection, and persistence;
+- active-only claim surfacing in pre-read/pre-write hooks;
 - CLI JSON/text paths and sensitive-scope rejection.
 
 Future semantic classification can be added as an explicit, evidence-producing layer. The initial implementation intentionally does not infer contradiction from similar prose: corrections and refinements must identify their target claim.

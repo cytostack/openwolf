@@ -8,6 +8,7 @@ import { opencodeAdapter } from "./opencode.js";
 import { geminiAdapter } from "./gemini.js";
 import { cursorAdapter } from "./cursor.js";
 import { antigravityAdapter } from "./antigravity.js";
+import { kiloAdapter } from "./kilo.js";
 
 export type { AgentAdapter, AgentInstallContext, AgentInstallResult } from "./types.js";
 
@@ -20,6 +21,7 @@ const ADAPTERS: Record<string, AgentAdapter> = {
   [geminiAdapter.name]: geminiAdapter,
   [cursorAdapter.name]: cursorAdapter,
   [antigravityAdapter.name]: antigravityAdapter,
+  [kiloAdapter.name]: kiloAdapter,
 };
 
 export function availableAgents(): string[] {
@@ -48,6 +50,7 @@ export function detectInstalledAgents(): string[] {
   const detected: string[] = [];
   if (fs.existsSync(path.join(home, ".codex")) || onPath("codex")) detected.push("codex");
   if (fs.existsSync(path.join(home, ".config", "opencode")) || onPath("opencode")) detected.push("opencode");
+  if (fs.existsSync(path.join(home, ".config", "kilo")) || onPath("kilo")) detected.push("kilo");
   if (fs.existsSync(path.join(home, ".gemini")) || onPath("gemini")) detected.push("gemini");
   if (
     fs.existsSync(path.join(home, ".cursor")) ||

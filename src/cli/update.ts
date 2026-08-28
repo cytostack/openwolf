@@ -49,7 +49,7 @@ const USER_DATA_FILES = [
   "token-ledger.json", "buglog.json", "cron-manifest.json", "cron-state.json",
   "suggestions.json",
   "hippocampus.json", "cue-index.json", "neocortex.json",
-  "claims.json", "claim-index.json",
+  "claims.json", "claim-index.json", "claim-candidates.json",
 ];
 
 // Files to include in backup

@@ -47,6 +47,7 @@ CLAUDE.md
 # VitePress build output
 docs/.vitepress/dist/
 docs/.vitepress/cache/
+docs/.vitepress/.temp/
 
 # OpenWolf runtime (project-specific)
 .wolf/

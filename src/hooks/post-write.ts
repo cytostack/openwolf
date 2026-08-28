@@ -194,7 +194,9 @@ async function main(): Promise<void> {
   try {
     const hippocampus = new Hippocampus(projectRoot);
 
-    // Determine valence from context
+    // Determine valence from context. File writes are neutral by default;
+    // negative valence (penalty/trauma) is produced ONLY by real outcome
+    // detectors (user corrections, test failures) - never by edit counts.
     let valence: "reward" | "neutral" | "penalty" | "trauma" = "neutral";
     let intensity = 0.5;
     let reflection = "";
@@ -202,17 +204,13 @@ async function main(): Promise<void> {
     const action = toolName === "Write" ? "write" : "edit";
     const relFile = relPath;
 
-    // Check edit count for recurring trauma
+    // Edit count is a context signal for surfacing related learnings, not a
+    // valence signal: 3+ edits of a file is usually normal iteration.
     const session = readJSON<SessionData>(sessionFile, { files_written: [], edit_counts: {} });
     const editKey = relPath;
     const editCount = session.edit_counts?.[editKey] || 0;
 
-    if (editCount >= 3) {
-      valence = "trauma";
-      intensity = Math.min(0.9, 0.6 + editCount * 0.1);
-      reflection = `File edited ${editCount} times. Possible issue or bug fix.`;
-    } else if (editCount >= 1) {
-      valence = "neutral";
+    if (editCount >= 1) {
       intensity = 0.3;
       reflection = `File edited ${editCount + 1} time(s).`;
     } else {
@@ -248,6 +246,21 @@ async function main(): Promise<void> {
       }
     }
 
+    // Recurrence measurement: count a durable recurrence when a fix-shaped edit
+    // matches a past trauma/penalty for the same path.
+    try {
+      const signature = normalizeErrorSignature(oldStr ?? "", newStr ?? "");
+      if (signature) {
+        const past = hippocampus.recall({
+          cue: { type: "location", path: relFile, match_mode: "parent" },
+          filters: { valence: ["trauma", "penalty"], min_intensity: 0.5 },
+          limit: 3,
+        });
+        if (past.events.length > 0) {
+          hippocampus.recordRecurrence();
+        }
+      }
+    } catch {}
     hippocampus.addEvent({
       version: 1,
       timestamp: new Date().toISOString(),
@@ -286,6 +299,22 @@ async function main(): Promise<void> {
 }
 
 // ─── Edit Summarizer ─────────────────────────────────────────────
+
+/**
+ * Stable key for "same mistake again". Extract the removed/old error text from
+ * a fix-shaped edit, or null when no meaningful signature exists. Path-only
+ * recurrence would count every re-edit of a file, which is too noisy.
+ */
+function normalizeErrorSignature(oldStr: string, newStr: string): string | null {
+  if (!oldStr || !newStr) return null;
+  const removed = removeWhitespace(oldStr).replace(removeWhitespace(newStr), "");
+  if (!removed || removed.length < 8) return null;
+  return sha256(removed);
+}
+
+function removeWhitespace(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
 
 function summarizeEdit(oldStr: string, newStr: string, filename: string): string {
   const oldLines = oldStr.split("\n");

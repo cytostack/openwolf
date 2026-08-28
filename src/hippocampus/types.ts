@@ -183,6 +183,53 @@ export interface ClaimObservation {
   observed_at?: string;
 }
 
+export type ClaimCandidateStatus = "pending" | "approved" | "rejected";
+
+export interface ClaimCandidate {
+  id: string;
+  version: 1;
+  identity_key: string;
+  observation: ClaimObservation;
+  status: ClaimCandidateStatus;
+  created_at: string;
+  updated_at: string;
+  resolved_at?: string;
+  resolution_note?: string;
+}
+
+export interface ClaimCandidateStore {
+  version: 1;
+  schema_version: 1;
+  project_root: string;
+  created_at: string;
+  last_updated: string;
+  candidates: ClaimCandidate[];
+  stats: {
+    total_candidates: number;
+    pending_count: number;
+    approved_count: number;
+    rejected_count: number;
+  };
+  size_bytes: number;
+}
+
+export interface ClaimCandidateRequest {
+  query?: string;
+  paths?: string[];
+  statuses?: ClaimCandidateStatus[];
+  include_resolved?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export type ClaimCandidateUpdateKind = "created" | "reinforced" | "approved" | "rejected";
+
+export interface ClaimCandidateUpdateReport {
+  kind: ClaimCandidateUpdateKind;
+  candidate: ClaimCandidate;
+  claim?: MemoryClaim;
+}
+
 export type ClaimUpdateKind =
   | "created"
   | "reinforced"
@@ -233,6 +280,8 @@ export interface HippocampusStore {
     penalty_count: number;
     trauma_count: number;
     neutral_count: number;
+    recurrences: number;
+    negative_writes: number;
     oldest_event: string | null;
     newest_event: string | null;
   };
@@ -266,6 +315,9 @@ export interface HippoStats {
   reward_count: number;
   penalty_count: number;
   neutral_count: number;
+  recurrences: number;
+  negative_writes: number;
+  recurrence_rate: number;
   last_consolidation: string | null;
 }
 

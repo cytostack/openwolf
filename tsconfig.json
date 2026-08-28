@@ -22,6 +22,7 @@
     "node_modules",
     "dist",
     "src/dashboard/app",
-    "src/templates/opencode-plugin"
+    "src/templates/opencode-plugin",
+    "src/templates/kilo-plugin"
   ]
 }

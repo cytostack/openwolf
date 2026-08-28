@@ -12,6 +12,11 @@ import type {
   RecallResponse,
   CueIndex,
   ClaimIndex,
+  ClaimCandidate,
+  ClaimCandidateRequest,
+  ClaimCandidateStatus,
+  ClaimCandidateStore,
+  ClaimCandidateUpdateReport,
   ClaimObservation,
   ClaimRecallRequest,
   ClaimRecallResponse,
@@ -25,6 +30,7 @@ import {
   loadStore,
   saveStore,
   addEventToStore,
+  incrementRecurrences,
   getTraumaEventsForPath,
   filterEvents,
 } from "./event-store.js";
@@ -42,8 +48,18 @@ import {
   saveClaimStore,
 } from "./claim-store.js";
 import {
+  createEmptyClaimCandidateStore,
+  createClaimCandidate,
+  loadClaimCandidateStore,
+  saveClaimCandidateStore,
+} from "./claim-candidate-store.js";
+import {
   applyClaimObservation,
+  buildClaimIdentityKey,
+  normalizeClaimScope,
   recallClaims as recallMemoryClaims,
+  tokenizeClaim,
+  validateClaimObservation,
 } from "./claims.js";
 import {
   createEmptyNeocortex,
@@ -74,6 +90,11 @@ export type {
   RecallResponse,
   CueIndex,
   ClaimIndex,
+  ClaimCandidate,
+  ClaimCandidateRequest,
+  ClaimCandidateStatus,
+  ClaimCandidateStore,
+  ClaimCandidateUpdateReport,
   ClaimObservation,
   ClaimRecallRequest,
   ClaimRecallResponse,
@@ -206,11 +227,13 @@ export class Hippocampus {
   private transferJournalPath: string;
   private claimStorePath: string;
   private claimIndexPath: string;
+  private candidateStorePath: string;
   private store: HippocampusStore | null = null;
   private cueIndex: CueIndex | null = null;
   private neocortex: NeocortexStore | null = null;
   private claimStore: ClaimStore | null = null;
   private claimIndex: ClaimIndex | null = null;
+  private candidateStore: ClaimCandidateStore | null = null;
 
   constructor(projectRoot: string) {
     this.projectRoot = projectRoot;
@@ -220,6 +243,7 @@ export class Hippocampus {
     this.neocortexPath = path.join(this.wolfDir, "neocortex.json");
     this.claimStorePath = path.join(this.wolfDir, "claims.json");
     this.claimIndexPath = path.join(this.wolfDir, "claim-index.json");
+    this.candidateStorePath = path.join(this.wolfDir, "claim-candidates.json");
     this.transferJournalPath = path.join(
       this.wolfDir,
       "hippocampus-transfer.json"
@@ -263,6 +287,11 @@ export class Hippocampus {
   private loadClaimStoreOrCreate(): ClaimStore {
     return loadClaimStore(this.claimStorePath, true) ?? createEmptyClaimStore(this.projectRoot);
   }
+  private loadCandidateStoreOrCreate(): ClaimCandidateStore {
+    return loadClaimCandidateStore(this.candidateStorePath, true) ??
+      createEmptyClaimCandidateStore(this.projectRoot);
+  }
+
 
   private findEvidenceEvent(
     store: HippocampusStore,
@@ -472,6 +501,25 @@ export class Hippocampus {
     return events;
   }
 
+  /**
+   * Durable counter for repeated negative outcomes: a new penalty/trauma
+   * write matching a past trauma/penalty for the same path.
+   */
+  recordRecurrence(): void {
+    const updated = withHippocampusLock(
+      this.wolfDir,
+      HIPPOCAMPUS_HOOK_LOCK_BUDGET_MS,
+      () => {
+        const store = this.loadStoreOrCreate();
+        incrementRecurrences(store);
+        saveStore(this.hippocampusPath, store);
+        return store;
+      }
+    );
+    if (!updated) throw new Error("Could not record recurrence within lock budget");
+    this.store = updated;
+  }
+
   getTraumas(filePath?: string): WolfEvent[] {
     const store = this.ensureLoaded();
     if (filePath) return getTraumaEventsForPath(store, filePath.replace(/\\/g, "/"));
@@ -495,6 +543,175 @@ export class Hippocampus {
     const { store, index } = this.ensureConsistentSnapshot();
     return recallEvents(store.buffer, request.cue, request, index);
   }
+  private ensureCandidateStore(): ClaimCandidateStore {
+    const loaded = loadClaimCandidateStore(this.candidateStorePath);
+    if (loaded) {
+      this.candidateStore = loaded;
+      return loaded;
+    }
+    const initialized = withHippocampusLock(
+      this.wolfDir,
+      HIPPOCAMPUS_HOOK_LOCK_BUDGET_MS,
+      () => {
+        const store = this.loadCandidateStoreOrCreate();
+        if (!fs.existsSync(this.candidateStorePath)) {
+          saveClaimCandidateStore(this.candidateStorePath, store);
+        }
+        return store;
+      }
+    );
+    if (!initialized) throw new Error("Could not initialize claim candidates within lock budget");
+    this.candidateStore = initialized;
+    return initialized;
+  }
+
+  private findCandidate(candidateId: string, store: ClaimCandidateStore): ClaimCandidate {
+    const candidate = store.candidates.find((item) => item.id === candidateId);
+    if (!candidate) throw new Error(`Claim candidate not found: ${candidateId}`);
+    return candidate;
+  }
+
+  private candidateMatches(
+    candidate: ClaimCandidate,
+    request: ClaimCandidateRequest
+  ): boolean {
+    if (request.statuses && !request.statuses.includes(candidate.status)) return false;
+    if (!request.include_resolved && candidate.status !== "pending") return false;
+    const paths = request.paths?.map((item) => item.replace(/\\/g, "/").replace(/^\.\//, "")) ?? [];
+    const candidatePaths = candidate.observation.scope?.paths ?? [];
+    if (paths.length > 0 && candidatePaths.length > 0 && !candidatePaths.some((candidatePath) =>
+      paths.some((requestPath) => candidatePath === requestPath || candidatePath.startsWith(`${requestPath}/`) || requestPath.startsWith(`${candidatePath}/`))
+    )) return false;
+    if (request.query) {
+      const queryTokens = new Set(tokenizeClaim(request.query));
+      if (![...queryTokens].some((token) => tokenizeClaim(candidate.observation.statement).includes(token))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private candidateIdentity(observation: ClaimObservation): string {
+    return buildClaimIdentityKey(observation.statement, normalizeClaimScope(observation.scope));
+  }
+
+  private assertEvidence(
+    eventStore: HippocampusStore,
+    neocortex: NeocortexStore,
+    observation: ClaimObservation
+  ): void {
+    validateClaimObservation(observation);
+    if (!this.findEvidenceEvent(eventStore, neocortex, observation.event_id)) {
+      throw new Error(`Evidence event not found: ${observation.event_id}`);
+    }
+  }
+
+  addClaimCandidate(observation: ClaimObservation): ClaimCandidateUpdateReport {
+    const updated = withHippocampusLock(
+      this.wolfDir,
+      HIPPOCAMPUS_HOOK_LOCK_BUDGET_MS,
+      () => {
+        const eventStore = this.loadStoreOrCreate();
+        const neocortex = this.loadNeocortexOrCreate();
+        this.recoverPendingTransfer(eventStore, neocortex);
+        this.assertEvidence(eventStore, neocortex, observation);
+        const store = this.loadCandidateStoreOrCreate();
+        const identityKey = this.candidateIdentity(observation);
+        const existing = store.candidates.find((candidate) =>
+          candidate.identity_key === identityKey &&
+          candidate.observation.event_id === observation.event_id &&
+          (candidate.observation.relation ?? "confirms") === (observation.relation ?? "confirms") &&
+          candidate.observation.target_claim_id === observation.target_claim_id
+        );
+        const now = observation.observed_at ?? new Date().toISOString();
+        if (existing) {
+          if (existing.status !== "pending") {
+            throw new Error(`Claim candidate is already ${existing.status}: ${existing.id}`);
+          }
+          existing.observation = structuredClone(observation);
+          existing.updated_at = now;
+          saveClaimCandidateStore(this.candidateStorePath, store);
+          return { store, report: { kind: "reinforced" as const, candidate: structuredClone(existing) } };
+        }
+        const candidate = createClaimCandidate(observation, identityKey, now);
+        store.candidates.push(candidate);
+        saveClaimCandidateStore(this.candidateStorePath, store);
+        return { store, report: { kind: "created" as const, candidate: structuredClone(candidate) } };
+      }
+    );
+    if (!updated) throw new Error("Could not update claim candidates within lock budget");
+    this.candidateStore = updated.store;
+    return updated.report;
+  }
+
+  listClaimCandidates(request: ClaimCandidateRequest = {}): ClaimCandidate[] {
+    const store = this.ensureCandidateStore();
+    const offset = request.offset ?? 0;
+    const limit = request.limit ?? 20;
+    return store.candidates
+      .filter((candidate) => this.candidateMatches(candidate, request))
+      .sort((left, right) => right.updated_at.localeCompare(left.updated_at))
+      .slice(offset, offset + limit)
+      .map((candidate) => structuredClone(candidate));
+  }
+
+  approveClaimCandidate(candidateId: string, note?: string): ClaimCandidateUpdateReport {
+    return this.resolveClaimCandidate(candidateId, "approved", note);
+  }
+
+  rejectClaimCandidate(candidateId: string, note?: string): ClaimCandidateUpdateReport {
+    return this.resolveClaimCandidate(candidateId, "rejected", note);
+  }
+
+  private resolveClaimCandidate(
+    candidateId: string,
+    status: "approved" | "rejected",
+    note?: string
+  ): ClaimCandidateUpdateReport {
+    const updated = withHippocampusLock(
+      this.wolfDir,
+      HIPPOCAMPUS_HOOK_LOCK_BUDGET_MS,
+      () => {
+        const eventStore = this.loadStoreOrCreate();
+        const neocortex = this.loadNeocortexOrCreate();
+        this.recoverPendingTransfer(eventStore, neocortex);
+        const candidateStore = this.loadCandidateStoreOrCreate();
+        const candidate = this.findCandidate(candidateId, candidateStore);
+        if (candidate.status !== "pending") {
+          throw new Error(`Claim candidate is already ${candidate.status}: ${candidate.id}`);
+        }
+        this.assertEvidence(eventStore, neocortex, candidate.observation);
+        let claim: MemoryClaim | undefined;
+        if (status === "approved") {
+          const claimStore = this.loadClaimStoreOrCreate();
+          loadClaimIndex(this.claimIndexPath, true);
+          const report = applyClaimObservation(claimStore, candidate.observation);
+          const index = buildClaimIndex(claimStore.claims);
+          saveClaimStore(this.claimStorePath, claimStore);
+          saveClaimIndex(this.claimIndexPath, index);
+          claim = report.claim;
+        }
+        const now = new Date().toISOString();
+        candidate.status = status;
+        candidate.resolved_at = now;
+        candidate.updated_at = now;
+        candidate.resolution_note = note;
+        saveClaimCandidateStore(this.candidateStorePath, candidateStore);
+        return {
+          store: candidateStore,
+          report: { kind: status as "approved" | "rejected", candidate: structuredClone(candidate), claim },
+        };
+      }
+    );
+    if (!updated) throw new Error("Could not resolve claim candidate within lock budget");
+    this.candidateStore = updated.store;
+    return updated.report;
+  }
+
+  candidatesExist(): boolean {
+    return fs.existsSync(this.candidateStorePath);
+  }
+
 
   recordClaimObservation(observation: ClaimObservation): ClaimUpdateReport {
     const updated = withHippocampusLock(
@@ -626,6 +843,9 @@ export class Hippocampus {
       reward_count: store.stats.reward_count,
       penalty_count: store.stats.penalty_count,
       neutral_count: store.stats.neutral_count,
+      recurrences: store.stats.recurrences,
+      negative_writes: store.stats.negative_writes,
+      recurrence_rate: store.stats.negative_writes > 0 ? store.stats.recurrences / store.stats.negative_writes : 0,
       last_consolidation: neocortex.stats.last_consolidation,
     };
   }

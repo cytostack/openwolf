@@ -33,7 +33,7 @@ openwolf update
    - `STATUS.md` (session handoff, created from the template if missing)
    - Any custom files you added to `.wolf/`
 4. **Updates hooks** registered in `.claude/settings.json` (your own hook entries are untouched)
-5. **Re-runs the agent adapters** recorded in `config.json` (`openwolf.agents`), so Codex/OpenCode/Gemini/Cursor wiring picks up new hooks and templates
+5. **Re-runs the agent adapters** recorded in `config.json` (`openwolf.agents`), so Codex/OpenCode/Kilo/Gemini/Cursor wiring picks up new hooks and templates
 6. **Refreshes bundled skills** (`/security-audit`, `/reframe`) for every configured agent
 7. **Reassigns colliding ports**: if a project shares its dashboard or daemon port with another registered project (common for 1.x upgrades), it is moved to a free pair so each project's dashboard opens independently
 

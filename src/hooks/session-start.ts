@@ -99,6 +99,24 @@ function buildSessionDigest(wolfDir: string, budget: number): string {
   return parts.join("\n\n");
 }
 
+/**
+ * Read durable hippocampus recurrence counters at session start so the stop
+ * hook can compute per-session deltas. Returns null when no store exists.
+ */
+function readHippoRecurrences(wolfDir: string): { recurrences: number; negative_writes: number } | null {
+  try {
+    const raw = fs.readFileSync(path.join(wolfDir, "hippocampus.json"), "utf-8");
+    const store = JSON.parse(raw);
+    if (!store?.stats) return null;
+    return {
+      recurrences: store.stats.recurrences ?? 0,
+      negative_writes: store.stats.negative_writes ?? 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function main(): Promise<void> {
   ensureWolfDir();
   const wolfDir = getWolfDir();
@@ -140,6 +158,8 @@ async function main(): Promise<void> {
       repeated_reads_warned: 0,
       cerebrum_warnings: 0,
       stop_count: 0,
+      hippocampus_start_recurrences: readHippoRecurrences(wolfDir)?.recurrences ?? 0,
+      hippocampus_start_negative_writes: readHippoRecurrences(wolfDir)?.negative_writes ?? 0,
     });
 
     // Append session header to memory.md

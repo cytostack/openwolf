@@ -21,6 +21,8 @@ interface SessionTotals {
   writes_count: number;
   repeated_reads_blocked: number;
   anatomy_lookups: number;
+  recurrences: number;
+  negative_writes: number;
 }
 
 interface SessionEntry {
@@ -41,6 +43,8 @@ interface Lifetime {
   anatomy_misses: number;
   repeated_reads_blocked: number;
   estimated_savings_vs_bare_cli: number;
+  recurrences: number;
+  negative_writes: number;
 }
 
 interface TokenLedger {
@@ -73,6 +77,8 @@ export function readLedger(wolfDir: string): TokenLedger {
       anatomy_misses: 0,
       repeated_reads_blocked: 0,
       estimated_savings_vs_bare_cli: 0,
+      recurrences: 0,
+      negative_writes: 0,
     },
     sessions: [],
     daemon_usage: [],
@@ -103,5 +109,7 @@ export function addSessionToLedger(
     session.totals.input_tokens_estimated + session.totals.output_tokens_estimated;
   ledger.lifetime.anatomy_hits += session.totals.anatomy_lookups;
   ledger.lifetime.repeated_reads_blocked += session.totals.repeated_reads_blocked;
+  ledger.lifetime.recurrences += session.totals.recurrences ?? 0;
+  ledger.lifetime.negative_writes += session.totals.negative_writes ?? 0;
   writeLedger(wolfDir, ledger);
 }

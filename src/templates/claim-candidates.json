@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "schema_version": 1,
+  "project_root": "",
+  "created_at": "",
+  "last_updated": "",
+  "candidates": [],
+  "stats": {
+    "total_candidates": 0,
+    "pending_count": 0,
+    "approved_count": 0,
+    "rejected_count": 0
+  },
+  "size_bytes": 0
+}

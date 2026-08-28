@@ -14,7 +14,7 @@ openwolf init
 
 ```bash
 openwolf init                          # auto-detect installed agents (default)
-openwolf init --agent codex opencode   # wire exactly these agents
+openwolf init --agent codex opencode kilo   # wire exactly these agents
 openwolf init --agent all              # wire every supported agent
 openwolf init --agent claude           # Claude Code only, skip detection
 ```
@@ -24,7 +24,7 @@ openwolf init --agent claude           # Claude Code only, skip detection
 2. Creates `.wolf/` with the template files and the durable anatomy store
 3. Copies the lifecycle hook scripts to `.wolf/hooks/`
 4. Registers 7 hooks in `.claude/settings.json`
-5. Auto-detects installed agents (Codex, OpenCode, Gemini CLI, Cursor) and wires each one: hook registrations, protocol blocks, or plugins as appropriate
+5. Auto-detects installed agents (Codex, OpenCode, Kilo, Gemini CLI, Cursor) and wires each one: hook registrations, protocol blocks, or plugins as appropriate
 6. Installs the bundled skills (`/security-audit`, `/reframe`) for every wired agent
 7. Creates `.claude/rules/openwolf.md` and prepends the OpenWolf snippet to `CLAUDE.md`
 8. Runs the initial anatomy scan (descriptions, token estimates, symbols)

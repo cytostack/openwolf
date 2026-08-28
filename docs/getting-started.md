@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - **Node.js 20+** ([download](https://nodejs.org)). OpenWolf's hooks run as Node.js scripts, so Node is required regardless of how your agent was installed.
-- **At least one supported coding agent.** OpenWolf works with Codex, OpenCode, and Claude Code (full lifecycle hooks), plus Cursor and Antigravity (beta, context-level). `openwolf init` auto-detects which ones you have installed and wires each of them.
+- **At least one supported coding agent.** OpenWolf works with Codex, OpenCode, Kilo, and Claude Code (full lifecycle hooks), plus Cursor and Antigravity (beta, context-level). `openwolf init` auto-detects which ones you have installed and wires each of them.
 
 ## Install OpenWolf
 
@@ -39,7 +39,7 @@ You'll see:
   You're ready. Use your agents as normal. OpenWolf is watching.
 ```
 
-That's it. No configuration needed. Use your agents as you normally would. To wire specific agents instead of auto-detecting, pass `--agent codex opencode`, `--agent all`, or `--agent claude` to opt out.
+That's it. No configuration needed. Use your agents as you normally would. To wire specific agents instead of auto-detecting, pass `--agent codex opencode kilo`, `--agent all`, or `--agent claude` to opt out.
 
 ## Verify it's working
 
@@ -137,7 +137,7 @@ Need help choosing a UI component framework? Run the `/reframe` skill or just as
 
 OpenWolf installs a `/reframe` slash command and ships a knowledge file (`.wolf/reframe-frameworks.md`) that your agent reads automatically. It covers 13 frameworks (shadcn/ui, Aceternity UI, Magic UI, DaisyUI, HeroUI, Chakra UI, Flowbite, Preline UI, Park UI, Origin UI, Headless UI, Cult UI, and Astryx) with a decision tree, comparison matrix, an anti-generic design mandate, and ready-made migration prompts.
 
-It works as the `/reframe` skill (installed for Claude Code, Codex, and OpenCode) or through your agent's normal conversation flow.
+It works as the `/reframe` skill (installed for Claude Code, Codex, OpenCode, and Kilo) or through your agent's normal conversation flow.
 
 ::: tip Windows path separators
 If you see path errors on Windows, ensure you're using a recent Node.js 20+ release. OpenWolf normalizes paths internally, but some edge cases require Node 20.10+.

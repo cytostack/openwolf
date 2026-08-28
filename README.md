@@ -16,7 +16,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License" /></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E%3D20-2ea44f" alt="Node.js" /></a>
   <img src="https://img.shields.io/badge/TypeScript-5.7-3178c6" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/agents-6%20supported-8957e5" alt="Agents supported" />
+  <img src="https://img.shields.io/badge/agents-7%20supported-8957e5" alt="Agents supported" />
 </p>
 
 <p align="center">
@@ -40,7 +40,7 @@
 | The agent rereads a file it already saw (~2,000 tokens) | It reads the one-line description first, or skips the read entirely |
 | Whole-file reads just to find one function | Symbol-level hints give exact line ranges for `offset`/`limit` reads |
 | Context compaction wipes what the session did | A PreCompact snapshot and restore keep the work in context |
-| Every agent starts from a cold prompt | One shared `.wolf/` brain across Codex, OpenCode, Claude Code, Cursor, and Antigravity |
+| Every agent starts from a cold prompt | One shared `.wolf/` brain across Codex, OpenCode, Kilo, Claude Code, Cursor, and Antigravity |
 | No idea where your tokens went | Usage measured from harness transcripts, plus a live local dashboard |
 
 <p align="center">
@@ -99,6 +99,7 @@ One `.wolf/` brain, many agents:
 |-------|-------------|-------|
 | **Codex CLI** | `.codex/hooks.json` lifecycle hooks + `AGENTS.md` | Full (hooks + context) |
 | **OpenCode** | Native plugin + `AGENTS.md` | Full (hooks + context) |
+| **Kilo** | Native plugin + `AGENTS.md` | Full (hooks + context) |
 | **Claude Code** | 7 lifecycle hooks + `CLAUDE.md` | Full (hooks + context) |
 | **Cursor** | `.cursor/rules/openwolf.mdc` (always applied) | Beta (context) |
 | **Antigravity** | `AGENTS.md` protocol block | Beta (context) |
@@ -106,7 +107,7 @@ One `.wolf/` brain, many agents:
 
 ```bash
 openwolf init                          # auto-detect installed agents (recommended)
-openwolf init --agent codex opencode   # wire exactly these
+openwolf init --agent codex opencode kilo   # wire exactly these
 openwolf init --agent all              # wire every detected agent
 openwolf init --agent claude           # Claude Code only
 ```
@@ -283,7 +284,7 @@ numbers are measured, not modeled.
 ## Bundled Skills
 
 `openwolf init` installs two slash commands into every configured agent
-(Claude Code, Codex, OpenCode):
+(Claude Code, Codex, OpenCode, Kilo):
 
 - **`/security-audit [scope]`**: layered audit covering dependencies,
   secrets, injection surfaces, and authorization, ending in a
@@ -348,7 +349,7 @@ node scripts/openwolf-check.mjs [projectDir]   # read-only usage report
 - Estimated figures use a character-ratio heuristic (accurate to roughly
   15%); measured figures come from harness transcripts and are exact.
 - Hook coverage varies by agent: Claude Code and Codex have full lifecycle
-  hooks, OpenCode uses its plugin events, Gemini CLI and Cursor are
+  hooks, OpenCode and Kilo use plugin events, Gemini CLI and Cursor are
   context-only integrations.
 - Protocol compliance (updating cerebrum, logging bugs) depends on the model
   following instructions; the hooks enforce what can be enforced and remind
