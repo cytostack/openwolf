@@ -6,6 +6,22 @@
 
 ---
 
+## 当前风险与待办（高亮）
+
+> 扫一眼就知道还欠什么、哪会裂。详细版在文末「未决事项」；正文各段落的描述未删。
+
+- **Kilo dogfood 已跑，session.created 缺口已修（未提交）**——插件加载、`_session.json` 信封、空闲后 `token-ledger.json` 行均验证；恢复会话不发 `session.created` 的缺口已加 `session.updated` 兜底，剩「重启后确认 `total_sessions` 0→1」未回传。
+- **巩固从未运行**——`neocortex.json` total_consolidated=0，PM2 未装、daemon 不跑，短时→长时转移全程空转。
+- **claim 层零使用**——`claims.json` / `claim-candidates.json` 均 0 条，只被测试覆盖，未被 dogfood 验证。
+- **51 个假 trauma 已重置**（2026-08-27）——编辑次数启发式留下的脏数据，已整体重置为干净基线（备份在 `backup-pre-reset/`），复发率分母清空、待真实负信号重新积累。
+- **目标持久化滞留 kilocode**——re-arm、`BudgetLimited`、同条件 blocked 连续三次未做，openwolf 侧目标行未集成。
+- **第二阶段延后**——hippocampus / `chat.message` / `bash` post-test、可见 warn 通道、`session.status` 空闲备份。
+- **第三阶段延后**——`src/runtime/` 共享运行时抽取。
+- **`cli/index.ts` survey 与 kilo 帮助混改**——评审记为卫生问题，未拆分提交。
+- **session.created 兜底 + kilocode 安装产物未入库**——模板修复在 `src/templates/kilo-plugin/index.ts` 未提交；kilocode 仓库的 `.wolf/`、`.kilo/plugin/`、`.claude/`、`CLAUDE.md` 未入库，是否入库由 kilocode 仓库决定。
+
+---
+
 ## 海马体记忆（hippocampus）开发（2026-08-11，据 STATUS.md + git log + docs2 重建，会话转录不在本地 recall）
 
 | 我（阶段） | 你（交付） |
@@ -90,21 +106,73 @@
 
 **五条教训**：(1) 过程指标健康 ≠ 结果指标有用，51 个假 trauma 就是「机制在跑但没学」的实锤；(2) 巩固与 claim 两个后半程子系统在 dogfood 里是**空转**的，加固只证明了前半程（store/索引/召回）稳；(3) 结果探测器要落地，先得回填 `recurrences`/`negative_writes` 字段并让 daemon 跑起来；(4) 退役编辑次数启发式是对的，但旧 store 里的 51 个 trauma 需要清理或标记；(5) `buglog.json` 已有 97+ 条，08-11 一天的高频自动修复（错误引用/缺守卫/空安全为主）说明加固阶段是「边吃狗粮边修」完成的。
 
-## 第 10 节 · 提交推送 + JOURNEY 全中文（2026-08-28 01:46）
+## 第 10 节 · Kilo 现场安装 + 恢复会话缺口修复（2026-08-27）
 
 | 我 | 你 |
 |----|-----|
-| git add push 到远程；要求 JOURNEY 更新且全部用中文写 | 检查 git 状态：本地目录 `.codex/` `.cursor/` `.opencode/` `.playwright-mcp/` 不提交；`.gitignore` 改动是 `docs/.vitepress/.temp/` 排除；`AGENTS.md` 是 openwolf 标记文件。把 JOURNEY 全中文化并补第 8/9/10 节，然后提交推送 |
+| 「install D:\GitRepo-AI\openwolf into kilo code」 | 先澄清「install into」三种解释（跑 `init --agent kilo` / vendor 进 `packages/` / npm 依赖），用户选「跑 `init --agent kilo`」。在 kilocode 仓库实跑，落盘 `.kilo/plugin/openwolf.ts` + `openwolf/` 10 文件、`.kilo/command/{reframe,security-audit}.md`、`.wolf/`（19 文件 + hooks/海马体）、AGENTS.md 标记块；附带 claude 副作用（`.claude/`、`CLAUDE.md`、central registry、pm2 未起）。Bun 实测插件可加载、`server()` 钩子键与 `@kilocode/plugin` Hooks 对齐 |
+| 「我重启了，你能测试openwolf在当前kilo会话中生效了吗？」 | 第一次测试下错结论「半生效」——两个失误：①没做任何 read 前就查 `.wolf` 状态（`_session.json` 本应首次 read 才惰性建，`pre-read.ts:62`）；②读错计数器（看 `anatomy.md` 头部「hits: 0」，会话命中数在 `_session.json.anatomy_hits`） |
+| 「sure」（同意埋点） | 给 `.kilo/plugin/openwolf/index.ts` 加 6 处 `dbg` 埋点写固定路径日志，验证可加载后清空 |
+| 「retry again」（重启） | 读埋点日志，推翻上轮判断：**插件全量生效**（server 加载、事件流到达、工具钩子触发、system.transform 触发；live read 实测 `anatomy_hits` 4→5）。唯一缺口 = 恢复的会话不发 `session.created`（日志全程零条）→ `handleSessionStart` 被跳过 → `_session.json.session_id` 空串、`total_sessions=0`、`memory.md` 无头 |
+| 「ok」（同意修兜底） | 修 openwolf 模板 `src/templates/kilo-plugin/index.ts`：`event` 对「首次 `session.updated` 且 `getSessionState` 为空」调 `handleSessionStart`（内存 Map 防重复启动）。重跑 `init --agent kilo` 重装（顺带冲掉埋点）。Bun 实跑三断言全过：1st `session.updated` 触发启动（session_id 落真实 id、total_sessions 0→1）、2nd 不重复、全新 `session.created` 1→2 |
+
+**教训**：先埋点、后下结论。第一轮「半生效」是没实测就判的，两个失误（查态时机、读错计数器）都是静态臆断；埋点 + 重启实测立刻翻案成「全量生效、只剩一个缺口」。看计数器前先确认它是哪个计数器、由谁更新。
+
+## 第 11 节 · 提交推送 + JOURNEY 全中文（2026-08-28 01:46）
+
+| 我 | 你 |
+|----|-----|
+| git add push 到远程；要求 JOURNEY 更新且全部用中文写 | 检查 git 状态：本地目录 `.codex/` `.cursor/` `.opencode/` `.playwright-mcp/` 不提交；`.gitignore` 改动是 `docs/.vitepress/.temp/` 排除；`AGENTS.md` 是 openwolf 标记文件。把 JOURNEY 全中文化并补第 8/9 节，然后提交推送 |
+
+## 第 12 节 · 结果测量基线重置（2026-08-27）
+
+| 我 | 你 |
+|----|-----|
+| 复盘：hippo 现在只能证「机制健康」、证不了「有效果」，列三步（清 51 假 trauma / 装 PM2 回填字段 / 让探测器写 penalty），问怎么补 | 核对代码 + 读磁盘 store，修正一条：`recurrences`/`negative_writes` 字段代码里已接好线（`addEventToStore` 增 negative_writes、`post-write`→`recordRecurrence()` 增 recurrences、`normalizeStoreStats` 回填），缺的是信号流不是字段；三步塌缩成一步（清污染 + 重启活跃 dogfood） |
+| 选「A」（整体重置） | 用生产序列化函数重置 hippocampus/neocortex/cue-index 到干净基线（备份到 `backup-pre-reset/`），保留 token-ledger 过程指标（457 读拦截 / 440 命中 / ~105 万 token） |
+| 「继续开发不就是 dogfood 吗」 | 实测翻案：先用不存在文件 + `.wolf/` 文件测出「写路径没写」的误判，再拿真实源文件 `src/hippocampus/types.ts` 实测 → total_events 0→1，确认写路径是通的；`.wolf/*` 被 post-write 自引用守卫跳过是设计而非 bug |
+
+**教训**：又一次「静态臆断 vs 实测」——和第 10 节「半生效」是同一病。诊断写路径是否活着，必须拿真实存在的 `src/**` 文件测，`.wolf/*`（守卫跳过）和不存在路径（resolveProjectPath 拒绝）都会给出假的「没写」信号。已记入 cerebrum Do-Not-Repeat。
+
+## 这个项目如何教 vibe coding with AI
+
+### 人的工作（决定 / 纠正 / 叫停）
+
+- **把模糊需求钉成单一动作**——「install into kilo code」被拆成三种解释（跑 init / vendor 进 packages / npm 依赖），人拍板选「跑 `init --agent kilo`」，才落盘可验证（第 10 节）。
+- **极短指令推进实测**——「sure」（埋点）、「retry again」（重启）、「ok」（修兜底）三个词，逼 AI 先埋点再下结论，而不是继续静态分析（第 10 节）。
+- **坚持过程指标 ≠ 结果指标**——本次复盘那句「只能证机制健康、证不了有效果」，把 51 个假 trauma 的「机制在跑但没学」钉死，并拍板「整体重置」清脏数据（第 12 节）。
+- **反复要求自批**——多次「自批 docs3/PLAN.md 并改进」「自批迁移文档」，把批评自己的产物当作常规工序，才挖出事件信封、goal driving 跨 prompt() 两个致命点（第 2、4、5 节）。
+
+### AI 的工作（埋点 / 证伪 / 如实报告）
+
+- **用磁盘数据证伪文档声称**——第 9 节读 `.wolf/*.json`，坐实「51 假 trauma / 0 真信号」（trauma=51、penalty=0、reward=0），推翻「影响测量已落地」的纸面说法。
+- **承认误判并实测翻案**——第 10 节「半生效」是没实测就判的，埋点后翻案成「全量生效、只剩一个缺口」；第 12 节「写路径没写」同样被真实文件实测翻案。两次同病，AI 都主动认错并归因到「静态臆断」。
+- **逐条核验「完成」声明**——第 6 节发现 PLAN 的「全绿」在盘上是假的（`handlePrecompact` 在 `_session.json` 缺失时注入了 `session_id`，测试期望 `{}`），修成 103/103 真绿。
+
+### 可复用的规则
+
+1. **先埋点/实测，后下结论**——第 10 节「半生效」和第 12 节「写路径没写」两次踩同一坑，都是没实测就判。诊断任何「活没活」，先拿真实输入跑一遍。
+2. **磁盘数据 > 文档声称**——51 假 trauma 从 store 里读出来，才从「设计文档说的」变成「实锤」。
+3. **一句纠正 → 固化 Do-Not-Repeat**——cerebrum 里大量 `[日期] Do not ...` 条目，是项目最高的复利：人只纠正一次，AI 永远不再犯。
+4. **自批（critic）是承重件，不是洁癖**——kilo 事件信封（id 在 `properties` 不在顶层）、goal `driving` 集合跨 `prompt()`，都是自批阶段挖出的致命点，天真克隆/天真循环会静默空转。
+5. **一坑两犯要升格**——post-write 误判和 kilo「半生效」是同一种「静态臆断」病，升格成 cerebrum Do-Not-Repeat，而不是当两次独立小失误。
+6. **过程指标 ≠ 结果指标**——机制健康（store/索引/召回/拦截在跑）证不了有效果（agent 少犯错）。要结果，得先让负信号干净落地、再算复发率。
+
+### 一句话总结
+
+人负责钉死「做什么、改哪里、什么时候叫停」，AI 负责「埋点实测、证伪自己、把每句纠正固化成 Do-Not-Repeat」——这个项目就是这样从「机制能跑」一层层推到「能证明有效」的。
 
 ---
 
 ## 未决事项
 
-- **Kilo 真实 dogfood 未跑**（`docs3/PLAN.md` 第 9 项）：插件在真实 Kilo 里加载、`_session.json` 信封、空闲后 `token-ledger.json` 行——这是唯一未验证的第一阶段项，手动步骤，不属代码缺口。
+- **Kilo 真实 dogfood 已跑**（`docs3/PLAN.md` 第 9 项，2026-08-27）：插件在真实 Kilo 里加载、`_session.json` 信封、空闲后 `token-ledger.json` 行均验证。顺带发现并修复**恢复会话不发 `session.created`** 的缺口（`src/templates/kilo-plugin/index.ts` 加 `session.updated` 兜底，内存 Map 防重复）。剩最后一步：用户再重启后确认 `total_sessions` 从 0 变 1 回传。
+- **session.created 兜底未提交**：修复落在 `src/templates/kilo-plugin/index.ts`，与 kilo 适配器 WIP 同轨，未提交。
+- **kilocode 仓库安装产物未入库**：`.kilo/plugin/`、`.kilo/command/{reframe,security-audit}.md`、`.wolf/`、`.claude/`、`CLAUDE.md` 均 untracked，`AGENTS.md` 被改（openwolf 标记块）。是否入库由 kilocode 仓库决定。
 - **第二阶段延后**（hippocampus / `chat.message` / `bash` post-test、可见 warn 通道、`session.status` 空闲备份）。
 - **第三阶段延后**（`src/runtime/` 共享运行时抽取，等 OpenCode 和 Kilo 都需 hippocampus/claims 对齐时再动）。
 - **目标持久化在 kilocode，不在 openwolf**：进程重启后 re-arm（activation 进程内）、`BudgetLimited`、同条件 blocked 连续三次（需迁移）都未做；openwolf 插件侧目标行尚未集成。
 - **`cli/index.ts` 的 survey 与 kilo 帮助混改**（评审记为卫生问题，未拆分提交）。
 - **巩固在 dogfood 里从未运行**（`neocortex.json` total_consolidated=0）：PM2 未装导致 daemon 不跑，短时→长时转移、衰减、晋升全程空转。
 - **claim 层零使用**（`claims.json` / `claim-candidates.json` 均 0 条）：自动 producer 推迟、手动 CLI 未跑，claim 语义只被测试覆盖，未被 dogfood 验证。
-- **51 个假 trauma 脏数据待清理**：编辑次数启发式在 store 里留下了 51 个 `trauma`（penalty/reward 均为 0），退役启发式后需清理或标记，避免污染未来复发率分母。
+- **51 个假 trauma 已清理**（2026-08-27 整体重置）：编辑次数启发式留下的 51 个 `trauma`（penalty/reward 均为 0）连同 262 条 neutral 一并重置为干净基线，备份在 `backup-pre-reset/`，过程指标（token-ledger）保留。现在等真实负信号（user 纠正 / 测试失败）重新积累，复发率才有第一次干净分母。
