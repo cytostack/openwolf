@@ -6,6 +6,7 @@ import * as path from "node:path";
 
 import { readBugLogFile } from "../src/hooks/shared.ts";
 import { buildHookSettings, HOOK_COUNT } from "../src/cli/hook-manifest.ts";
+import { parseCronState } from "../src/dashboard/app/lib/file-parsers.ts";
 
 // bug-tracker.ts imports ../utils/fs-safe.js, and node's type stripping does
 // not map a .js specifier onto its .ts source, so the CLI side is exercised
@@ -70,6 +71,28 @@ describe("buglog shape coercion", () => {
     assert.equal(tracker!.searchBugs(wolfDir, "widget").length, 1);
     assert.equal(tracker!.searchBugs(wolfDir, "nothing-matches-this").length, 0);
   });
+});
+
+test("dashboard coerces nullable cron-state collections before rendering", () => {
+  const nullable = parseCronState(JSON.stringify({
+    engine_status: "idle",
+    last_heartbeat: null,
+    execution_log: null,
+    dead_letter_queue: null,
+  }));
+  assert.deepEqual(nullable.execution_log, []);
+  assert.deepEqual(nullable.dead_letter_queue, []);
+
+  const missing = parseCronState("{}");
+  assert.deepEqual(missing.execution_log, []);
+  assert.deepEqual(missing.dead_letter_queue, []);
+  assert.throws(() => parseCronState("{"));
+
+  const executionLog = [{ task: "scan" }];
+  const deadLetterQueue = [{ task: "index" }];
+  const valid = parseCronState(JSON.stringify({ execution_log: executionLog, dead_letter_queue: deadLetterQueue }));
+  assert.deepEqual(valid.execution_log, executionLog);
+  assert.deepEqual(valid.dead_letter_queue, deadLetterQueue);
 });
 
 // Hook commands used to carry $CLAUDE_PROJECT_DIR / %CLAUDE_PROJECT_DIR%.
