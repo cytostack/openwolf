@@ -639,7 +639,8 @@ export function normalizePath(p: string): string {
  */
 export function countSemanticEntries(
   wolfDir: string,
-  sessionStarted?: string
+  sessionStarted?: string,
+  now: Date = new Date()
 ): number {
   const memoryPath = path.join(wolfDir, "memory.md");
   try {
@@ -647,7 +648,6 @@ export function countSemanticEntries(
     const mechanical = /^\|\s*[\d:]+\s*\|\s*(Created|Edited|Multi-edited|Session end:|designqc:)/;
     const started = sessionStarted ? new Date(sessionStarted) : null;
     const hasValidStart = started !== null && !Number.isNaN(started.getTime());
-    const now = new Date();
     const startMinutes = hasValidStart
       ? started.getHours() * 60 + started.getMinutes()
       : 0;

@@ -127,7 +127,9 @@ describe("stop reminder bookkeeping", () => {
     );
     const started = new Date();
     started.setHours(17, 0, 0, 0);
-    assert.strictEqual(countSemanticEntries(root, started.toISOString()), 1);
+    const now = new Date();
+    now.setHours(18, 0, 0, 0); // fixed clock: injected now must drive the count, not wall clock
+    assert.strictEqual(countSemanticEntries(root, started.toISOString(), now), 1);
   });
 
   test("detects a bookkeeping file updated after session start", async () => {
