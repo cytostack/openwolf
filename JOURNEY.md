@@ -10,6 +10,11 @@
 
 > 扫一眼就知道还欠什么、哪会裂。详细版在文末「未决事项」；正文各段落的描述未删。
 
+- **全量重写 109 个测试（P4）尚未开始**——benchmark harness（P1-P3）已上线：覆盖 51/186（27.4%）、135 缺口；但「按 TDD 质量标准重写全部测试 + 覆盖映射闸门」是大头，还没动（§13）。
+- **覆盖数 27.4% 是下界**——按函数名 grep 测试源码，低估「经 `Hippocampus` 类间接覆盖」的函数，只当趋势基线用（§13）。
+- **dashboard 函数级 UI 覆盖延后**——`node --test` 跑不了 React，需 vitest+jsdom；v1 只做 build 通过 + 文件存在性（§13）。
+- **import 归一化延后**——测试混用 `src/*.ts`（type-strip）与 `dist/**/*.js`（编译），自动覆盖率因此失真；统一到 src 是侵入性改动，未做（§13）。
+- **token 节省 1,151,042 是估算不是实测**——`anatomy命中×200`（常数拍脑袋）+ 重复读文件 token（字符÷3.5/4/3.75 估）；真数据在 `real_input_tokens`（≈6.07 亿）那组字段（§13）。
 - **Kilo dogfood 已跑，session.created 缺口已修（未提交）**——插件加载、`_session.json` 信封、空闲后 `token-ledger.json` 行均验证；恢复会话不发 `session.created` 的缺口已加 `session.updated` 兜底，剩「重启后确认 `total_sessions` 0→1」未回传。
 - **巩固从未运行**——`neocortex.json` total_consolidated=0，PM2 未装、daemon 不跑，短时→长时转移全程空转。
 - **claim 层零使用**——`claims.json` / `claim-candidates.json` 均 0 条，只被测试覆盖，未被 dogfood 验证。
@@ -134,6 +139,21 @@
 
 **教训**：又一次「静态臆断 vs 实测」——和第 10 节「半生效」是同一病。诊断写路径是否活着，必须拿真实存在的 `src/**` 文件测，`.wolf/*`（守卫跳过）和不存在路径（resolveProjectPath 拒绝）都会给出假的「没写」信号。已记入 cerebrum Do-Not-Repeat。
 
+## 第 13 节 · benchmark 全部 feature + 全量测试重写（2026-08-28~29）
+
+| 我 | 你 |
+|----|-----|
+| 「rewrite test cases, or test cases are perfect? you need benchmark all features how grill me」 | 先读 `STATUS.md` + 跑 `pnpm test` 定位：108/1，唯一挂的是时间依赖测试 `token-measurement.test.ts:117`。按 grilling 逐条钉死 5 决策：Q1 三维度（覆盖/性能/效果，性能效果优先）、Q2 全部 feature、Q3 (A) 全量重写、Q4 单入口 `pnpm benchmark`、Q5 效果诚实报数不刷数 |
+| 「a」「2. 全部 feature / 3. go all / 4 a / 5 a」 | 写 `docs3/benchmark-plan.md`，自批后改 v2：自动覆盖率因 src/dist 混导入失真（`tsconfig.hooks.json` 无 sourcemap）、性能分纯函数 vs 磁盘 I/O、中位数为准抗 GC、覆盖映射闸门防丢回归 |
+| 「自我测试，如果test没有通过，修复，直到所有test通过」 | TDD 修 flaky：先改测试传固定 `now`（red `0 !== 1`），再给 `countSemanticEntries` 加 `now: Date = new Date()`（green）。`pnpm test` 109/109 |
+| 「什么是代数 UI？这个 Open WF 项目应该没有 UI 才对」 | 纠正前提：OpenWolf 有 React dashboard（`src/dashboard/app/**` + `build:dashboard`），「代数 UI」不是标准术语。用户选 A 保留 dashboard（v1 只做 build 通过 + 文件存在性） |
+| 「说人话」 | 把「诚实的边界」这类 jargon 打薄成大白话；后续报告压密度 |
+| 「token 节省 1,151,042（真实读数）怎么计算的？」 | 追 `stop.ts:197-202`，**纠正自己的错**：1,151,042 不是真实读数，是估算——`anatomy命中×200`（200 拍脑袋）+ `Σ重复读文件token×(次数-1)`（token 按字符÷3.5/4/3.75）。真数据在 `real_input_tokens`≈6.07 亿那组 |
+| 「我不理解省token是怎么工作的？」 | 讲机制：pre-read 钩子不拦读，只在读文件前往 stderr 插一句提醒（「读过了别重复读」/「这是摘要，用 offset 只读你要的」），省不省看 agent 听不听 |
+| 「update readme journey and push to remote」 | 建 `benchmarks/*` harness（TDD red→green），`pnpm benchmark` 跑通：覆盖 51/186（27.4%、135 缺口）、性能基线（addMany 22.3ms 印证源码 ~16ms fsync 注释）、效果（token 估算 + recurrence_rate 0/0 标数据不足）；更 README/JOURNEY，提交推送 |
+
+**教训**：① 估算 ≠ 实测，报数前追到代码看数字从哪来——这次「真实读数」是错的，被一句追问揪出；② grill 先钉死「benchmark 测什么」再动手，避开「大而空的活」；③ 时间依赖测试的根治是注入时钟，不是把测试改成碰运气。
+
 ## 这个项目如何教 vibe coding with AI
 
 ### 人的工作（决定 / 纠正 / 叫停）
@@ -176,3 +196,7 @@
 - **巩固在 dogfood 里从未运行**（`neocortex.json` total_consolidated=0）：PM2 未装导致 daemon 不跑，短时→长时转移、衰减、晋升全程空转。
 - **claim 层零使用**（`claims.json` / `claim-candidates.json` 均 0 条）：自动 producer 推迟、手动 CLI 未跑，claim 语义只被测试覆盖，未被 dogfood 验证。
 - **51 个假 trauma 已清理**（2026-08-27 整体重置）：编辑次数启发式留下的 51 个 `trauma`（penalty/reward 均为 0）连同 262 条 neutral 一并重置为干净基线，备份在 `backup-pre-reset/`，过程指标（token-ledger）保留。现在等真实负信号（user 纠正 / 测试失败）重新积累，复发率才有第一次干净分母。
+- **全量重写 109 个测试未开始**（`docs3/benchmark-plan.md` P4）：按 TDD 质量标准（公共 seam、非 tautological、不绑定实现）重写 + 覆盖映射闸门防丢回归，是 benchmark 之后最大的活。
+- **覆盖数 27.4% 是函数名 grep 下界**（低估间接覆盖）；精确行覆盖需 `pnpm benchmark --coverage`（默认关，避免二次跑全量测试）。
+- **dashboard 函数级 UI 覆盖延后**（需 vitest+jsdom，v1 只做 build 通过 + 文件存在性）。
+- **import 归一化延后**（src/dist 混导入使自动覆盖率失真，统一到 src 是侵入性改动）。

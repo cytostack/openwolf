@@ -270,6 +270,29 @@ Field results from 1.x deployments (20 projects, 132+ sessions) averaged a
 blocked. Those figures are heuristic estimates; 2.0 exists so your own
 numbers are measured, not modeled.
 
+## Benchmark
+
+For contributors measuring OpenWolf's implementation health, one command runs
+three dimensions and writes a report:
+
+```bash
+pnpm benchmark            # coverage + performance + outcome
+pnpm benchmark --coverage # also run the built-in line-coverage pass
+```
+
+- **Coverage** — a feature × test matrix over every public seam listed in
+  `benchmarks/seams.json`, with a gap list of untested functions.
+- **Performance** — ops/sec plus median/p95 latency for the hot memory paths
+  (pure functions measured separately from disk-I/O ops), recorded to
+  `benchmarks/baseline.json`.
+- **Outcome** — token savings and `recurrence_rate` read from `.wolf/`, with
+  an explicit "insufficient data" flag while no negative writes exist.
+
+The human-readable report lands in `docs3/benchmark.md`; re-run after a change
+to see the trend. Coverage is a function-name lower bound — indirect coverage
+through the `Hippocampus` class is undercounted, so use `--coverage` for exact
+line numbers.
+
 ## Security
 
 - Dashboard binds to 127.0.0.1 and requires a per-project token

@@ -15,7 +15,8 @@
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "prepublishOnly": "pnpm build",
-    "test": "node --test tests/*.test.ts"
+    "test": "node --test tests/*.test.ts",
+    "benchmark": "pnpm build && node benchmarks/run.ts"
   },
   "dependencies": {
     "chalk": "^5.3.0",

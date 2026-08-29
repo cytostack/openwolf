@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "domains": [
+    {
+      "name": "hippocampus",
+      "modules": [
+        { "name": "event-store", "file": "src/hippocampus/event-store.ts", "functions": ["createEmptyStore", "loadStore", "saveStore", "addEventToStore", "getEventsByLocation", "getTraumaEvents", "getTraumaEventsForPath", "incrementRecurrences", "filterEvents"] },
+        { "name": "cue-index", "file": "src/hippocampus/cue-index.ts", "functions": ["buildIndex", "sortTraumaByIntensity", "getCueIndexPath", "loadIndex", "saveIndex", "addEventToIndex", "removeEventFromIndex", "createEmptyIndex", "indexNeedsRebuild"] },
+        { "name": "cue-recall", "file": "src/hippocampus/cue-recall.ts", "functions": ["scoreEvent", "scoreLocationMatch", "computeRecencyScore", "matchGlob", "getParentDirectories", "getDirectory", "parseErrorType", "scoreStateMatch", "recallEvents", "getLocationCandidateIds", "getQuestionCandidateIds", "getStateCandidateIds", "applyFilters", "normalizeRecallPath"] },
+        { "name": "consolidation", "file": "src/hippocampus/consolidation.ts", "functions": ["createEmptyNeocortex", "loadNeocortex", "saveNeocortex", "enforceNeocortexSize", "mergeEventsIntoNeocortex", "calculateDecay", "calculateConsolidationScore", "determineConsolidationAction", "runConsolidation", "getNeocortexEvents"] },
+        { "name": "index", "file": "src/hippocampus/index.ts", "functions": ["Hippocampus", "createHippocampus"] },
+        { "name": "persistence", "file": "src/hippocampus/persistence.ts", "functions": ["withHippocampusLock", "backupCorruptFile", "readJsonFile", "writeJsonAtomic"] },
+        { "name": "claims", "file": "src/hippocampus/claims.ts", "functions": ["validateClaimObservation", "normalizeClaimStatement", "normalizeClaimScope", "buildClaimIdentityKey", "tokenizeClaim", "evidenceStrength", "calculateClaimConfidence", "determineClaimStatus", "applyClaimObservation", "recallClaims"] },
+        { "name": "claim-store", "file": "src/hippocampus/claim-store.ts", "functions": ["isClaimStore", "createEmptyClaimStore", "loadClaimStore", "refreshClaimStoreStats", "saveClaimStore"] },
+        { "name": "claim-index", "file": "src/hippocampus/claim-index.ts", "functions": ["buildClaimIndex", "isClaimIndex", "loadClaimIndex", "saveClaimIndex", "claimIndexNeedsRebuild"] },
+        { "name": "claim-candidate-store", "file": "src/hippocampus/claim-candidate-store.ts", "functions": ["isClaimCandidateStore", "createEmptyClaimCandidateStore", "loadClaimCandidateStore", "refreshClaimCandidateStoreStats", "saveClaimCandidateStore", "createClaimCandidate"] }
+      ]
+    },
+    {
+      "name": "hooks",
+      "modules": [
+        { "name": "shared", "file": "src/hooks/shared.ts", "functions": ["getWolfDir", "ensureWolfDir", "readJSON", "writeJSON", "readMarkdown", "appendMarkdown", "parseAnatomy", "serializeAnatomy", "extractDescription", "estimateTokens", "timestamp", "timeShort", "readStdin", "normalizePath", "countSemanticEntries", "wasFileUpdatedSince", "readTranscriptUsage", "isSensitiveFile", "detectCorrection", "extractTestFailures", "resolveProjectPath"] },
+        { "name": "pre-read", "file": "src/hooks/pre-read.ts", "functions": ["main"] },
+        { "name": "post-read", "file": "src/hooks/post-read.ts", "functions": ["main"] },
+        { "name": "pre-write", "file": "src/hooks/pre-write.ts", "functions": ["main"] },
+        { "name": "post-write", "file": "src/hooks/post-write.ts", "functions": ["main", "summarizeEdit"] },
+        { "name": "session-start", "file": "src/hooks/session-start.ts", "functions": ["main"] },
+        { "name": "stop", "file": "src/hooks/stop.ts", "functions": ["main"] },
+        { "name": "user-prompt", "file": "src/hooks/user-prompt.ts", "functions": ["main"] },
+        { "name": "post-test", "file": "src/hooks/post-test.ts", "functions": ["main"] },
+        { "name": "anatomy-store", "file": "src/hooks/anatomy-store.ts", "functions": ["newStore", "loadStore", "loadStoreReconciled", "saveStore", "renderStore", "renderToFile", "lookupEntry"] },
+        { "name": "anatomy-lock", "file": "src/hooks/anatomy-lock.ts", "functions": ["withAnatomyLock"] },
+        { "name": "symbol-extractor", "file": "src/hooks/symbol-extractor.ts", "functions": ["extractSymbols", "symbolsSupported"] }
+      ]
+    },
+    {
+      "name": "buglog",
+      "modules": [
+        { "name": "bug-tracker", "file": "src/buglog/bug-tracker.ts", "functions": ["getBugLogPath", "readBugLog", "logBug", "findSimilarBugs", "searchBugs"] }
+      ]
+    },
+    {
+      "name": "tracker",
+      "modules": [
+        { "name": "token-estimator", "file": "src/tracker/token-estimator.ts", "functions": ["detectContentType", "estimateTokens"] },
+        { "name": "token-ledger", "file": "src/tracker/token-ledger.ts", "functions": ["getLedgerPath", "readLedger", "writeLedger", "incrementSessions", "addSessionToLedger"] },
+        { "name": "waste-detector", "file": "src/tracker/waste-detector.ts", "functions": ["detectWaste"] }
+      ]
+    },
+    {
+      "name": "cli",
+      "modules": [
+        { "name": "index", "file": "src/cli/index.ts", "functions": ["getVersion", "createProgram"] },
+        { "name": "init", "file": "src/cli/init.ts", "functions": ["initCommand"] },
+        { "name": "update", "file": "src/cli/update.ts", "functions": ["updateCommand", "restoreCommand"] },
+        { "name": "scan", "file": "src/cli/scan.ts", "functions": ["scanCommand"] },
+        { "name": "status", "file": "src/cli/status.ts", "functions": ["statusCommand"] },
+        { "name": "recall", "file": "src/cli/recall.ts", "functions": ["recallCommand", "createRecallCommand"] },
+        { "name": "claim", "file": "src/cli/claim.ts", "functions": ["recordClaimCommand", "recallClaimsCommand"] },
+        { "name": "survey", "file": "src/cli/survey.ts", "functions": ["surveyCommand"] },
+        { "name": "report", "file": "src/cli/report.ts", "functions": ["reportCommand"] },
+        { "name": "registry", "file": "src/cli/registry.ts", "functions": ["readRegistry", "writeRegistry", "registerProject", "unregisterProject", "getRegisteredProjects"] },
+        { "name": "dashboard", "file": "src/cli/dashboard.ts", "functions": ["dashboardCommand"] },
+        { "name": "daemon-cmd", "file": "src/cli/daemon-cmd.ts", "functions": ["daemonStart", "daemonStop", "daemonRestart", "daemonLogs"] },
+        { "name": "cron-cmd", "file": "src/cli/cron-cmd.ts", "functions": ["cronList", "cronRun", "cronRetry"] },
+        { "name": "bug-cmd", "file": "src/cli/bug-cmd.ts", "functions": ["bugSearch"] }
+      ]
+    },
+    {
+      "name": "daemon",
+      "modules": [
+        { "name": "cron-engine", "file": "src/daemon/cron-engine.ts", "functions": ["CronEngine"] },
+        { "name": "file-watcher", "file": "src/daemon/file-watcher.ts", "functions": ["startFileWatcher"] },
+        { "name": "wolf-daemon", "file": "src/daemon/wolf-daemon.ts", "functions": ["detectProjectMeta", "broadcast", "handleDashboardCommand"] },
+        { "name": "health", "file": "src/daemon/health.ts", "functions": ["getHealth"] }
+      ]
+    },
+    {
+      "name": "agents",
+      "modules": [
+        { "name": "kilo", "file": "src/agents/kilo.ts", "functions": ["sessionIdOf", "handlePrecompact", "kiloAdapter"] },
+        { "name": "skills", "file": "src/agents/skills.ts", "functions": ["installSkills"] },
+        { "name": "index", "file": "src/agents/index.ts", "functions": ["resolveAgents"] }
+      ]
+    },
+    {
+      "name": "utils",
+      "modules": [
+        { "name": "fs-safe", "file": "src/utils/fs-safe.ts", "functions": ["readJSON", "writeJSON", "readText", "writeText", "appendText"] },
+        { "name": "paths", "file": "src/utils/paths.ts", "functions": ["normalizePath", "getWolfDir", "resolveWolfFile", "ensureDir", "relativeToCwd"] },
+        { "name": "platform", "file": "src/utils/platform.ts", "functions": ["isWindows", "isMac", "isLinux", "whichCommand"] },
+        { "name": "dashboard-auth", "file": "src/utils/dashboard-auth.ts", "functions": ["getDashboardToken", "validateDashboardToken"] }
+      ]
+    },
+    {
+      "name": "scanner",
+      "modules": [
+        { "name": "anatomy-scanner", "file": "src/scanner/anatomy-scanner.ts", "functions": ["scanProject", "buildAnatomy", "updateAnatomyEntry"] },
+        { "name": "description-extractor", "file": "src/scanner/description-extractor.ts", "functions": ["extractDescription"] },
+        { "name": "project-root", "file": "src/scanner/project-root.ts", "functions": ["findProjectRoot"] }
+      ]
+    }
+  ]
+}
