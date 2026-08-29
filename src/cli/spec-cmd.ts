@@ -5,6 +5,7 @@ import { findProjectRoot } from "../scanner/project-root.js";
 import { loadSpecState, saveSpecState } from "../specs/spec-store.js";
 import { advancePhase, setStatus } from "../specs/phase-machine.js";
 import { nextTask } from "../specs/tasks-parse.js";
+import { statusMentionsActiveSpec } from "../specs/status-check.js";
 import type { SpecPhase, SpecStatus } from "../specs/types.js";
 
 // `openwolf spec` — the sole writer of .wolf/specs-state.json. The /specify,
@@ -41,6 +42,16 @@ export function createSpecCommand(): Command {
       console.log(`Task: ${state.currentTask ?? "(none)"}`);
       console.log(`Status: ${state.status}`);
       console.log(`Updated: ${state.updatedAt}`);
+
+      // Drift guard: the "read first" handoff doc must know about the active
+      // spec, or a fresh session resuming from STATUS.md will miss it.
+      const statusPath = path.join(wolfDir, "STATUS.md");
+      const statusMd = fs.existsSync(statusPath) ? fs.readFileSync(statusPath, "utf-8") : "";
+      if (!statusMentionsActiveSpec(statusMd, state.activeSpec)) {
+        console.error(
+          `⚠️ .wolf/STATUS.md does not mention active spec "${state.activeSpec}" — update it so the next session can resume.`,
+        );
+      }
     });
 
   spec

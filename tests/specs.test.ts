@@ -16,6 +16,7 @@ import {
   getSpecStatePath,
   loadSpecState,
   saveSpecState,
+  statusMentionsActiveSpec,
 } from "../dist/src/specs/index.js";
 import type { SpecState } from "../dist/src/specs/index.js";
 import { formatSpecContext } from "../src/templates/kilo-plugin/spec.ts";
@@ -195,6 +196,27 @@ describe("spec injection format parity (kilo-plugin vs src/specs)", () => {
   test("both return empty when no active spec", () => {
     assert.strictEqual(buildSpecContext(createEmptySpecState()), "");
     assert.strictEqual(formatSpecContext(null, "specify", null), "");
+  });
+});
+
+describe("statusMentionsActiveSpec", () => {
+  test("true when STATUS.md contains the active spec id", () => {
+    assert.strictEqual(
+      statusMentionsActiveSpec("Active: 002-spec-status-json", "002-spec-status-json"),
+      true,
+    );
+  });
+
+  test("false when STATUS.md mentions a different spec", () => {
+    assert.strictEqual(
+      statusMentionsActiveSpec("Active: 001-spec-cli", "002-spec-status-json"),
+      false,
+    );
+  });
+
+  test("false for empty status or empty activeSpec", () => {
+    assert.strictEqual(statusMentionsActiveSpec("", "002"), false);
+    assert.strictEqual(statusMentionsActiveSpec("Active: 002", ""), false);
   });
 });
 
@@ -382,5 +404,22 @@ describe("openwolf spec CLI", () => {
     assert.strictEqual(run(root, ["spec", "next"]).status, 0);
     const status = run(root, ["spec", "status"]);
     assert.match(status.stdout, /Status: active/);
+  });
+
+  test("status warns when STATUS.md does not mention the active spec", () => {
+    const root = specProject();
+    assert.strictEqual(run(root, ["spec", "set", "001-user-auth"]).status, 0);
+    const status = run(root, ["spec", "status"]);
+    assert.strictEqual(status.status, 0);
+    assert.match(status.stderr, /STATUS.md does not mention/);
+  });
+
+  test("status no warning when STATUS.md mentions the active spec", () => {
+    const root = specProject();
+    assert.strictEqual(run(root, ["spec", "set", "001-user-auth"]).status, 0);
+    fs.mkdirSync(path.join(root, ".wolf"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".wolf", "STATUS.md"), "Active: 001-user-auth\n", "utf-8");
+    const status = run(root, ["spec", "status"]);
+    assert.doesNotMatch(status.stderr, /STATUS.md does not mention/);
   });
 });
