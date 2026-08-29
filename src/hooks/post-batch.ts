@@ -4,6 +4,7 @@ import {
   getWolfDir, ensureWolfDir, readJSON, writeJSON, readStdin, emitHookJSON,
   hookMain, getSessionFilePath, recordInjection
 } from "./shared.js";
+import { mutateJSON, HOOK_LOCK_BUDGET_MS } from "./anatomy-lock.js";
 import { topRules } from "./rule-reinjection.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,27 +38,23 @@ async function main(): Promise<void> {
   const interval = reinjectionInterval(wolfDir);
   if (interval === 0) return;
 
-  const session = readJSON<{ tool_batches?: number; [k: string]: unknown }>(sessionFile, {});
-  session.tool_batches = ((session.tool_batches as number) ?? 0) + 1;
-
-  if (session.tool_batches % interval !== 0) {
-    writeJSON(sessionFile, session);
-    return;
-  }
-
   let rules: string[] = [];
   try {
     rules = topRules(fs.readFileSync(path.join(wolfDir, "cerebrum.md"), "utf-8"), 3);
   } catch {}
-  if (rules.length === 0) {
-    writeJSON(sessionFile, session);
-    return;
-  }
 
-  const note = `Project rules still in effect (from .wolf/cerebrum.md Do-Not-Repeat):\n${rules.join("\n")}`;
-  recordInjection(session, "decay_reinjection", note);
-  writeJSON(sessionFile, session);
-  emitHookJSON("PostToolBatch", { additionalContext: note });
+  // tool_batches is a counter driving an every-Nth-batch reinjection: an
+  // unlocked increment both undercounts and can fire the note twice (#83).
+  let note: string | null = null;
+  mutateJSON<{ tool_batches?: number; [k: string]: unknown }>(sessionFile, {}, HOOK_LOCK_BUDGET_MS, (session) => {
+    session.tool_batches = ((session.tool_batches as number) ?? 0) + 1;
+    if (session.tool_batches % interval !== 0) return;
+    if (rules.length === 0) return;
+    note = `Project rules still in effect (from .wolf/cerebrum.md Do-Not-Repeat):\n${rules.join("\n")}`;
+    recordInjection(session, "decay_reinjection", note);
+  });
+
+  if (note !== null) emitHookJSON("PostToolBatch", { additionalContext: note });
 }
 
 hookMain("post-batch", main);

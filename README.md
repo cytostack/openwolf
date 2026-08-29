@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <sub><b>Full lifecycle hooks:</b> Claude Code, Codex CLI, OpenCode &nbsp;·&nbsp; <b>Context integration:</b> Cursor, Gemini CLI, Antigravity</sub>
+  <sub><b>Full hooks:</b> Claude Code &nbsp;·&nbsp; <b>Core hooks:</b> Codex CLI, OpenCode &nbsp;·&nbsp; <b>Context only:</b> Cursor, Gemini CLI, Antigravity</sub>
 </p>
 
 <p align="center">
@@ -75,8 +75,8 @@ Then use your agents as normal.
 | Agent | Integration |
 |-------|-------------|
 | Claude Code | Full: 12 hooks, output governor, skills, verified measurement |
-| Codex CLI | Lifecycle hooks via `.codex/hooks.json` + `AGENTS.md` |
-| OpenCode | Native plugin + `AGENTS.md` |
+| Codex CLI | Core hooks via `.codex/hooks.json` + `AGENTS.md`: session, read, write, compaction, stop |
+| OpenCode | Native plugin + `AGENTS.md`: session and tool before/after |
 | Cursor | Rules file (context only) |
 | Gemini CLI | `GEMINI.md` block (context only) |
 | Antigravity | `AGENTS.md` block (context only) |
@@ -201,9 +201,12 @@ openwolf dashboard
 ```
 
 Local, token-authenticated, live. The hero number is tokens verifiably kept
-out of context. Around it: measured vs estimated usage, cache rebuild
-attribution, per-agent breakdown, hook health, the anatomy browser, activity,
-and cron control.
+out of context, with a plain-language reading of what that means. Around it:
+what the measured usage is worth at list price and where that cost sits
+(cache reads usually dominate), OpenWolf's own overhead as a share of what it
+saved, the governor's results per command family, cache rebuild attribution,
+per-agent breakdown, hook health, the anatomy browser, activity, and cron
+control.
 
 ## Commands
 
@@ -252,7 +255,8 @@ OpenWolf is better because people fixed it. Every merged contribution is credite
 | [<img src="https://github.com/WeathermanTony.png" width="60"/>](https://github.com/WeathermanTony)<br/>**WeathermanTony** | [<img src="https://github.com/goashem.png" width="60"/>](https://github.com/goashem)<br/>**goashem** | [<img src="https://github.com/bryandent.png" width="60"/>](https://github.com/bryandent)<br/>**bryandent** | [<img src="https://github.com/levnikmyskin.png" width="60"/>](https://github.com/levnikmyskin)<br/>**levnikmyskin** | [<img src="https://github.com/svanack404.png" width="60"/>](https://github.com/svanack404)<br/>**svanack404** |
 | [<img src="https://github.com/riverwolf67.png" width="60"/>](https://github.com/riverwolf67)<br/>**riverwolf67** | [<img src="https://github.com/nottyjay.png" width="60"/>](https://github.com/nottyjay)<br/>**nottyjay** | [<img src="https://github.com/alfasin.png" width="60"/>](https://github.com/alfasin)<br/>**alfasin** | [<img src="https://github.com/ChasLui.png" width="60"/>](https://github.com/ChasLui)<br/>**ChasLui** | [<img src="https://github.com/JarrodAI.png" width="60"/>](https://github.com/JarrodAI)<br/>**JarrodAI** |
 | [<img src="https://github.com/meketreve.png" width="60"/>](https://github.com/meketreve)<br/>**meketreve** | [<img src="https://github.com/Laptopcorei7.png" width="60"/>](https://github.com/Laptopcorei7)<br/>**Laptopcorei7** | [<img src="https://github.com/statik1.png" width="60"/>](https://github.com/statik1)<br/>**statik1** | [<img src="https://github.com/spignataro.png" width="60"/>](https://github.com/spignataro)<br/>**spignataro** | [<img src="https://github.com/Esturban.png" width="60"/>](https://github.com/Esturban)<br/>**Esturban** |
-| [<img src="https://github.com/prghbla.png" width="60"/>](https://github.com/prghbla)<br/>**prghbla** | [<img src="https://github.com/1re2turn1.png" width="60"/>](https://github.com/1re2turn1)<br/>**1re2turn1** | [<img src="https://github.com/aevnar.png" width="60"/>](https://github.com/aevnar)<br/>**aevnar** | | |
+| [<img src="https://github.com/prghbla.png" width="60"/>](https://github.com/prghbla)<br/>**prghbla** | [<img src="https://github.com/1re2turn1.png" width="60"/>](https://github.com/1re2turn1)<br/>**1re2turn1** | [<img src="https://github.com/aevnar.png" width="60"/>](https://github.com/aevnar)<br/>**aevnar** | [<img src="https://github.com/davdittrich.png" width="60"/>](https://github.com/davdittrich)<br/>**davdittrich** | [<img src="https://github.com/krsfer.png" width="60"/>](https://github.com/krsfer)<br/>**krsfer** |
+| [<img src="https://github.com/kantorcodes.png" width="60"/>](https://github.com/kantorcodes)<br/>**kantorcodes** | | | | |
 
 ## License
 

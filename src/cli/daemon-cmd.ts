@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { findProjectRoot } from "../scanner/project-root.js";
 import { readJSON } from "../utils/fs-safe.js";
 import { isWindows } from "../utils/platform.js";
+import { lookupDaemonPid, removeDaemonPidFile } from "../utils/daemon-pidfile.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -133,19 +134,47 @@ export function daemonStop(): void {
     }
   }
 
-  // Fall back to killing whatever is listening on the dashboard port
+  // Fall back to the daemon this project actually started. Never to "whatever
+  // holds the port": port occupancy is not ownership, and the old fallback
+  // SIGTERMed unrelated local services that happened to sit on 18791.
+  stopOwnDaemon(wolfDir, projectRoot);
+}
+
+/**
+ * Signals only a daemon whose identity is proven by `.wolf/daemon.pid`
+ * (this host, this project root, live pid, still looks like the daemon).
+ * Anything else is reported, never signalled.
+ */
+function stopOwnDaemon(wolfDir: string, projectRoot: string): void {
   const port = getDashboardPort();
-  const pids = findPidsOnPort(port);
-  if (pids.length > 0) {
-    for (const pid of pids) {
-      if (killPid(pid)) {
-        console.log(`  ✓ Daemon stopped (PID ${pid} on port ${port})`);
-      } else {
-        console.error(`  Failed to kill process ${pid} on port ${port}.`);
-      }
+  const { status, record } = lookupDaemonPid(wolfDir, projectRoot);
+
+  if (status === "owned" && record) {
+    if (killPid(record.pid)) {
+      removeDaemonPidFile(wolfDir);
+      console.log(`  ✓ Daemon stopped (PID ${record.pid}, port ${record.port})`);
+    } else {
+      console.error(`  Failed to stop daemon PID ${record.pid}. Stop it manually.`);
     }
+    return;
+  }
+
+  if (status === "stale") {
+    removeDaemonPidFile(wolfDir);
+    console.log("  No daemon running (stale .wolf/daemon.pid cleared).");
+  } else if (status === "foreign" && record) {
+    console.log(`  .wolf/daemon.pid belongs to another project (${record.project_root}). Not touching it.`);
   } else {
-    console.log(`  No daemon running on port ${port}.`);
+    console.log("  No daemon running for this project.");
+  }
+
+  // Diagnose without acting. Whatever holds the port is somebody else's.
+  const others = findPidsOnPort(port);
+  if (others.length > 0) {
+    console.log(
+      `  Note: port ${port} is held by PID ${others.join(", ")}, which OpenWolf did not start. ` +
+        `Left alone. Stop it yourself if it is a leftover daemon.`,
+    );
   }
 }
 
@@ -170,12 +199,9 @@ export function daemonRestart(): void {
     }
   }
 
-  // Fall back: stop then start via dashboard command flow
-  const port = getDashboardPort();
-  for (const pid of findPidsOnPort(port)) {
-    killPid(pid);
-    console.log(`  Stopped old daemon (PID ${pid}).`);
-  }
+  // Fall back: stop our own daemon, then hand off to the dashboard command.
+  // Same rule as daemonStop: identity before signal, never kill by port.
+  stopOwnDaemon(wolfDir, projectRoot);
   console.log("  Use 'openwolf dashboard' to start a new daemon.");
 }
 

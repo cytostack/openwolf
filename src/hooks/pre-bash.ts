@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import { getWolfDir, ensureWolfDir, readJSON, writeJSON, readStdin, emitHookJSON, recordInjection, hookMain, getSessionFilePath } from "./shared.js";
+import { mutateJSON, HOOK_LOCK_BUDGET_MS } from "./anatomy-lock.js";
 import { shouldSuggestFilter } from "./bash-filter.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -52,9 +53,6 @@ async function main(): Promise<void> {
   // Once per session per command family: nagging every test run costs more
   // context than it saves.
   const family = command.trim().split(/\s+/).slice(0, 2).join(" ");
-  const session = readJSON<{ bash_filter_suggested?: Record<string, boolean>; [k: string]: unknown }>(sessionFile, {});
-  if (session.bash_filter_suggested?.[family]) { return; }
-
   const note =
     `OpenWolf: "${family}" output can be very large and every line enters your context. ` +
     `Consider capping it yourself, e.g.: ${command.trim()} > .wolf/hooks/_last-bash.log 2>&1; ` +
@@ -64,11 +62,19 @@ async function main(): Promise<void> {
       ? ` Note: filter_mode "rewrite" is configured but not active; automatic rewriting would bypass the permission gate, so OpenWolf caps at suggestions for now.`
       : "");
 
-  session.bash_filter_suggested = { ...(session.bash_filter_suggested ?? {}), [family]: true };
-  recordInjection(session, "bash_filter", note);
-  writeJSON(sessionFile, session);
+  // Once-per-family-per-session: test-and-set has to be one transaction, or
+  // two parallel Bash calls in the same family both emit the note (#83).
+  let emit = false;
+  mutateJSON<{ bash_filter_suggested?: Record<string, boolean>; [k: string]: unknown }>(
+    sessionFile, {}, HOOK_LOCK_BUDGET_MS, (session) => {
+      if (session.bash_filter_suggested?.[family]) return;
+      session.bash_filter_suggested = { ...(session.bash_filter_suggested ?? {}), [family]: true };
+      recordInjection(session, "bash_filter", note);
+      emit = true;
+    },
+  );
 
-  emitHookJSON("PreToolUse", { additionalContext: note });
+  if (emit) emitHookJSON("PreToolUse", { additionalContext: note });
 }
 
 hookMain("pre-bash", main);

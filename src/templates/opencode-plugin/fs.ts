@@ -72,6 +72,47 @@ export function writeJSON(filePath: string, data: unknown): void {
   }
 }
 
+/**
+ * Per-session state path, mirroring getSessionFilePath() in src/hooks/shared.ts
+ * (same id validation, same layout).
+ *
+ * Issue #89, reported with PR #113 by @davdittrich, whose session-file GC is
+ * adopted below.
+ *
+ * Every OpenCode handler receives a sessionId but they all used to persist to
+ * one shared hooks/_session.json, so starting a second session in the same
+ * project overwrote the first one's state and each later read or write from
+ * either session mutated the survivor (#89). The legacy shared file is used
+ * only when there is no usable id, so existing single-session installs keep
+ * working.
+ */
+export function sessionFilePath(hooksDir: string, sessionId: string | undefined): string {
+  if (typeof sessionId === "string" && /^[\w.-]{4,128}$/.test(sessionId)) {
+    return path.join(hooksDir, "sessions", `${sessionId}.json`)
+  }
+  return path.join(hooksDir, "_session.json")
+}
+
+/**
+ * Delete per-session state files older than maxAgeDays.
+ *
+ * Mirrors gcSessionFiles() in src/hooks/shared.ts. Splitting state per session
+ * fixes cross-session contamination but creates one file per session forever,
+ * so the directory needs the same bound the main hooks already apply.
+ */
+export function gcSessionFiles(hooksDir: string, maxAgeDays = 7): void {
+  const dir = path.join(hooksDir, "sessions")
+  const cutoff = Date.now() - maxAgeDays * 24 * 3600 * 1000
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.endsWith(".json")) continue
+      try {
+        if (fs.statSync(path.join(dir, f)).mtimeMs < cutoff) fs.unlinkSync(path.join(dir, f))
+      } catch {}
+    }
+  } catch {}
+}
+
 export function readMarkdown(filePath: string): string {
   try {
     return fs.readFileSync(filePath, "utf-8")

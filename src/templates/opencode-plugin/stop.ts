@@ -1,6 +1,6 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { getWolfDir, writeJSON, readJSON, appendMarkdown, timeShort } from "./fs.js"
+import { getWolfDir, writeJSON, readJSON, appendMarkdown, timeShort, sessionFilePath } from "./fs.js"
 import type { SessionState } from "./types.js"
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -206,7 +206,7 @@ export function handleStop(directory: string, sessionId: string): void {
   if (!fs.existsSync(wolfDir)) return
 
   const hooksDir = path.join(wolfDir, "hooks")
-  const sessionFile = path.join(hooksDir, "_session.json")
+  const sessionFile = sessionFilePath(hooksDir, sessionId)
 
   const session = readJSON<SessionState>(sessionFile, {
     session_id: "", started: "", files_read: {}, files_written: [],

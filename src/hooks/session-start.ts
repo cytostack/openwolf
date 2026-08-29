@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { getWolfDir, ensureWolfDir, writeJSON, appendMarkdown, readJSON, readBugLogFile, timestamp, timeShort, estimateTokens, readStdin, detectAgent, recordInjectionToSessionFile, getProjectDir, hookMain, getSessionFilePath, gcSessionFiles } from "./shared.js";
 import { loadStore } from "./anatomy-store.js";
+import { mutateJSON, HOOK_LOCK_BUDGET_MS } from "./anatomy-lock.js";
 import { topRules, scopedRulesForFiles } from "./rule-reinjection.js";
 
 // ─── Session digest (Workstream E/F: model-aware context budgeting) ─────────
@@ -210,13 +211,13 @@ async function main(): Promise<void> {
   // recorded read (the warn path still fires; only denial is disarmed).
   if (continuing && source === "compact") {
     try {
-      const session = readJSON<{ files_read?: Record<string, { compacted?: boolean }> }>(sessionFile, {});
-      if (session.files_read) {
-        for (const entry of Object.values(session.files_read)) {
-          entry.compacted = true;
-        }
-        writeJSON(sessionFile, session);
-      }
+      mutateJSON<{ files_read?: Record<string, { compacted?: boolean }> }>(
+        sessionFile, {}, HOOK_LOCK_BUDGET_MS, (session) => {
+          for (const entry of Object.values(session.files_read ?? {})) {
+            entry.compacted = true;
+          }
+        },
+      );
     } catch {}
   }
 
@@ -278,13 +279,19 @@ async function main(): Promise<void> {
   // counted, which used to inflate the lifetime count.
   if (!continuing) {
     const ledgerPath = path.join(wolfDir, "token-ledger.json");
-    const ledger = readJSON(ledgerPath, { version: 1, lifetime: { total_sessions: 0 } }) as {
-      version: number;
-      lifetime: { total_sessions: number };
-      [key: string]: unknown;
-    };
-    ledger.lifetime.total_sessions++;
-    writeJSON(ledgerPath, ledger);
+    // Same lock the rest of the ledger already uses (flushSessionToLedger).
+    // Outside it, 60 concurrent SessionStart hooks counted 35 sessions: every
+    // session file was created, 25 increments were silently overwritten (#84).
+    // A deterministic undercount of a lifetime metric is worse than a slow one.
+    mutateJSON<{ version: number; lifetime: { total_sessions: number }; [key: string]: unknown }>(
+      ledgerPath,
+      { version: 1, lifetime: { total_sessions: 0 } },
+      HOOK_LOCK_BUDGET_MS,
+      (ledger) => {
+        if (!ledger.lifetime || typeof ledger.lifetime !== "object") ledger.lifetime = { total_sessions: 0 };
+        ledger.lifetime.total_sessions = (ledger.lifetime.total_sessions ?? 0) + 1;
+      },
+    );
   }
 
   // Inject the budget-capped digest into the model's context.
@@ -344,7 +351,7 @@ async function main(): Promise<void> {
     }
 
     if (digest) {
-      recordInjectionToSessionFile(sessionFile, "digest", digest);
+      recordInjectionToSessionFile(sessionFile, "digest", digest, mutateJSON);
       process.stdout.write(JSON.stringify({
         hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: digest },
       }));

@@ -1,6 +1,7 @@
 import * as path from "node:path";
-import { getWolfDir, ensureWolfDir, readJSON, writeJSON, estimateTokens, readStdin, normalizePath, getProjectDir, hookMain, getSessionFilePath } from "./shared.js";
+import { getWolfDir, ensureWolfDir, readJSON, writeJSON, estimateTokens, readStdin, normalizePath, getProjectDir, hookMain, getSessionFilePath, projectRelativePath } from "./shared.js";
 import { lookupEntry } from "./anatomy-store.js";
+import { mutateJSON, HOOK_LOCK_BUDGET_MS } from "./anatomy-lock.js";
 
 interface SessionData {
   files_read: Record<string, { count: number; tokens: number; first_read: string; ranged?: boolean }>;
@@ -61,23 +62,27 @@ async function main(): Promise<void> {
 
   const normalizedFile = normalizePath(filePath);
 
-  // Skip tracking for .wolf/ internal files — consistent with pre-read
+  // Outside the project root: not this project's state. Same lexical check as
+  // pre-read and post-bash so the three hooks agree on what "in scope" means.
   const projectDir = normalizePath(getProjectDir());
-  const relToProject = normalizedFile.startsWith(projectDir)
-    ? normalizedFile.slice(projectDir.length).replace(/^\//, "")
-    : "";
-  if (relToProject.startsWith(".wolf/") || relToProject.startsWith(".wolf\\")) {
+  const relToProject = projectRelativePath(getProjectDir(), filePath);
+  if (relToProject === null || relToProject === "") return;
+
+  // Skip tracking for .wolf/ internal files — consistent with pre-read
+  if (relToProject.startsWith(".wolf/")) {
     // 2.4: measure OpenWolf's own context cost instead of hiding it. Tagged
     // separately from project reads so anatomy hit-rates stay meaningful.
     try {
       if (content) {
-        const session = readJSON<SessionData>(sessionFile, { files_read: {} });
         const tok = estimateTokens(content, "prose");
-        session.wolf_internal_tokens = ((session.wolf_internal_tokens as number) ?? 0) + tok;
-        const perFile = (session.wolf_internal_reads ?? {}) as Record<string, number>;
-        perFile[relToProject] = (perFile[relToProject] ?? 0) + tok;
-        session.wolf_internal_reads = perFile;
-        writeJSON(sessionFile, session);
+        // Locked transaction: these counters are accumulators, so a lost
+        // update is a permanently undercounted total (#83).
+        mutateJSON<SessionData>(sessionFile, { files_read: {} }, HOOK_LOCK_BUDGET_MS, (session) => {
+          session.wolf_internal_tokens = ((session.wolf_internal_tokens as number) ?? 0) + tok;
+          const perFile = (session.wolf_internal_reads ?? {}) as Record<string, number>;
+          perFile[relToProject] = (perFile[relToProject] ?? 0) + tok;
+          session.wolf_internal_reads = perFile;
+        });
       }
     } catch {}
     return;
@@ -96,20 +101,24 @@ async function main(): Promise<void> {
     if (entry) tokens = entry.tokens;
   }
 
-  const session = readJSON<SessionData>(sessionFile, { files_read: {} });
-  const existing = session.files_read[normalizedFile];
-  if (existing && existing.ranged !== true) {
-    existing.tokens = tokens;
-  } else {
-    // Fresh full read (or an upgrade of a ranged-only contact to a full read).
-    session.files_read[normalizedFile] = {
-      count: 1,
-      tokens,
-      first_read: existing?.first_read ?? new Date().toISOString(),
-    };
-  }
-
-  writeJSON(sessionFile, session);
+  // Parallel Read tool calls are ordinary Claude Code behavior, and each one
+  // fires its own hook process. Read-modify-write outside a lock dropped 34 of
+  // 60 concurrent updates (#83): the file was never torn, just overwritten.
+  // The read now happens inside the lock, against current on-disk state.
+  mutateJSON<SessionData>(sessionFile, { files_read: {} }, HOOK_LOCK_BUDGET_MS, (session) => {
+    if (!session.files_read) session.files_read = {};
+    const existing = session.files_read[normalizedFile];
+    if (existing && existing.ranged !== true) {
+      existing.tokens = tokens;
+    } else {
+      // Fresh full read (or an upgrade of a ranged-only contact to a full read).
+      session.files_read[normalizedFile] = {
+        count: 1,
+        tokens,
+        first_read: existing?.first_read ?? new Date().toISOString(),
+      };
+    }
+  });
 }
 
 hookMain("post-read", main);

@@ -8,11 +8,12 @@ import { findProjectRoot } from "../scanner/project-root.js";
 import { readJSON, writeJSON, readText } from "../utils/fs-safe.js";
 import { getHealth } from "./health.js";
 import { auditContextHealth } from "./context-audit.js";
-import { withFileLock } from "../hooks/anatomy-lock.js";
+import { withFileLock, mutateJSON } from "../hooks/anatomy-lock.js";
 import { Logger } from "../utils/logger.js";
 import { getDashboardToken, validateDashboardToken } from "../utils/dashboard-auth.js";
-import { CronEngine } from "./cron-engine.js";
+import { CronEngine, CronTaskNotFoundError } from "./cron-engine.js";
 import { startFileWatcher } from "./file-watcher.js";
+import { writeDaemonPidFile, removeDaemonPidFile } from "../utils/daemon-pidfile.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -193,6 +194,12 @@ app.post("/api/cron/run/:taskId", (req, res) => {
   cronEngine.runTask(taskId).then(() => {
     res.json({ status: "ok", task_id: taskId });
   }).catch((err) => {
+    // An unknown id is a client error, not a server failure, and definitely
+    // not a success (#87).
+    if (err instanceof CronTaskNotFoundError) {
+      res.status(404).json({ error: err.message, task_id: taskId, known_tasks: err.knownTaskIds });
+      return;
+    }
     res.status(500).json({ error: String(err) });
   });
 });
@@ -214,6 +221,10 @@ const port = Number.isInteger(envPort) && envPort > 0 ? envPort : config.openwol
 const host = config.openwolf.dashboard.host || "127.0.0.1";
 const server = app.listen(port, host, () => {
   logger.info(`Dashboard server listening on ${host}:${port}`);
+  // Written only after a successful bind: this file is what `daemon stop`
+  // uses to prove a process is ours before signalling it, so it must never
+  // claim a daemon that failed to start.
+  writeDaemonPidFile(wolfDir, projectRoot, port);
 });
 server.on("error", (err: NodeJS.ErrnoException) => {
   // Without this handler a bind race (EADDRINUSE between the launcher's port
@@ -343,21 +354,17 @@ startFileWatcher(wolfDir, logger, broadcast);
 const heartbeatInterval = config.openwolf.cron.heartbeat_interval_minutes * 60 * 1000;
 const heartbeatTimer = setInterval(() => {
   const statePath = path.join(wolfDir, "cron-state.json");
-  withFileLock(statePath + ".lock", 2000, () => {
-    const state = readJSON<Record<string, unknown>>(statePath, {});
+  mutateJSON<Record<string, unknown>>(statePath, {}, 2000, (state) => {
     state.last_heartbeat = new Date().toISOString();
-    writeJSON(statePath, state);
   });
   broadcast({ type: "health", status: "healthy", uptime: Math.floor((Date.now() - startTime) / 1000) });
 }, heartbeatInterval);
 
 // Update cron-state to running
 const cronStatePath = path.join(wolfDir, "cron-state.json");
-withFileLock(cronStatePath + ".lock", 2000, () => {
-  const cronState = readJSON<Record<string, unknown>>(cronStatePath, {});
+mutateJSON<Record<string, unknown>>(cronStatePath, {}, 2000, (cronState) => {
   cronState.engine_status = "running";
   cronState.last_heartbeat = new Date().toISOString();
-  writeJSON(cronStatePath, cronState);
 });
 
 logger.info("OpenWolf daemon started");
@@ -365,14 +372,17 @@ logger.info("OpenWolf daemon started");
 // Graceful shutdown
 function shutdown(): void {
   logger.info("Daemon shutting down...");
+  removeDaemonPidFile(wolfDir);
   broadcast({ type: "daemon_stopping", timestamp: new Date().toISOString() });
 
   clearInterval(heartbeatTimer);
   if (cronEngine) cronEngine.stop();
 
-  const state = readJSON<Record<string, unknown>>(cronStatePath, {});
-  state.engine_status = "stopped";
-  writeJSON(cronStatePath, state);
+  // Locked like every other cron-state writer: this one ran unlocked and
+  // could clobber a concurrent heartbeat or execution-log entry (#86).
+  mutateJSON<Record<string, unknown>>(cronStatePath, {}, 2000, (state) => {
+    state.engine_status = "stopped";
+  });
 
   for (const client of wsClients) {
     client.close();

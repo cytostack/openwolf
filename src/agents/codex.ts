@@ -5,6 +5,7 @@ import { readSnippet } from "./index.js";
 import type { AgentAdapter, AgentInstallContext, AgentInstallResult } from "./types.js";
 
 // Codex integration, adapted from PR #36 by @nottyjay (closes #2).
+// Malformed-config preservation: issue #81 and PR #102 by @davdittrich.
 // Codex discovers project-level hooks from <repo>/.codex/hooks.json when
 // `[features] hooks = true` is set, and reads AGENTS.md as its context file.
 // The hook scripts themselves are the same provider-agnostic .wolf/hooks/*.js
@@ -56,32 +57,70 @@ export const codexAdapter: AgentAdapter = {
     // carry the user's own hooks, and a blind overwrite clobbered them.
     // OpenWolf entries are recognized by their .wolf/hooks/ command path and
     // replaced; everything else is preserved.
+    //
+    // A file we cannot read or parse is NOT ours to replace. It is far more
+    // likely to be the user's hooks with a stray comma than something
+    // disposable, and the malformed bytes are the only evidence available for
+    // repairing it. Parse first, write only on success, warn otherwise.
     const hooksPath = path.join(codexDir, "hooks.json");
     const ours = buildCodexHooks(ctx.projectRoot);
-    let merged: { hooks: Record<string, unknown[]> } = ours;
-    try {
-      if (fs.existsSync(hooksPath)) {
-        const existing = JSON.parse(fs.readFileSync(hooksPath, "utf-8")) as { hooks?: Record<string, unknown[]> };
-        if (existing && typeof existing === "object" && existing.hooks) {
-          const isOurs = (matcherEntry: unknown): boolean => {
-            const s = JSON.stringify(matcherEntry);
-            return s.includes(".wolf/hooks") || s.includes(".wolf\\\\hooks");
-          };
-          const combined: Record<string, unknown[]> = {};
-          const events = new Set([...Object.keys(existing.hooks), ...Object.keys(ours.hooks)]);
-          for (const event of events) {
-            const theirs = (existing.hooks[event] ?? []).filter((m) => !isOurs(m));
-            const ourEvent = (ours.hooks as Record<string, unknown[]>)[event] ?? [];
-            combined[event] = [...theirs, ...ourEvent];
-          }
-          merged = { hooks: combined };
+    let merged: Record<string, unknown> = ours;
+    let canWriteHooks = true;
+
+    if (fs.existsSync(hooksPath)) {
+      let raw: string | null = null;
+      let parsed: unknown = null;
+      let failure: string | null = null;
+      try {
+        raw = fs.readFileSync(hooksPath, "utf-8");
+      } catch (err) {
+        failure = `could not be read (${err instanceof Error ? err.message : String(err)})`;
+      }
+      if (raw !== null) {
+        try {
+          parsed = JSON.parse(raw);
+        } catch (err) {
+          failure = `is not valid JSON (${err instanceof Error ? err.message : String(err)})`;
         }
       }
-    } catch {
-      // Unparseable existing file: fall back to writing just our hooks.
+      const isObject = parsed !== null && typeof parsed === "object" && !Array.isArray(parsed);
+      if (failure === null && !isObject) {
+        failure = "is valid JSON but not a hooks object";
+      }
+
+      if (failure !== null) {
+        canWriteHooks = false;
+        warnings.push(
+          `.codex/hooks.json ${failure}. It was left exactly as it is, so OpenWolf hooks are NOT registered for Codex. ` +
+            `Fix the file (or move it aside) and re-run "openwolf init".`,
+        );
+      } else {
+        const existing = parsed as Record<string, unknown>;
+        const existingHooks =
+          existing.hooks !== null && typeof existing.hooks === "object" && !Array.isArray(existing.hooks)
+            ? (existing.hooks as Record<string, unknown[]>)
+            : {};
+        const isOurs = (matcherEntry: unknown): boolean => {
+          const s = JSON.stringify(matcherEntry);
+          return s.includes(".wolf/hooks") || s.includes(".wolf\\\\hooks");
+        };
+        const combined: Record<string, unknown[]> = {};
+        const events = new Set([...Object.keys(existingHooks), ...Object.keys(ours.hooks)]);
+        for (const event of events) {
+          const theirEvent = Array.isArray(existingHooks[event]) ? existingHooks[event] : [];
+          const theirs = theirEvent.filter((m) => !isOurs(m));
+          const ourEvent = (ours.hooks as Record<string, unknown[]>)[event] ?? [];
+          combined[event] = [...theirs, ...ourEvent];
+        }
+        // Spread `existing` so top-level keys we do not know about survive.
+        merged = { ...existing, hooks: combined };
+      }
     }
-    fs.writeFileSync(hooksPath, JSON.stringify(merged, null, 2) + "\n", "utf-8");
-    actions.push("Codex hooks registered (.codex/hooks.json)");
+
+    if (canWriteHooks) {
+      fs.writeFileSync(hooksPath, JSON.stringify(merged, null, 2) + "\n", "utf-8");
+      actions.push("Codex hooks registered (.codex/hooks.json)");
+    }
 
     // 2. Enable the hooks feature — but never corrupt an existing config.toml.
     const configPath = path.join(codexDir, "config.toml");

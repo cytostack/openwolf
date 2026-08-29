@@ -63,7 +63,8 @@ pass `--agent codex opencode`, `--agent all`, or `--agent claude`.
 openwolf status
 ```
 
-Confirms the core files, the 10 hook scripts, and the agent registrations.
+Confirms the core files, the hook scripts (24 on disk, 12 of them registered
+as lifecycle hooks), and the agent registrations.
 After your first session, `openwolf report` shows measured usage from the
 transcripts.
 

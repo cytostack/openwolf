@@ -1,6 +1,6 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { getWolfDir, writeJSON, readJSON, appendMarkdown, timeShort, timestamp, readMarkdown } from "./fs.js"
+import { getWolfDir, writeJSON, readJSON, appendMarkdown, timeShort, timestamp, readMarkdown, sessionFilePath, gcSessionFiles } from "./fs.js"
 import type { SessionState } from "./types.js"
 
 const sessions = new Map<string, SessionState>()
@@ -33,7 +33,9 @@ export function handleSessionStart(directory: string, sessionId: string): void {
     }
   } catch {}
 
-  const sessionFile = path.join(hooksDir, "_session.json")
+  gcSessionFiles(hooksDir)
+
+  const sessionFile = sessionFilePath(hooksDir, sessionId)
   const state: SessionState = {
     session_id: sessionId,
     started: timestamp(),

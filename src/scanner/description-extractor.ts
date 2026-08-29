@@ -119,20 +119,41 @@ const MAX_DESC = 150;
 const READ_BYTES = 12288; // 12KB for better analysis
 
 // ─── Main entry ──────────────────────────────────────────────
-export function extractDescription(filePath: string): string {
+/**
+ * Describe a file in one line.
+ *
+ * Content reuse and descriptor handling: issue #92 and PR #103 by @davdittrich.
+ *
+ * `knownContent` lets a caller that has ALREADY read the file hand the bytes
+ * over instead of making this function open and read the first 12 KiB again.
+ * The scanner reads every eligible file in full for hashing, token counting,
+ * and symbol extraction, then used to reopen each one here: two opens and two
+ * reads per file, on every full scan, growing directly with project size
+ * (#92). Only the first READ_BYTES are used either way, so descriptions are
+ * byte-for-byte identical whichever path supplies them.
+ */
+export function extractDescription(filePath: string, knownContent?: string): string {
   const basename = path.basename(filePath);
 
   if (KNOWN_FILES[basename]) return KNOWN_FILES[basename];
 
   let content: string;
-  try {
-    const fd = fs.openSync(filePath, "r");
-    const buf = Buffer.alloc(READ_BYTES);
-    const bytesRead = fs.readSync(fd, buf, 0, READ_BYTES, 0);
-    fs.closeSync(fd);
-    content = buf.subarray(0, bytesRead).toString("utf-8");
-  } catch {
-    return "";
+  if (knownContent !== undefined) {
+    content = knownContent.length > READ_BYTES ? knownContent.slice(0, READ_BYTES) : knownContent;
+  } else {
+    // try/finally, not a bare close: a readSync failure used to skip the close
+    // and leak the descriptor, once per unreadable file per scan.
+    let fd: number | null = null;
+    try {
+      fd = fs.openSync(filePath, "r");
+      const buf = Buffer.alloc(READ_BYTES);
+      const bytesRead = fs.readSync(fd, buf, 0, READ_BYTES, 0);
+      content = buf.subarray(0, bytesRead).toString("utf-8");
+    } catch {
+      return "";
+    } finally {
+      if (fd !== null) { try { fs.closeSync(fd); } catch {} }
+    }
   }
   if (!content.trim()) return "";
 

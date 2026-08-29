@@ -4,6 +4,95 @@ All notable changes to OpenWolf are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and OpenWolf uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.5.1] - 2026-08-30
+
+Sixteen reported defects, fixed. Fifteen were found and reported by
+[@davdittrich](https://github.com/davdittrich), one by
+[@krsfer](https://github.com/krsfer), each with a reproduction. Every fix
+carries a regression test that was first run against the unfixed code and
+observed to fail.
+
+### Fixed
+
+- **`daemon stop` could terminate an unrelated process** (#78). The fallback
+  path sent SIGTERM to every PID listening on the configured dashboard port.
+  Port occupancy is not ownership. The daemon now records `.wolf/daemon.pid`
+  after a successful bind, and stop signals a process only when the record was
+  written on this host, for this project root, for a live PID that still looks
+  like the daemon. Anything else holding the port is reported and left alone.
+- **An existing dashboard token kept its permissions** (#79). New tokens were
+  written 0600; a token file that already existed at 0644 was returned as-is
+  and stayed readable by other local users. It is now repaired in place, never
+  rotated, since a readable token is still the token a live browser tab holds.
+- **Read tracking escaped the project root** (#80). Containment was a
+  `startsWith` check, so `../project-private/secret.ts` shares a prefix with
+  `../project` and was recorded in that project's session state and token
+  metrics. The Bash read channel had no root check at all. All three hooks now
+  share one lexical `path.relative` check, with a realpath fallback so a
+  project reached through a symlink is not silently dropped.
+- **Codex install destroyed a malformed `hooks.json`** (#81). A parse failure
+  was caught and OpenWolf-only defaults were written over the user's file,
+  reporting success. The file is now left byte-identical, hooks are not
+  reported as registered, and one actionable warning explains how to recover.
+- **Parallel hooks lost session state** (#83). Atomic writes prevent torn
+  files, not lost updates: two hook processes that each read, modify and write
+  both produce valid JSON, and the second erases the first. Measured at 60
+  concurrent post-read hooks, 6 of 60 reads survived. Every shared-state
+  read-modify-write now runs through one bounded lock-backed transaction that
+  reads inside the lock. 21 call sites across 13 files.
+- **Concurrent SessionStart lost ledger increments** (#84). 60 concurrent
+  startups created 60 session files and counted 31.
+- **Cron state writes bypassed the lock after timeout** (#86). The fallback
+  wrote anyway once the budget expired, which defeats the lock for every
+  writer that respects it. Contention now fails closed and reports itself.
+- **Concurrent registry updates lost projects** (#88). 60 concurrent
+  registrations kept 31. `openwolf init` in several projects at once is
+  exactly this shape.
+- **Concurrent OpenCode sessions shared one state file** (#89). Every handler
+  received a session id but all of them persisted to `hooks/_session.json`, so
+  a second session overwrote the first and later reads from either mutated the
+  survivor. State is now per session id, with the legacy file kept only when
+  no usable id exists, and session files are garbage collected after 7 days.
+- **The Bash governor pointed at a deleted log** (#82). Full output was
+  written, the cache was pruned, and the model was then handed a pointer to a
+  file the prune had just removed, described as "preserved verbatim". Output
+  is now verified present before anything claims it was preserved; an output
+  larger than the whole cache budget says so plainly instead.
+- **A skipped anatomy write still advanced freshness** (#85). On lock
+  contention the scan wrote nothing but recorded the current Git HEAD in
+  `_scan-state.json`, so the index was reported current when it was empty and
+  the rescan that would have fixed it was suppressed.
+- **Unknown cron task IDs reported success** (#87). `runTask` logged a warning
+  and resolved, so the API returned 200 and the CLI printed "triggered" for a
+  task that does not exist. It now raises a typed not-found, mapped to HTTP
+  404 with the known task list, and a nonzero CLI exit.
+- **Benchmark arms could run different source revisions** (#90). Every arm and
+  repeat cloned mutable HEAD independently, so a branch that moved mid-run
+  confounded the comparison the benchmark exists to make. One commit is now
+  resolved up front, checked out for every arm, printed, and recorded in each
+  result row.
+- **The daemon watcher broadcast files nothing consumed** (#91). Per-session
+  hook state was read and pushed to every websocket client on every update.
+  Lock files and the Bash output cache are now excluded too.
+- **The scanner read every file twice** (#92). Each eligible file was read in
+  full for hashing, tokens and symbols, then reopened for the first 12 KiB of
+  description. Descriptions now reuse the bytes already in hand, and a read
+  failure no longer leaks the descriptor.
+- **Anatomy indexed virtualenvs and build caches** (#93). `.venv`, `.gradle`,
+  `.DS_Store` and `site-packages` were missing from the defaults, and `init`
+  and the scanner fallback shipped two different lists. On a mixed
+  Android/Python project 513 of 526 indexed files were virtualenv noise. There
+  is now one shared list, the project's own `.gitignore` is respected, and
+  Python virtualenvs are detected by `pyvenv.cfg` under any directory name.
+
+### Changed
+
+- File-lock acquisition starts at a 2 ms poll and backs off, instead of a flat
+  25-50 ms. A 60-way herd took roughly two seconds to drain, which is the
+  entire hook budget.
+- Projects created before this release pick up the new anatomy exclusions on
+  `openwolf update`. Nothing is ever removed from a customised list.
+
 ## [2.5.0] - 2026-08-22
 
 Positioning, and the removal of the last thing that made "no API calls"
