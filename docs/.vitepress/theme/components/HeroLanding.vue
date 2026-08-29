@@ -44,7 +44,7 @@ const features = [
   {
     icon: "chart",
     title: "Measured, Verified, Attributed",
-    desc: "Real usage from every transcript, per model. Hook delivery verified against the harness's own records. Cache rebuilds attributed to their trigger and cost. If OpenWolf claims it, it can prove it.",
+    desc: "Real usage from every transcript, per model, priced at list rates so you can see where the money actually goes (on most projects, two thirds of it is cache reads). Hook delivery verified against the harness's own records. Cache rebuilds attributed to their trigger. If OpenWolf claims it, it can prove it.",
     accent: "#818cf8",
   },
   {
@@ -91,7 +91,7 @@ const archFiles = [
   { name: "cerebrum.md", desc: "Learned preferences, conventions, Do-Not-Repeat mistakes. Budgeted, committed, shared across agents and teammates.", icon: "brain" },
   { name: "STATUS.md", desc: "Session handoff. Regenerate it with /handoff; the next session reaches productive context in one small read.", icon: "clock" },
   { name: "buglog.json", desc: "Bug and fix memory with full-text search. The pre-write hook recalls relevant past fixes before an edit repeats them.", icon: "bug" },
-  { name: "hooks/", desc: "10 Node.js lifecycle hooks shared by all wired agents. Pure file I/O, no network, no AI calls, heartbeat-monitored.", icon: "code" },
+  { name: "hooks/", desc: "12 Node.js lifecycle hooks shared by all wired agents. Pure file I/O, no network, no model calls, heartbeat-monitored.", icon: "code" },
   { name: "token-ledger.json", desc: "Estimated, measured, and transcript-verified usage per session and agent, plus governor deltas and cache-rebuild attribution.", icon: "gear" },
 ];
 </script>
@@ -126,8 +126,9 @@ const archFiles = [
             </p>
 
             <p class="ow-hero__agents">
-              <span class="ow-hero__agents-row"><span class="ow-hero__agents-key">Full lifecycle hooks</span> Claude Code, Codex CLI, OpenCode</span>
-              <span class="ow-hero__agents-row"><span class="ow-hero__agents-key">Context integration</span> Cursor, Gemini CLI, Antigravity</span>
+              <span class="ow-hero__agents-row"><span class="ow-hero__agents-key">Full hooks</span> Claude Code</span>
+              <span class="ow-hero__agents-row"><span class="ow-hero__agents-key">Core hooks</span> Codex CLI, OpenCode</span>
+              <span class="ow-hero__agents-row"><span class="ow-hero__agents-key">Context only</span> Cursor, Gemini CLI, Antigravity</span>
             </p>
 
             <div class="ow-hero__actions">

@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <sub><b>Full lifecycle hooks:</b> Claude Code, Codex CLI, OpenCode &nbsp;·&nbsp; <b>Context integration:</b> Cursor, Gemini CLI, Antigravity</sub>
+  <sub><b>Full hooks:</b> Claude Code &nbsp;·&nbsp; <b>Core hooks:</b> Codex CLI, OpenCode &nbsp;·&nbsp; <b>Context only:</b> Cursor, Gemini CLI, Antigravity</sub>
 </p>
 
 <p align="center">
@@ -75,8 +75,8 @@ Then use your agents as normal.
 | Agent | Integration |
 |-------|-------------|
 | Claude Code | Full: 12 hooks, output governor, skills, verified measurement |
-| Codex CLI | Lifecycle hooks via `.codex/hooks.json` + `AGENTS.md` |
-| OpenCode | Native plugin + `AGENTS.md` |
+| Codex CLI | Core hooks via `.codex/hooks.json` + `AGENTS.md`: session, read, write, compaction, stop |
+| OpenCode | Native plugin + `AGENTS.md`: session and tool before/after |
 | Cursor | Rules file (context only) |
 | Gemini CLI | `GEMINI.md` block (context only) |
 | Antigravity | `AGENTS.md` block (context only) |
@@ -201,9 +201,12 @@ openwolf dashboard
 ```
 
 Local, token-authenticated, live. The hero number is tokens verifiably kept
-out of context. Around it: measured vs estimated usage, cache rebuild
-attribution, per-agent breakdown, hook health, the anatomy browser, activity,
-and cron control.
+out of context, with a plain-language reading of what that means. Around it:
+what the measured usage is worth at list price and where that cost sits
+(cache reads usually dominate), OpenWolf's own overhead as a share of what it
+saved, the governor's results per command family, cache rebuild attribution,
+per-agent breakdown, hook health, the anatomy browser, activity, and cron
+control.
 
 ## Commands
 
