@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { execFileSync, execSync } from "node:child_process";
 import { findProjectRoot } from "../scanner/project-root.js";
 import { scanProject } from "../scanner/anatomy-scanner.js";
+import { DEFAULT_EXCLUDE_PATTERNS } from "../scanner/exclusions.js";
 import { readJSON, writeJSON, readText, writeText, safeCopyFile } from "../utils/fs-safe.js";
 import { ensureDir } from "../utils/paths.js";
 import { isWindows } from "../utils/platform.js";
@@ -423,7 +424,7 @@ function generateTemplate(destPath: string, file: string): void {
       version: 1,
       openwolf: {
         enabled: true,
-        anatomy: { auto_scan_on_init: true, rescan_interval_hours: 6, max_description_length: 100, max_files: 500, exclude_patterns: ["node_modules", ".git", "dist", "build", ".wolf", ".next", ".nuxt", "coverage", "__pycache__", ".cache", "target", ".vscode", ".idea", ".turbo", ".vercel", ".netlify", ".output", "*.min.js", "*.min.css"] },
+        anatomy: { auto_scan_on_init: true, rescan_interval_hours: 6, max_description_length: 100, max_files: 500, respect_gitignore: true, exclude_patterns: [...DEFAULT_EXCLUDE_PATTERNS] },
         token_audit: { enabled: true, report_frequency: "weekly", waste_threshold_percent: 15, chars_per_token_code: 3.5, chars_per_token_prose: 4.0 },
         cron: { enabled: true, max_retry_attempts: 3, dead_letter_enabled: true, heartbeat_interval_minutes: 30 },
         memory: { consolidation_after_days: 7, max_entries_before_consolidation: 200 },

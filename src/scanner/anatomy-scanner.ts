@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { execFileSync } from "node:child_process";
 import { extractDescription, capDescription } from "./description-extractor.js";
+import { DEFAULT_EXCLUDE_PATTERNS, isVirtualenvDir, loadGitignore, isGitIgnored } from "./exclusions.js";
 import {
   newStore, renderStore, renderToFile, saveStore, loadStoreReconciled, sha256,
   type AnatomyStoreData, type StoreFileEntry,
@@ -20,6 +21,8 @@ interface WolfConfig {
       max_description_length: number;
       max_files: number;
       exclude_patterns: string[];
+      /** Honour the project's root .gitignore during the walk. Default true. */
+      respect_gitignore?: boolean;
     };
     token_audit: {
       chars_per_token_code: number;
@@ -134,7 +137,8 @@ function walkDir(
   excludePatterns: string[],
   maxFiles: number,
   files: Record<string, StoreFileEntry>,
-  contents?: Record<string, string>
+  contents?: Record<string, string>,
+  gitignore: ReturnType<typeof loadGitignore> = []
 ): void {
   let totalFiles = Object.keys(files).length;
   if (totalFiles >= maxFiles) return;
@@ -153,9 +157,15 @@ function walkDir(
     const relPath = normalizePath(path.relative(rootDir, fullPath));
 
     if (shouldExclude(relPath, excludePatterns)) continue;
+    // The project's own .gitignore is the list its author already wrote of
+    // what is not source (#93). Cheaper than any name list and always in sync.
+    if (gitignore.length > 0 && isGitIgnored(gitignore, relPath, item.isDirectory())) continue;
 
     if (item.isDirectory()) {
-      walkDir(fullPath, rootDir, excludePatterns, maxFiles, files, contents);
+      // Virtualenvs under any name, including `env/`, which is too plausible a
+      // source directory to put in the default exclusion list.
+      if (isVirtualenvDir(fullPath)) continue;
+      walkDir(fullPath, rootDir, excludePatterns, maxFiles, files, contents, gitignore);
     } else if (item.isFile()) {
       const ext = path.extname(item.name).toLowerCase();
       if (BINARY_EXTENSIONS.has(ext)) continue;
@@ -177,7 +187,8 @@ function walkDir(
         continue;
       }
 
-      const desc = capDescription(extractDescription(fullPath));
+      // The file was read in full six lines up; do not open it again (#92).
+      const desc = capDescription(extractDescription(fullPath, content));
       const tokens = estimateTokens(content, fullPath);
       const symbols =
         tokens >= SYMBOL_MIN_TOKENS && symbolsSupported(ext)
@@ -215,7 +226,7 @@ export async function buildAnatomy(wolfDir: string, projectRoot: string): Promis
       anatomy: {
         max_description_length: 100,
         max_files: 500,
-        exclude_patterns: ["node_modules", ".git", "dist", "build", ".wolf"],
+        exclude_patterns: [...DEFAULT_EXCLUDE_PATTERNS],
       },
       token_audit: { chars_per_token_code: 3.5, chars_per_token_prose: 4.0 },
     },
@@ -223,13 +234,15 @@ export async function buildAnatomy(wolfDir: string, projectRoot: string): Promis
 
   const store = newStore();
   const contents: Record<string, string> = {};
+  const gitignore = config.openwolf.anatomy.respect_gitignore === false ? [] : loadGitignore(projectRoot);
   walkDir(
     projectRoot,
     projectRoot,
     config.openwolf.anatomy.exclude_patterns,
     config.openwolf.anatomy.max_files,
     store.files,
-    contents
+    contents,
+    gitignore
   );
 
   // J2: upgrade regex symbols to exact tree-sitter results where a grammar is
@@ -311,11 +324,19 @@ export async function scanProject(wolfDir: string, projectRoot: string): Promise
     // Lock contention: skip the write entirely. The old fallback wrote the
     // fresh render straight to anatomy.md, and the next locked writer's
     // "md wins" reconcile then permanently overwrote curated descriptions.
+    //
+    // Freshness state is NOT advanced here. Issue #85, PR #101 by @davdittrich. _scan-state.json is what tells the
+    // hooks "anatomy matches this commit"; writing it after a skipped write
+    // claimed the index was current when nothing had been indexed, which
+    // suppressed the very rescan that would have fixed it (#85). Staying stale
+    // is correct: the next trigger rescans and converges.
     console.warn("  ! anatomy is being updated by another process; scan results not written (re-run to converge)");
+    return fileCount;
   }
 
   // Record scan state so hooks can detect staleness (git switches, editor
-  // edits outside an agent) without rescanning — Workstream F2b.
+  // edits outside an agent) without rescanning — Workstream F2b. Only reached
+  // when the locked anatomy write above actually committed.
   try {
     let gitHead: string | null = null;
     try {

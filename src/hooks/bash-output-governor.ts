@@ -138,12 +138,18 @@ export interface CondenseResult {
  * Condense stdout for a family. Returns null when condensation is not
  * worthwhile (under threshold, or saved less than 30%): the original then
  * passes through untouched.
+ *
+ * `logPath` is the cache path where the full output was preserved, or null
+ * when it could not be preserved. Passing null is not cosmetic: the pointer is
+ * part of the recovery contract, and a pointer naming a file that does not
+ * exist is worse than no pointer at all, because the model trusts it and stops
+ * looking (#82).
  */
 export function condenseOutput(
   family: BashFamily,
   stdout: string,
   thresholdTokens: number,
-  logPath: string
+  logPath: string | null
 ): CondenseResult | null {
   const originalTokens = estimateTokens(stdout);
   if (originalTokens < thresholdTokens) return null;
@@ -164,7 +170,9 @@ export function condenseOutput(
       break;
   }
 
-  const pointer = `\n[OpenWolf: this output was ~${originalTokens.toLocaleString("en-US")} tokens; condensed structurally. Full output preserved verbatim at ${logPath}]`;
+  const pointer = logPath === null
+    ? `\n[OpenWolf: this output was ~${originalTokens.toLocaleString("en-US")} tokens; condensed structurally. It was too large for the local output cache, so the full text was NOT preserved. Re-run the command if you need it verbatim.]`
+    : `\n[OpenWolf: this output was ~${originalTokens.toLocaleString("en-US")} tokens; condensed structurally. Full output preserved verbatim at ${logPath}]`;
   const text = condensed + pointer;
   const condensedTokens = estimateTokens(text);
   if (condensedTokens > originalTokens * 0.7) return null; // not worth the change

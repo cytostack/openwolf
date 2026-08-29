@@ -707,6 +707,71 @@ export function normalizePath(p: string): string {
   return p.replace(/\\/g, "/");
 }
 
+/**
+ * Lexical containment check shared by every hook that records a path into
+ * project-scoped state.
+ *
+ * Issue #80, reported with PR #99 by @davdittrich.
+ *
+ * `startsWith(projectDir)` is not a path boundary. `/w/project-private/x.ts`
+ * has `/w/project` as a string prefix, so sibling directories (and anything
+ * reachable through `..`) used to land in this project's session state and
+ * token metrics even though the user never put them in OpenWolf scope.
+ *
+ * Returns the project-relative path (forward-slashed, "" for the root itself)
+ * or null when `target` is outside `root`. Purely lexical, by design: it
+ * resolves no symlinks and touches no filesystem, so it cannot block a hook
+ * or behave differently depending on what happens to exist on disk.
+ */
+export function relativeIfInside(root: string, target: string): string | null {
+  if (!root || !target) return null;
+  let rel: string;
+  try {
+    const absRoot = path.resolve(root);
+    const absTarget = path.isAbsolute(target) ? path.resolve(target) : path.resolve(absRoot, target);
+    rel = path.relative(absRoot, absTarget);
+  } catch {
+    return null;
+  }
+  if (rel === "") return "";
+  if (path.isAbsolute(rel)) return null; // different win32 drive
+  if (rel === ".." || rel.startsWith(".." + path.sep)) return null;
+  return normalizePath(rel);
+}
+
+/** True when `target` lies inside `root`. See relativeIfInside(). */
+export function isInsideDir(root: string, target: string): boolean {
+  return relativeIfInside(root, target) !== null;
+}
+
+/** realpath, tolerating a path whose leaf does not exist yet. */
+function realpathOrSelf(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch {}
+  const dir = path.dirname(p);
+  if (dir === p) return p;
+  return path.join(realpathOrSelf(dir), path.basename(p));
+}
+
+/**
+ * Project containment for hook paths: lexical first, symlink-aware only when
+ * that fails.
+ *
+ * The lexical answer is right almost always and costs nothing. But a project
+ * reached through a symlink (`/tmp` -> `/private/tmp` on macOS, a mounted or
+ * linked work directory) can have a root resolved one way and a tool-supplied
+ * file path the other, which would make real project files look external and
+ * silently stop tracking them. Pay for realpath only on that miss.
+ */
+export function projectRelativePath(root: string, target: string): string | null {
+  const direct = relativeIfInside(root, target);
+  if (direct !== null) return direct;
+  if (!root || !target) return null;
+  const real = relativeIfInside(realpathOrSelf(root), realpathOrSelf(path.resolve(root, target)));
+  return real;
+}
+
 // ─── Hook JSON output (the only channel the model sees) ─────────────────────
 // Claude Code treats hook stdout as ONE JSON object; two concatenated objects
 // are invalid JSON and the whole output is silently dropped. stderr from a
@@ -762,10 +827,29 @@ export function recordInjection(session: InjectionTracking, source: string, text
   session.injected_by_source = bySource;
 }
 
-/** Same, for hooks that do not otherwise hold the session file open. */
-export function recordInjectionToSessionFile(sessionFile: string, source: string, text: string): void {
+/**
+ * Same, for hooks that do not otherwise hold the session file open.
+ *
+ * `mutate` is injected rather than imported: this module is deliberately free
+ * of relative imports (the test suite loads it directly under Node's type
+ * stripping, which does not map ./x.js to x.ts), and the lock lives in
+ * anatomy-lock.ts. Callers pass mutateJSON so the accumulating token counters
+ * are updated in one serialized transaction (#83).
+ */
+export function recordInjectionToSessionFile(
+  sessionFile: string,
+  source: string,
+  text: string,
+  mutate?: <T>(file: string, fallback: T, budgetMs: number, fn: (current: T) => void) => T | null,
+): void {
   if (!text) return;
   try {
+    if (mutate) {
+      mutate<InjectionTracking>(sessionFile, {}, 2000, (session) => {
+        recordInjection(session, source, text);
+      });
+      return;
+    }
     const session = readJSON<InjectionTracking>(sessionFile, {});
     recordInjection(session, source, text);
     writeJSON(sessionFile, session);

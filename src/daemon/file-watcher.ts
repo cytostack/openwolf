@@ -4,6 +4,8 @@ import { watch } from "chokidar";
 import { readJSON } from "../utils/fs-safe.js";
 import type { Logger } from "../utils/logger.js";
 
+// Per-session watch exclusion: issue #91 and PR #110 by @davdittrich.
+
 export function startFileWatcher(
   wolfDir: string,
   logger: Logger,
@@ -11,10 +13,23 @@ export function startFileWatcher(
 ): void {
   const watcher = watch(wolfDir, {
     ignoreInitial: true,
+    // Everything the dashboard actually consumes lives at the .wolf/ root plus
+    // hooks/_heartbeat.json. Watching anything else means a filesystem read, a
+    // JSON message allocation, and a websocket broadcast to every client for an
+    // event no consumer maps to state (#91).
     ignored: [
       "**/hooks/_session.json",
+      // Per-session hook state: written on every read, write, and Bash call,
+      // once per active session. The dashboard has no consumer for these paths.
+      "**/hooks/sessions/**",
+      // Lock files: created and unlinked around every state mutation.
+      "**/*.lock",
+      // Bash output cache: single files up to the 50 MB cache cap, and the
+      // 1 MB broadcast guard rejects them only AFTER stat and read.
+      "**/cache/**",
       "**/*.tmp",
       "**/daemon.log",
+      "**/daemon.pid",
     ],
     persistent: true,
     awaitWriteFinish: {

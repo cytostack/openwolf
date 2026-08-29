@@ -30,6 +30,8 @@ interface ArmResult {
   task: string;
   arm: "openwolf" | "bare";
   repeat: number;
+  /** The exact source revision this arm ran against (#90). */
+  commit: string;
   completed: boolean;
   input_tokens: number;
   output_tokens: number;
@@ -38,6 +40,48 @@ interface ArmResult {
   api_calls: number;
   bash_commands: number;
   bash_reruns: number;
+}
+
+/**
+ * Resolve the repository's current HEAD to an immutable commit SHA, once,
+ * before any arm is prepared.
+ *
+ * Issue #90, reported with PR #112 by @davdittrich.
+ */
+export function resolveRepoCommit(repo: string): string {
+  const out = execFileSync("git", ["ls-remote", repo, "HEAD"], {
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const sha = out.split(/\s+/)[0]?.trim() ?? "";
+  if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`no HEAD commit for ${repo}`);
+  return sha;
+}
+
+/**
+ * Check out one exact commit into `destDir`.
+ *
+ * Tries a shallow fetch of the pinned SHA first (supported by GitHub and by
+ * local repositories); falls back to a full clone plus checkout for servers
+ * that refuse to serve arbitrary SHAs. Either way every arm gets the same
+ * tree, which is the point.
+ */
+export function prepareRepoCheckout(repo: string, commit: string, destDir: string): void {
+  fs.mkdirSync(destDir, { recursive: true });
+  const git = (args: string[], cwd = destDir): void => {
+    execFileSync("git", args, { cwd, stdio: ["ignore", "ignore", "pipe"] });
+  };
+  try {
+    git(["init", "--quiet"]);
+    git(["remote", "add", "origin", repo]);
+    git(["fetch", "--depth", "1", "--quiet", "origin", commit]);
+    git(["checkout", "--quiet", "FETCH_HEAD"]);
+  } catch {
+    fs.rmSync(destDir, { recursive: true, force: true });
+    fs.mkdirSync(destDir, { recursive: true });
+    execFileSync("git", ["clone", "--quiet", repo, destDir], { stdio: ["ignore", "ignore", "pipe"] });
+    git(["checkout", "--quiet", commit]);
+  }
 }
 
 function findTasksDir(): string | null {
@@ -132,18 +176,33 @@ export function benchCommand(opts: BenchOptions): void {
   const ownBin = findOwnBin();
   const results: ArmResult[] = [];
 
+  // Pin ONE revision before any arm is prepared. Every arm and repeat used to
+  // clone the repository's mutable HEAD independently, so a branch that moved
+  // mid-run gave different arms different source trees. Arms are supposed to
+  // differ only in whether OpenWolf is enabled; source drift silently
+  // confounds every token, turn, and timing comparison in the report (#90).
+  let pinnedCommit: string;
+  try {
+    pinnedCommit = resolveRepoCommit(repo);
+  } catch (err) {
+    console.log(`could not resolve a commit for ${repo}: ${String(err).slice(0, 120)}`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`Pinned source revision: ${pinnedCommit}`);
+
   for (const task of tasks) {
     for (let r = 0; r < repeats; r++) {
       for (const arm of ["bare", "openwolf"] as const) {
         const workDir = fs.mkdtempSync(path.join(os.tmpdir(), `owbench-${task.name}-${arm}-`));
+        const repoDir = path.join(workDir, "repo");
         try {
-          execFileSync("git", ["clone", "--depth", "1", "--quiet", repo, workDir + "/repo"], { stdio: "ignore" });
+          prepareRepoCheckout(repo, pinnedCommit, repoDir);
         } catch (err) {
-          console.log(`clone failed: ${String(err).slice(0, 120)}`);
+          console.log(`checkout of ${pinnedCommit.slice(0, 12)} failed: ${String(err).slice(0, 120)}`);
           process.exitCode = 1;
           return;
         }
-        const repoDir = path.join(workDir, "repo");
         if (arm === "openwolf") {
           try {
             execFileSync(process.execPath, [ownBin, "init"], { cwd: repoDir, stdio: "ignore", timeout: 120000 });
@@ -169,6 +228,7 @@ export function benchCommand(opts: BenchOptions): void {
           task: task.name,
           arm,
           repeat: r,
+          commit: pinnedCommit,
           completed,
           input_tokens: usage.input_tokens,
           output_tokens: usage.output_tokens,
@@ -202,7 +262,8 @@ export function benchCommand(opts: BenchOptions): void {
   console.log("  and a bash re-run rate within 2 points of bare (higher = condensation");
   console.log("  is destroying information the model needs).");
 
+  console.log(`\n  Source revision (all arms): ${pinnedCommit}`);
   const outPath = path.join(process.cwd(), `openwolf-bench-${new Date().toISOString().slice(0, 10)}.json`);
-  fs.writeFileSync(outPath, JSON.stringify({ repo, repeats, results }, null, 2));
+  fs.writeFileSync(outPath, JSON.stringify({ repo, commit: pinnedCommit, repeats, results }, null, 2));
   console.log(`\n  Raw results: ${outPath}`);
 }

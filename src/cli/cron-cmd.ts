@@ -3,8 +3,9 @@ import * as path from "node:path";
 import { findProjectRoot } from "../scanner/project-root.js";
 import { readJSON, writeJSON } from "../utils/fs-safe.js";
 import { getDashboardToken } from "../utils/dashboard-auth.js";
+import { mutateJSON, CLI_LOCK_BUDGET_MS } from "../hooks/anatomy-lock.js";
 import { Logger } from "../utils/logger.js";
-import { CronEngine } from "../daemon/cron-engine.js";
+import { CronEngine, CronTaskNotFoundError } from "../daemon/cron-engine.js";
 import { hasPm2 } from "./daemon-cmd.js";
 
 interface CronTask {
@@ -132,10 +133,16 @@ export async function cronRun(id: string): Promise<void> {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     });
-    const body = await res.json() as { status?: string; error?: string };
+    const body = await res.json() as { status?: string; error?: string; known_tasks?: string[] };
     if (res.ok) {
       console.log(`Task ${id} triggered via daemon.`);
       return;
+    }
+    // 404 is a definitive answer about the task, not a daemon problem. Running
+    // it directly would only reach the same not-found (#87).
+    if (res.status === 404) {
+      console.error(`Task ${id} not found. Known tasks: ${body.known_tasks?.join(", ") || "none"}`);
+      process.exit(1);
     }
     console.log(`Daemon returned error: ${body.error ?? res.statusText}`);
     console.log("Falling back to direct execution...");
@@ -150,6 +157,10 @@ export async function cronRun(id: string): Promise<void> {
     await engine.runTask(id);
     console.log(`Task ${id} executed successfully.`);
   } catch (err) {
+    if (err instanceof CronTaskNotFoundError) {
+      console.error(`Task ${id} not found. Known tasks: ${err.knownTaskIds.join(", ") || "none"}`);
+      process.exit(1);
+    }
     console.error(`Task ${id} failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
@@ -192,20 +203,32 @@ export function cronRetry(id: string): void {
     return;
   }
 
+  // Through the same lock the daemon uses. This path wrote cron-state.json
+  // unlocked, so a retry issued while the engine was writing could drop the
+  // engine's execution-log entry, or be dropped by it (#86).
   const statePath = path.join(wolfDir, "cron-state.json");
-  const state = readJSON<CronState>(statePath, {
-    engine_status: "unknown",
-    execution_log: [],
-    dead_letter_queue: [],
-  });
+  let found = false;
+  const written = mutateJSON<CronState>(
+    statePath,
+    { engine_status: "unknown", execution_log: [], dead_letter_queue: [] },
+    CLI_LOCK_BUDGET_MS,
+    (state) => {
+      if (!Array.isArray(state.dead_letter_queue)) state.dead_letter_queue = [];
+      const idx = state.dead_letter_queue.findIndex((d) => d.task_id === id);
+      if (idx === -1) return;
+      state.dead_letter_queue.splice(idx, 1);
+      found = true;
+    },
+  );
 
-  const idx = state.dead_letter_queue.findIndex((d) => d.task_id === id);
-  if (idx === -1) {
+  if (written === null) {
+    console.error("cron-state.json is locked by the daemon. Try again in a moment.");
+    process.exitCode = 1;
+    return;
+  }
+  if (!found) {
     console.log(`Task ${id} not found in dead letter queue.`);
     return;
   }
-
-  state.dead_letter_queue.splice(idx, 1);
-  writeJSON(statePath, state);
   console.log(`Removed ${id} from dead letter queue. It will retry on next schedule.`);
 }

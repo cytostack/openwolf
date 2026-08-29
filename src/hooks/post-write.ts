@@ -7,7 +7,7 @@ import {
   isSensitiveFile, getProjectDir, emitHookJSON, recordInjection, hookMain, getSessionFilePath
 } from "./shared.js";
 import { loadStoreReconciled, saveStore, renderToFile, sha256 } from "./anatomy-store.js";
-import { withAnatomyLock, HOOK_LOCK_BUDGET_MS } from "./anatomy-lock.js";
+import { withAnatomyLock, mutateJSON, HOOK_LOCK_BUDGET_MS } from "./anatomy-lock.js";
 import { extractSymbols, symbolsSupported, SYMBOL_MIN_TOKENS } from "./symbol-extractor.js";
 
 // File types where a value/string change is normal content editing, not a bug
@@ -79,16 +79,17 @@ async function main(): Promise<void> {
         const content = fs.readFileSync(absolutePath, "utf-8");
         const tokens = estimateTokens(content, "prose");
         if (tokens > budget) {
-          const session = readJSON<SessionData>(sessionFile, { files_written: [], edit_counts: {} });
-          const warned = (session.budget_warned ?? {}) as Record<string, boolean>;
-          if (!warned[relPath]) {
+          // Test-and-set the once-per-file flag in one transaction (#83).
+          let warn: string | null = null;
+          mutateJSON<SessionData>(sessionFile, { files_written: [], edit_counts: {} }, HOOK_LOCK_BUDGET_MS, (session) => {
+            const warned = (session.budget_warned ?? {}) as Record<string, boolean>;
+            if (warned[relPath]) return;
             warned[relPath] = true;
             session.budget_warned = warned;
-            const warn = `OpenWolf: ${relPath} is now ~${tokens} tokens; its budget is ${budget}. It is read at session starts, so size is a recurring cost. Consolidate or move detail into topic files, keeping the most recent and most important entries.`;
+            warn = `OpenWolf: ${relPath} is now ~${tokens} tokens; its budget is ${budget}. It is read at session starts, so size is a recurring cost. Consolidate or move detail into topic files, keeping the most recent and most important entries.`;
             recordInjection(session, "budget_warn", warn);
-            writeJSON(sessionFile, session);
-            emitHookJSON("PostToolUse", { additionalContext: warn });
-          }
+          });
+          if (warn !== null) emitHookJSON("PostToolUse", { additionalContext: warn });
         }
       }
     } catch {}
@@ -183,37 +184,42 @@ async function main(): Promise<void> {
 
   // 3. Record in session tracker + track edit counts
   try {
-    const session = readJSON<SessionData>(sessionFile, { files_written: [], edit_counts: {} });
-    if (!session.edit_counts) session.edit_counts = {};
-
     const normalizedFile = normalizePath(filePath);
     const action = toolName === "Write" ? "create" : "edit";
     const fileContent = input.tool_input?.content ?? "";
     const tokens = estimateTokens(fileContent || newStr, "code");
-
-    session.files_written.push({
-      file: normalizedFile,
-      action,
-      tokens,
-      at: new Date().toISOString(),
-    });
-
     const editKey = normalizePath(path.relative(projectRoot, absolutePath));
-    session.edit_counts[editKey] = (session.edit_counts[editKey] || 0) + 1;
 
-    if (session.files_read && session.files_read[normalizedFile]) {
-      delete session.files_read[normalizedFile];
-    }
+    // files_written is an append, edit_counts an increment, edit_warned a
+    // test-and-set: all three lose data under an unlocked read-modify-write,
+    // and parallel Edit calls are ordinary agent behavior (#83).
+    let editWarn = "";
+    mutateJSON<SessionData>(sessionFile, { files_written: [], edit_counts: {} }, HOOK_LOCK_BUDGET_MS, (session) => {
+      if (!session.edit_counts) session.edit_counts = {};
+      if (!Array.isArray(session.files_written)) session.files_written = [];
 
-    // Once per file per session: firing on the 3rd edit AND every edit after
-    // it would hit ~39% of all write operations (measured) — pure noise.
-    if (!session.edit_warned) session.edit_warned = {};
-    const editWarn = session.edit_counts[editKey] >= 3 && !(session.edit_warned as Record<string, boolean>)[editKey]
-      ? `OpenWolf: ${baseName} has been edited ${session.edit_counts[editKey]} times this session. If you're fixing a bug, log it to .wolf/buglog.json.`
-      : "";
-    if (editWarn) (session.edit_warned as Record<string, boolean>)[editKey] = true;
-    if (editWarn) recordInjection(session, "edit_warn", editWarn);
-    writeJSON(sessionFile, session);
+      session.files_written.push({
+        file: normalizedFile,
+        action,
+        tokens,
+        at: new Date().toISOString(),
+      });
+
+      session.edit_counts[editKey] = (session.edit_counts[editKey] || 0) + 1;
+
+      if (session.files_read && session.files_read[normalizedFile]) {
+        delete session.files_read[normalizedFile];
+      }
+
+      // Once per file per session: firing on the 3rd edit AND every edit after
+      // it would hit ~39% of all write operations (measured) — pure noise.
+      if (!session.edit_warned) session.edit_warned = {};
+      editWarn = session.edit_counts[editKey] >= 3 && !(session.edit_warned as Record<string, boolean>)[editKey]
+        ? `OpenWolf: ${baseName} has been edited ${session.edit_counts[editKey]} times this session. If you're fixing a bug, log it to .wolf/buglog.json.`
+        : "";
+      if (editWarn) (session.edit_warned as Record<string, boolean>)[editKey] = true;
+      if (editWarn) recordInjection(session, "edit_warn", editWarn);
+    });
 
     if (editWarn) {
       emitHookJSON("PostToolUse", { additionalContext: editWarn });

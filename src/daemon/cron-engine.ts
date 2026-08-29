@@ -7,7 +7,10 @@ import { scanProject } from "../scanner/anatomy-scanner.js";
 import { detectWaste } from "../tracker/waste-detector.js";
 import { scanProjectUsage, projectTranscriptDir } from "../tracker/transcript-usage.js";
 import { readUsageSequence, attributeCacheRebuilds, type CacheRebuild } from "../tracker/cache-attribution.js";
-import { withFileLock } from "../hooks/anatomy-lock.js";
+import { mutateJSON } from "../hooks/anatomy-lock.js";
+
+// Cron writers are daemon-side and can afford to wait longer than a hook.
+const CRON_LOCK_BUDGET_MS = 5_000;
 import { loadStore, quickStaleCheck } from "../hooks/anatomy-store.js";
 import type { Logger } from "../utils/logger.js";
 
@@ -46,6 +49,21 @@ interface CronState {
   execution_log: ExecutionEntry[];
   dead_letter_queue: Array<{ task_id: string; error: string; timestamp: string; attempts: number }>;
   upcoming: unknown[];
+}
+
+/**
+ * Typed not-found at the runTask() boundary, mapped to HTTP 404 / nonzero CLI
+ * exit. Issue #87, reported with PR #111 by @davdittrich.
+ */
+export class CronTaskNotFoundError extends Error {
+  readonly taskId: string;
+  readonly knownTaskIds: string[];
+  constructor(taskId: string, knownTaskIds: string[] = []) {
+    super(`Task not found: ${taskId}`);
+    this.name = "CronTaskNotFoundError";
+    this.taskId = taskId;
+    this.knownTaskIds = knownTaskIds;
+  }
 }
 
 export class CronEngine {
@@ -93,12 +111,21 @@ export class CronEngine {
     this.scheduledTasks = [];
   }
 
+  /**
+   * Run one task by id.
+   *
+   * Throws CronTaskNotFoundError for an unknown id. It used to log a warning
+   * and resolve normally, so the HTTP endpoint answered 200 and the CLI
+   * printed "task triggered" for a task that does not exist: automation could
+   * not tell an executed task from a typo, and a renamed or deleted task kept
+   * reporting success forever (#87).
+   */
   async runTask(taskId: string): Promise<void> {
     const manifest = this.readManifest();
     const task = manifest.tasks.find((t) => t.id === taskId);
     if (!task) {
       this.logger.warn(`Task not found: ${taskId}`);
-      return;
+      throw new CronTaskNotFoundError(taskId, manifest.tasks.map((t) => t.id));
     }
     await this.executeTask(task);
   }
@@ -126,20 +153,23 @@ export class CronEngine {
    * websocket handlers write it concurrently, and unlocked interleaves
    * dropped execution-log / dead-letter entries.
    */
-  private mutateState(mutator: (state: CronState) => void): void {
-    const lockPath = path.join(this.wolfDir, "cron-state.json.lock");
-    const done = withFileLock(lockPath, 2000, () => {
-      const state = this.readState();
-      mutator(state);
-      this.writeState(state);
-      return true;
-    });
-    if (done === null) {
-      // Contention beyond budget: apply last-writer-wins rather than losing the entry.
-      const state = this.readState();
-      mutator(state);
-      this.writeState(state);
+  private mutateState(mutator: (state: CronState) => void): boolean {
+    // No unlocked fallback. Writing anyway after the budget expires defeats
+    // the lock for every writer that respects it: the heartbeat, task, and
+    // websocket paths could then overwrite one another exactly as if no lock
+    // existed (#86). On contention we report failure and let the caller log
+    // it; cron state converges on the next heartbeat or execution.
+    const written = mutateJSON<CronState>(
+      path.join(this.wolfDir, "cron-state.json"),
+      { last_heartbeat: null, engine_status: "running", execution_log: [], dead_letter_queue: [], upcoming: [] },
+      CRON_LOCK_BUDGET_MS,
+      (state) => { mutator(state); },
+    );
+    if (written === null) {
+      this.logger.warn("cron-state.json is locked by another writer; state update skipped this round");
+      return false;
     }
+    return true;
   }
 
   private async executeTask(task: CronTask): Promise<void> {
@@ -392,8 +422,7 @@ export class CronEngine {
     const ledgerPath = path.join(this.wolfDir, "token-ledger.json");
     // Same lock the hooks' ledger writer uses: an unlocked rewrite here could
     // clobber a concurrent Stop-hook flush and lose whole sessions.
-    withFileLock(ledgerPath + ".lock", 2000, () => {
-      const ledger = readJSON<Record<string, unknown>>(ledgerPath, {});
+    mutateJSON<Record<string, unknown>>(ledgerPath, {}, CRON_LOCK_BUDGET_MS, (ledger) => {
       (ledger as { waste_flags: unknown[] }).waste_flags = flags;
       if (measured) (ledger as { measured_project: unknown }).measured_project = measured;
       if (cacheRebuilds) (ledger as { cache_rebuilds: unknown }).cache_rebuilds = cacheRebuilds;
@@ -401,7 +430,6 @@ export class CronEngine {
         last_generated: new Date().toISOString(),
         patterns: flags.map((f) => f.pattern),
       };
-      writeJSON(ledgerPath, ledger);
     });
   }
 

@@ -3,13 +3,14 @@ import * as path from "node:path";
 import * as crypto from "node:crypto";
 import {
   getWolfDir, ensureWolfDir, readJSON, writeJSON, readStdin, emitHookJSON,
-  hookMain, getSessionFilePath, normalizePath
+  hookMain, getSessionFilePath, normalizePath, getProjectDir, projectRelativePath
 } from "./shared.js";
 import {
   classifyCommand, condenseOutput, estimateTokens,
   DEFAULT_GOVERNOR_CONFIG, type GovernorConfig, type GovernorAction
 } from "./bash-output-governor.js";
 import { parseBashRead } from "./bash-path-parser.js";
+import { mutateJSON, HOOK_LOCK_BUDGET_MS } from "./anatomy-lock.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PostToolUse[Bash] governor (2.3 flagship). Bash results are 48.3% of all
@@ -40,11 +41,18 @@ function governorConfig(wolfDir: string): GovernorConfig {
 }
 
 interface GovernedRecord {
+  /** Whether the full output is actually recoverable from the cache (#82). */
+  preserved?: boolean;
   family: string;
   action: "replaced" | "suggested";
   original_tokens: number;
   entered_tokens: number;
   at: string;
+}
+
+interface BashSessionState {
+  files_read?: Record<string, { count: number; tokens: number; first_read: string; ranged?: boolean; read_mtime?: number; via_bash?: boolean }>;
+  [key: string]: unknown;
 }
 
 async function main(): Promise<void> {
@@ -76,36 +84,43 @@ async function main(): Promise<void> {
   try {
     const read = parseBashRead(command);
     if (read && stdout.length > 0) {
-      const normalized = normalizePath(path.isAbsolute(read.file) ? read.file : path.join(process.env.CLAUDE_PROJECT_DIR ?? process.cwd(), read.file));
-      if (!normalized.includes("/.wolf/")) {
-        const session = readJSON<{ files_read?: Record<string, { count: number; tokens: number; first_read: string; ranged?: boolean; read_mtime?: number; via_bash?: boolean }> }>(sessionFile, {});
-        if (!session.files_read) session.files_read = {};
-        const prev = session.files_read[normalized];
-        let unchanged = false;
+      // Resolve against the same project root the other hooks use, then apply
+      // the same lexical containment check. `cat ../other-project/secret.ts`
+      // used to be registered in this project's read history: this channel had
+      // no project-root check at all.
+      const projectDir = getProjectDir();
+      const normalized = normalizePath(path.resolve(projectDir, read.file));
+      const relToProject = projectRelativePath(projectDir, normalized);
+      if (relToProject !== null && relToProject !== "" && !relToProject.startsWith(".wolf/")) {
         let mtime: number | undefined;
-        try {
-          mtime = fs.statSync(normalized).mtimeMs;
-          unchanged = prev?.read_mtime !== undefined && mtime <= prev.read_mtime!;
-        } catch {}
-        if (read.full && prev && prev.ranged !== true && unchanged && prev.tokens > 0) {
-          notes.push(
-            `OpenWolf: ${path.basename(normalized)} was already fully output this session (~${prev.tokens} tok) and is unchanged on disk since.`
-          );
-          prev.count++;
-        } else if (read.full) {
-          session.files_read[normalized] = {
-            count: (prev?.count ?? 0) + 1,
-            tokens: estimateTokens(stdout),
-            first_read: prev?.first_read ?? new Date().toISOString(),
-            read_mtime: mtime,
-            via_bash: true,
-          };
-        } else if (!prev) {
-          session.files_read[normalized] = {
-            count: 1, tokens: 0, first_read: new Date().toISOString(), ranged: true, read_mtime: mtime, via_bash: true,
-          };
-        }
-        writeJSON(sessionFile, session);
+        try { mtime = fs.statSync(normalized).mtimeMs; } catch {}
+        // Parallel Bash calls each fire this hook. The read has to happen
+        // inside the lock or one process's registration overwrites another's
+        // (#83) — and `prev` must come from current on-disk state, since the
+        // dedupe decision below depends on it.
+        mutateJSON<BashSessionState>(sessionFile, {}, HOOK_LOCK_BUDGET_MS, (session) => {
+          if (!session.files_read) session.files_read = {};
+          const prev = session.files_read[normalized];
+          const unchanged = prev?.read_mtime !== undefined && mtime !== undefined && mtime <= prev.read_mtime;
+          if (read.full && prev && prev.ranged !== true && unchanged && prev.tokens > 0) {
+            notes.push(
+              `OpenWolf: ${path.basename(normalized)} was already fully output this session (~${prev.tokens} tok) and is unchanged on disk since.`
+            );
+            prev.count++;
+          } else if (read.full) {
+            session.files_read[normalized] = {
+              count: (prev?.count ?? 0) + 1,
+              tokens: estimateTokens(stdout),
+              first_read: prev?.first_read ?? new Date().toISOString(),
+              read_mtime: mtime,
+              via_bash: true,
+            };
+          } else if (!prev) {
+            session.files_read[normalized] = {
+              count: 1, tokens: 0, first_read: new Date().toISOString(), ranged: true, read_mtime: mtime, via_bash: true,
+            };
+          }
+        });
       }
     }
   } catch {}
@@ -125,28 +140,38 @@ async function main(): Promise<void> {
       const relLog = `.wolf/cache/bash/${id}.log`;
 
       const effectiveAction = config.mode === "suggest" ? "suggest" : action;
-      const result = condenseOutput(family, stdout, config.threshold_tokens, relLog);
+      const probe = condenseOutput(family, stdout, config.threshold_tokens, relLog);
 
-      if (result) {
-        // Preserve the full output regardless of action: the pointer (or the
-        // suggestion) must always be honest about where the bytes live.
-        try {
-          fs.mkdirSync(logDir, { recursive: true });
-          fs.writeFileSync(logPath, stdout, "utf-8");
-          pruneLogs(logDir);
-        } catch {}
+      // Preserve the full output, then VERIFY it survived, and only then
+      // describe it as preserved. The cache prune runs immediately after the
+      // write, and an output bigger than the whole cache budget deletes
+      // itself: the hook used to hand the model a pointer to a file that no
+      // longer existed, while claiming the bytes were recoverable (#82).
+      const preserved = probe ? preserveOutput(logDir, logPath, stdout) : false;
+      const result = !probe ? null : preserved
+        ? probe
+        : condenseOutput(family, stdout, config.threshold_tokens, null);
 
+      // The honest pointer is shorter than the preserving one, so it cannot
+      // fail the savings ratio the preserving one already passed. Guard anyway:
+      // with no condensation available, letting the output through unchanged is
+      // the only option that does not destroy unrecoverable content. Fall
+      // through to the notes flush below rather than returning, so an earlier
+      // dedupe advisory is not swallowed with it.
+      if (probe && result) {
         const record: GovernedRecord = {
           family,
           action: effectiveAction === "replace" ? "replaced" : "suggested",
           original_tokens: result.original_tokens,
           entered_tokens: effectiveAction === "replace" ? result.condensed_tokens : result.original_tokens,
           at: new Date().toISOString(),
+          preserved,
         };
         try {
-          const session = readJSON<{ bash_governed?: GovernedRecord[] }>(sessionFile, {});
-          session.bash_governed = [...(session.bash_governed ?? []), record].slice(-200);
-          writeJSON(sessionFile, session);
+          // Append-to-list: the classic lost-update shape (#83).
+          mutateJSON<{ bash_governed?: GovernedRecord[] }>(sessionFile, {}, HOOK_LOCK_BUDGET_MS, (session) => {
+            session.bash_governed = [...(session.bash_governed ?? []), record].slice(-200);
+          });
         } catch {}
 
         if (effectiveAction === "replace") {
@@ -158,8 +183,11 @@ async function main(): Promise<void> {
           });
           return;
         }
+        const copyNote = preserved
+          ? ` A copy is saved at ${relLog}.`
+          : " It was too large for the local output cache, so no copy was kept.";
         notes.push(
-          `OpenWolf: that ${family.replace("_", " ")} output was ~${result.original_tokens.toLocaleString("en-US")} tokens and now sits in context for the rest of the session. A copy is saved at ${relLog}. Narrower variants (grep with a file filter, head/tail, git show --stat) produce the same information at a fraction of the cost.`
+          `OpenWolf: that ${family.replace("_", " ")} output was ~${result.original_tokens.toLocaleString("en-US")} tokens and now sits in context for the rest of the session.${copyNote} Narrower variants (grep with a file filter, head/tail, git show --stat) produce the same information at a fraction of the cost.`
         );
       }
     }
@@ -169,6 +197,40 @@ async function main(): Promise<void> {
     emitHookJSON("PostToolUse", { additionalContext: notes.join("\n") });
   }
 }
+
+/**
+ * Write the full output to the cache and report whether it is still there
+ * afterwards.
+ *
+ * Issue #82, reported with PR #100 by @davdittrich, which additionally evicts
+ * older logs to keep the current one; here an output larger than the whole
+ * budget is simply reported as unpreserved.
+ *
+ * The answer can be no: pruneLogs enforces a 50 MB cache budget, and an output
+ * larger than that budget is deleted by the very prune that follows its own
+ * write. The cap is a real limit and should win, but the caller must then stop
+ * claiming the output was preserved.
+ */
+function preserveOutput(logDir: string, logPath: string, stdout: string): boolean {
+  // An output bigger than the whole cache budget cannot be retained, so do not
+  // spend the write and the prune churning 50 MB to disk just to delete it.
+  if (Buffer.byteLength(stdout, "utf-8") > CACHE_MAX_BYTES) return false;
+  try {
+    fs.mkdirSync(logDir, { recursive: true });
+    fs.writeFileSync(logPath, stdout, "utf-8");
+  } catch {
+    return false;
+  }
+  pruneLogs(logDir);
+  try {
+    return fs.statSync(logPath).size === Buffer.byteLength(stdout, "utf-8");
+  } catch {
+    return false;
+  }
+}
+
+const CACHE_MAX_FILES = 200;
+const CACHE_MAX_BYTES = 50 * 1024 * 1024;
 
 /** Keep the bash log cache bounded (200 files / ~50MB, oldest first). */
 function pruneLogs(logDir: string): void {
@@ -184,7 +246,7 @@ function pruneLogs(logDir: string): void {
     let total = 0;
     files.forEach((f, i) => {
       total += f.size;
-      if (i >= 200 || total > 50 * 1024 * 1024) {
+      if (i >= CACHE_MAX_FILES || total > CACHE_MAX_BYTES) {
         try { fs.unlinkSync(f.p); } catch {}
       }
     });

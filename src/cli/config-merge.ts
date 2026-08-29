@@ -77,3 +77,35 @@ export function mergeConfigDefaults(cfgPath: string, templatesDir: string): bool
   writeJSONFile(cfgPath, cfg);
   return true;
 }
+
+/**
+ * Append exclude patterns a project's config predates.
+ *
+ * deepMergeMissing treats arrays as leaves on purpose, so an existing project
+ * never picks up a new default exclusion. That is right for entries a user may
+ * have removed deliberately, and wrong for names that simply did not exist as
+ * defaults yet: a project created before 2.5.1 would keep indexing .venv and
+ * .gradle forever (#93). Only genuinely new names may be passed here, and only
+ * missing ones are appended. Nothing is ever removed or reordered.
+ *
+ * Returns the patterns actually added.
+ */
+export function appendExcludePatterns(cfgPath: string, additions: readonly string[]): string[] {
+  if (!fs.existsSync(cfgPath)) return [];
+  const cfg = readJSONFile(cfgPath);
+  if (!isPlainObject(cfg)) return [];
+  const openwolf = cfg.openwolf;
+  if (!isPlainObject(openwolf)) return [];
+  const anatomy = openwolf.anatomy;
+  if (!isPlainObject(anatomy)) return [];
+  const current = anatomy.exclude_patterns;
+  if (!Array.isArray(current)) return [];
+
+  const have = new Set(current.filter((v): v is string => typeof v === "string"));
+  const added = additions.filter((p) => !have.has(p));
+  if (added.length === 0) return [];
+
+  anatomy.exclude_patterns = [...current, ...added];
+  writeJSONFile(cfgPath, cfg);
+  return added;
+}

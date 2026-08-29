@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { getWolfDir, ensureWolfDir, readJSON, readBugLogFile, readMarkdown, readStdin, emitHookJSON, recordInjectionToSessionFile, hookMain, getSessionFilePath } from "./shared.js";
+import { mutateJSON } from "./anatomy-lock.js";
 import { searchBugsFTS } from "./bug-index.js";
 
 interface BugEntry {
@@ -52,7 +53,7 @@ async function main(): Promise<void> {
   }
 
   if (notes.length > 0) {
-    recordInjectionToSessionFile(getSessionFilePath(input), "cerebrum_buglog", notes.join("\n"));
+    recordInjectionToSessionFile(getSessionFilePath(input), "cerebrum_buglog", notes.join("\n"), mutateJSON);
     emitHookJSON("PreToolUse", { additionalContext: notes.join("\n") });
   }
 }

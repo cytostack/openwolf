@@ -1,6 +1,6 @@
 {
   "name": "openwolf",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "One project memory across Claude Code, Codex and OpenCode. Token usage measured, not estimated. Zero API calls.",
   "type": "module",
   "bin": {

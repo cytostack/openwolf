@@ -20,7 +20,8 @@ import { newStore, importFromMarkdown, saveStore, STORE_FILE, sha256 as storeSha
 import { installSkills } from "../agents/skills.js";
 import { buildHookSettings, HOOK_FILES, HOOK_ENTRY_FILES, HOOK_COUNT, type HookSettings } from "./hook-manifest.js";
 import { emptyLedger, recomputeLifetime, migrateLegacyBlockedCounts, type LedgerData } from "../hooks/ledger.js";
-import { mergeConfigDefaults } from "./config-merge.js";
+import { mergeConfigDefaults, appendExcludePatterns } from "./config-merge.js";
+import { EXCLUDE_PATTERNS_ADDED_2_5_1 } from "../scanner/exclusions.js";
 import { syncCerebrumToClaudeMemory, syncClaudeMemoryIndexToCerebrum } from "./memory-migrate.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -187,6 +188,14 @@ async function updateProject(
     // merged-in default port can still be reassigned.
     if (mergeConfigDefaults(path.join(wolfDir, "config.json"), templatesDir)) {
       console.log(`    ✓ Config defaults merged (new keys added, existing values preserved)`);
+    }
+
+    // 2b1. Exclusion patterns that did not exist as defaults before 2.5.1.
+    // Array values are leaves for the merge above, so without this a project
+    // created earlier keeps indexing .venv, .gradle and .DS_Store (#93).
+    const addedExcludes = appendExcludePatterns(path.join(wolfDir, "config.json"), EXCLUDE_PATTERNS_ADDED_2_5_1);
+    if (addedExcludes.length > 0) {
+      console.log(`    ✓ Anatomy exclusions extended: ${addedExcludes.join(", ")}`);
     }
 
     // 2b2. Committed/machine-local split (2.5).

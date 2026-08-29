@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { getWolfDir, ensureWolfDir, readJSON, writeJSON, countSemanticEntries, readStdin, hookMain, getSessionFilePath } from "./shared.js";
 import { buildSessionEntry, flushSessionToLedger, type SessionData } from "./ledger.js";
 import { verifyHookDelivery } from "./hook-attachments.js";
+import { mutateJSON, HOOK_LOCK_BUDGET_MS } from "./anatomy-lock.js";
 
 async function main(): Promise<void> {
   ensureWolfDir();
@@ -15,7 +16,12 @@ async function main(): Promise<void> {
   } catch {}
   const sessionFile = getSessionFilePath(hookInput);
 
-  const session = readJSON<SessionData>(sessionFile, {
+  // All session mutation happens in ONE serialized transaction, and the ledger
+  // flush below runs on its result AFTER the lock is released: reading a large
+  // transcript with the session lock held would stall every parallel hook.
+  // stop_count, reminders_sent, and pending_reminders are all counters or
+  // append/test-and-set state, so an unlocked read-modify-write loses them (#83).
+  const session = mutateJSON<SessionData>(sessionFile, {
     session_id: "",
     started: "",
     files_read: {},
@@ -26,44 +32,45 @@ async function main(): Promise<void> {
     repeated_reads_warned: 0,
     stop_count: 0,
     reminders_sent: {},
+  }, HOOK_LOCK_BUDGET_MS, (s) => {
+    s.stop_count++;
+
+    // Nothing happened this turn: bump the counter and stop there.
+    if (Object.keys(s.files_read ?? {}).length === 0 && (s.files_written ?? []).length === 0) return;
+
+    // Collect end-of-turn reminders. Each fires at most ONCE per session, and
+    // they are QUEUED rather than emitted: Stop additionalContext forces a full
+    // continuation turn (the model re-sends the whole conversation to respond),
+    // so the UserPromptSubmit hook drains the queue into the next user turn's
+    // context instead — same visibility, zero extra turns.
+    if (!s.reminders_sent) s.reminders_sent = {};
+    const reminderChecks: Array<[string, string | null]> = [
+      ["buglog", checkForMissingBugLogs(wolfDir, s)],
+      ["cerebrum", checkCerebrumFreshness(wolfDir, s)],
+      ["semantic", checkSemanticSummaries(wolfDir, s)],
+    ];
+    const reminders: string[] = [];
+    for (const [key, message] of reminderChecks) {
+      if (message === null) continue;
+      const sent = s.reminders_sent[key] ?? 0;
+      if (sent >= 1) continue;
+      s.reminders_sent[key] = sent + 1;
+      reminders.push(message);
+    }
+    if (reminders.length > 0) {
+      if (!s.pending_reminders) s.pending_reminders = [];
+      s.pending_reminders.push(
+        `OpenWolf end-of-turn reminders:\n${reminders.map((r) => `- ${r}`).join("\n")}`
+      );
+    }
   });
 
-  session.stop_count++;
+  // Lock contention beyond budget: skip this turn's ledger flush. The flush is
+  // idempotent per session id, so the next Stop converges the state.
+  if (session === null) return;
 
-  // Only write to ledger if there's been activity
-  const readCount = Object.keys(session.files_read).length;
-  const writeCount = session.files_written.length;
-
-  if (readCount === 0 && writeCount === 0) {
-    writeJSON(sessionFile, session);
-    return;
-  }
-
-  // Collect end-of-turn reminders. Each fires at most ONCE per session, and
-  // they are QUEUED rather than emitted: Stop additionalContext forces a full
-  // continuation turn (the model re-sends the whole conversation to respond),
-  // so the UserPromptSubmit hook drains the queue into the next user turn's
-  // context instead — same visibility, zero extra turns.
-  if (!session.reminders_sent) session.reminders_sent = {};
-  const reminderChecks: Array<[string, string | null]> = [
-    ["buglog", checkForMissingBugLogs(wolfDir, session)],
-    ["cerebrum", checkCerebrumFreshness(wolfDir, session)],
-    ["semantic", checkSemanticSummaries(wolfDir, session)],
-  ];
-  const reminders: string[] = [];
-  for (const [key, message] of reminderChecks) {
-    if (message === null) continue;
-    const sent = session.reminders_sent[key] ?? 0;
-    if (sent >= 1) continue;
-    session.reminders_sent[key] = sent + 1;
-    reminders.push(message);
-  }
-  if (reminders.length > 0) {
-    if (!session.pending_reminders) session.pending_reminders = [];
-    session.pending_reminders.push(
-      `OpenWolf end-of-turn reminders:\n${reminders.map((r) => `- ${r}`).join("\n")}`
-    );
-  }
+  // Only write to the ledger if there has been activity.
+  if (Object.keys(session.files_read ?? {}).length === 0 && (session.files_written ?? []).length === 0) return;
 
   // Idempotent ledger write: the entry for this session id is REPLACED, not
   // appended — Stop fires every turn, and appending per turn is what used to
@@ -79,8 +86,6 @@ async function main(): Promise<void> {
   }
 
   flushSessionToLedger(wolfDir, entry);
-
-  writeJSON(sessionFile, session);
 }
 
 /**
