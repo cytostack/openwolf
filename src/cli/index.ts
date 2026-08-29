@@ -10,6 +10,7 @@ import { createRecallCommand } from "./recall.js";
 import { reportCommand } from "./report.js";
 import { createClaimCommand } from "./claim.js";
 import { surveyCommand } from "./survey.js";
+import { createSpecCommand } from "./spec-cmd.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -60,6 +61,7 @@ export function createProgram(): Command {
   // --- Recall and current-knowledge commands ---
   program.addCommand(createRecallCommand());
   program.addCommand(createClaimCommand());
+  program.addCommand(createSpecCommand());
 
   program
     .command("survey [paths...]")

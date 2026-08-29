@@ -63,7 +63,8 @@
         { "name": "dashboard", "file": "src/cli/dashboard.ts", "functions": ["dashboardCommand"] },
         { "name": "daemon-cmd", "file": "src/cli/daemon-cmd.ts", "functions": ["daemonStart", "daemonStop", "daemonRestart", "daemonLogs"] },
         { "name": "cron-cmd", "file": "src/cli/cron-cmd.ts", "functions": ["cronList", "cronRun", "cronRetry"] },
-        { "name": "bug-cmd", "file": "src/cli/bug-cmd.ts", "functions": ["bugSearch"] }
+        { "name": "bug-cmd", "file": "src/cli/bug-cmd.ts", "functions": ["bugSearch"] },
+        { "name": "spec-cmd", "file": "src/cli/spec-cmd.ts", "functions": ["createSpecCommand"] }
       ]
     },
     {
@@ -98,6 +99,16 @@
         { "name": "anatomy-scanner", "file": "src/scanner/anatomy-scanner.ts", "functions": ["scanProject", "buildAnatomy", "updateAnatomyEntry"] },
         { "name": "description-extractor", "file": "src/scanner/description-extractor.ts", "functions": ["extractDescription"] },
         { "name": "project-root", "file": "src/scanner/project-root.ts", "functions": ["findProjectRoot"] }
+      ]
+    },
+    {
+      "name": "specs",
+      "modules": [
+        { "name": "types", "file": "src/specs/types.ts", "functions": ["createEmptySpecState", "isSpecPhase", "isSpecStatus"] },
+        { "name": "phase-machine", "file": "src/specs/phase-machine.ts", "functions": ["advancePhase", "setStatus"] },
+        { "name": "tasks-parse", "file": "src/specs/tasks-parse.ts", "functions": ["nextTask", "taskCounts"] },
+        { "name": "inject", "file": "src/specs/inject.ts", "functions": ["buildSpecContext", "buildTddReminder"] },
+        { "name": "spec-store", "file": "src/specs/spec-store.ts", "functions": ["getSpecStatePath", "loadSpecState", "saveSpecState"] }
       ]
     }
   ]

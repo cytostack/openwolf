@@ -6,6 +6,8 @@ import {
 } from "./shared.js";
 import { Hippocampus } from "../hippocampus/index.js";
 import { lookupEntry } from "./anatomy-store.js";
+import { loadSpecState } from "../specs/spec-store.js";
+import { buildSpecContext } from "../specs/inject.js";
 
 interface SessionData {
   session_id: string;
@@ -173,6 +175,15 @@ async function main(): Promise<void> {
     }
   } catch {
     // Fail silently - hippocampus should not break existing functionality
+  }
+
+  // SDD: surface the active spec + current task so the agent follows the spec.
+  try {
+    const specState = loadSpecState(wolfDir);
+    const ctx = buildSpecContext(specState);
+    if (ctx) process.stderr.write(`\n${ctx}`);
+  } catch {
+    // fail open — spec context must never break reads
   }
 
   // Record initial read entry (tokens will be updated in post-read)

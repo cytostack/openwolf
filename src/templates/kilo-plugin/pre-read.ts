@@ -2,6 +2,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { getWolfDir, writeJSON, readJSON, normalizePath, readMarkdown } from "./fs.js"
 import { parseAnatomy } from "./anatomy.js"
+import { formatSpecContext } from "./spec.js"
 import type { PartialSessionState } from "./types.js"
 
 export function handlePreRead(directory: string, sessionId: string, filePath: string): void {
@@ -52,6 +53,15 @@ export function handlePreRead(directory: string, sessionId: string, filePath: st
 
   session.anatomy_hits = (session.anatomy_hits || 0) + (found ? 1 : 0)
   session.anatomy_misses = (session.anatomy_misses || 0) + (found ? 0 : 1)
+
+  // SDD: surface active spec + current task. Format lives in spec.ts
+  // (canonical copy of src/specs/inject.ts buildSpecContext — keep in sync).
+  try {
+    const spec = readJSON<{ activeSpec?: string | null; phase?: string; currentTask?: string | null }>(
+      path.join(wolfDir, "specs-state.json"), { activeSpec: null, phase: "", currentTask: null })
+    const line = formatSpecContext(spec.activeSpec, spec.phase, spec.currentTask)
+    if (line) console.warn(`\n${line}`)
+  } catch {}
 
   session.files_read[normalizedFile] = {
     count: 1,

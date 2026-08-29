@@ -16,6 +16,8 @@ import { ensureDir } from "../utils/paths.js";
 import { resolveAgents, availableAgents } from "../agents/index.js";
 import { newStore, importFromMarkdown, saveStore, STORE_FILE, sha256 as storeSha256 } from "../hooks/anatomy-store.js";
 import { installSkills } from "../agents/skills.js";
+import { seedSpecTemplates } from "./init.js";
+import { createEmptySpecState } from "../specs/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -272,6 +274,15 @@ async function updateProject(
     for (const line of installSkills(root, templatesDir, agentNames)) {
       console.log(`    ✓ ${line}`);
     }
+
+    // 5d2. Seed SDD spec templates + durable spec state (create-if-missing so
+    // an existing project's active spec is never clobbered).
+    seedSpecTemplates(templatesDir, wolfDir);
+    const specsStatePath = path.join(wolfDir, "specs-state.json");
+    if (!fs.existsSync(specsStatePath)) {
+      writeJSON(specsStatePath, createEmptySpecState());
+    }
+    console.log(`    ✓ SDD templates + spec state ready`);
 
     // 6. Update CLAUDE.md snippet if it references OpenWolf
     const claudeMdPath = path.join(root, "CLAUDE.md");

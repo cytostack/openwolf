@@ -223,6 +223,17 @@ describe("installSkills kilo", () => {
     assert.ok(fs.existsSync(path.join(projectRoot, ".kilo", "command", "security-audit.md")));
     assert.ok(!fs.existsSync(path.join(projectRoot, ".opencode", "command")));
   });
+
+  test("writes SDD skills (specify/plan/tasks/implement)", () => {
+    const projectRoot = tmpDir();
+    installSkills(projectRoot, templatesDir, ["kilo"]);
+    for (const s of ["specify", "plan", "tasks", "implement"]) {
+      assert.ok(
+        fs.existsSync(path.join(projectRoot, ".kilo", "command", `${s}.md`)),
+        `missing ${s}`,
+      );
+    }
+  });
 });
 
 describe("kilo registry", () => {

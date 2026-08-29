@@ -10,6 +10,7 @@
 
 > 扫一眼就知道还欠什么、哪会裂。详细版在文末「未决事项」；正文各段落的描述未删。
 
+- **轨迹匹配实现未开始**——设计稿 `docs3/trajectory-matching.md` 已写（§14），`eventSignature` + `buildTrajectoryIndex` + `matchTrajectory` + 接线 post-write 待实现；`turn_in_session` 硬编码 0、`post-write.ts:289` 的 `is_recurring: editCount>=3` 旧启发式疑似漏网待确认。
 - **全量重写 109 个测试（P4）尚未开始**——benchmark harness（P1-P3）已上线：覆盖 51/186（27.4%）、135 缺口；但「按 TDD 质量标准重写全部测试 + 覆盖映射闸门」是大头，还没动（§13）。
 - **覆盖数 27.4% 是下界**——按函数名 grep 测试源码，低估「经 `Hippocampus` 类间接覆盖」的函数，只当趋势基线用（§13）。
 - **dashboard 函数级 UI 覆盖延后**——`node --test` 跑不了 React，需 vitest+jsdom；v1 只做 build 通过 + 文件存在性（§13）。
@@ -24,6 +25,9 @@
 - **第三阶段延后**——`src/runtime/` 共享运行时抽取。
 - **`cli/index.ts` survey 与 kilo 帮助混改**——评审记为卫生问题，未拆分提交。
 - **session.created 兜底 + kilocode 安装产物未入库**——模板修复在 `src/templates/kilo-plugin/index.ts` 未提交；kilocode 仓库的 `.wolf/`、`.kilo/plugin/`、`.claude/`、`CLAUDE.md` 未入库，是否入库由 kilocode 仓库决定。
+- **SDD 第一片未提交、未真实 dogfood**——`src/specs/` + 4 技能 + 3 模板 + `openwolf spec` CLI + 钩子注入已 TDD 全绿（149/149），但「让 agent 跟着 spec 走」依赖 agent 读 stderr 注入那行（与 token 节省同源：听不听看 agent），尚未在真实 spec 上跑通 `/specify→/plan→/tasks→/implement` 全链。
+- **spec 注入串格式有两处拷贝**——已抽成 `kilo-plugin/spec.ts` 纯函数并加 `tests/specs.test.ts` 奇偶校验（断言 `buildSpecContext` 与 `formatSpecContext` 输出一致），改格式会红；底层仍是两处维护（插件自包含、不能 import src/specs）。
+- **`openwolf spec next` 全勾选不自动 complete**——读 tasks.md 后若无未勾选任务只提示「run spec complete」，需人工收尾；`spec phase`/`status` 的非法转移抛错由 CLI 转成 exit 1，语义正确但 CLI 动作本身未单测（靠 spawnSync 冒烟覆盖）。评审整改已修 `set` 幂等（重复 set 同一 spec 保持 phase/currentTask）+ id slug 校验（拒 `../`/路径分隔符）。
 
 ---
 
@@ -154,6 +158,29 @@
 
 **教训**：① 估算 ≠ 实测，报数前追到代码看数字从哪来——这次「真实读数」是错的，被一句追问揪出；② grill 先钉死「benchmark 测什么」再动手，避开「大而空的活」；③ 时间依赖测试的根治是注入时钟，不是把测试改成碰运气。
 
+## 第 14 节 · 海马体从「创伤记忆」转向「轨迹匹配」（2026-08-29）
+
+| 我 | 你 |
+|----|-----|
+| 「our current hippo is more like a long term trauma memory, but real hippo actually indexing long term memory by trajectory matching」 | 追代码坐实观察：recall 是单事件 cue 匹配（location/question/state）+ 按位置翻旧创伤；`turn_in_session` 在 `post-write.ts:275`/`user-prompt.ts:55`/`post-test.ts:79` 硬编码 0，事件没有真实「第几步」，轨迹原料是死字段。列 3 选项：1 只改说法 / 3 先写设计稿 / 2 真实现 |
+| 「1 3 2」 | 依次做：① cerebrum Decision Log 记死「当前=单事件 cue + 位置显著性，目标=轨迹匹配」+ README 删掉已退役的「3+编辑=trauma」；② 写 `docs3/trajectory-matching.md`（签名=action.type:valence、轨迹=session 内有序签名串、匹配=当前后缀查历史序列预测下一步、v1 只做 4 纯函数+接线 post-write、k=2~3 小后缀）；③ 实现待开工 |
+
+**教训**：① 一句概念纠正能暴露整条 recall 模型的缺口——「trauma memory vs trajectory indexing」比十张架构图更准；② 死字段是需求的化石——`turn_in_session` 硬编码 0 说明「序列」这个维度早就在计划里（Phase 2.4 deferred）却从没真正实现。
+
+## 第 15 节 · spec-kit 迁移到 openwolf（SDD 第一片，2026-08-29）
+
+| 我 | 你 |
+|----|-----|
+| `/tdd` + 「spec-kit-for-kilocode migrate its idea into openwolf, to allow openwolf with spec driven design to some degree (set spec, make agents follow spec, memory specs, set long term tasks?, etc); openwolf help tdd too」 | 读两个仓库后定位：spec-kit 是「文档约定 + 斜杠命令」，不是代码库，要迁的是「spec→plan→tasks→implement + TDD 门禁 + 记忆当前 spec」思想；OpenWolf 已有完全对口的接缝（`skills.ts:13` 装技能、`init.ts` 播模板、`pre-read.ts` 注入上下文、STATUS.md 单一事实源），列出映射表 |
+| 问「第一阶段做多大」+「长期任务是否并入 goal 状态机」 | 用 question 工具给三选一 + 二选一；用户选「状态化完整骨架（推荐）」+「复用 STATUS.md 即可（不引入独立 goal 行）」 |
+| （拍板范围后） | 写 `docs4/sdd-migration/PLAN.md`，自批出 6 处修订（`complete` 只放 status 不放 phase、模板落点 `.wolf/spec-templates/` 不撞顶层 `specs/`、`set` 校验 spec 存在、读/写注入拆两个纯函数、CLI 是 state 唯一写者、`nextTask` 全勾选返回 null）→ `CRITIC.md` |
+| （TDD） | 先写 `tests/specs.test.ts`（30 条，手工期望值，不复用实现算法重算），再实现 `src/specs/`（types / phase-machine / tasks-parse / inject / spec-store）；一次跑通 30/30 |
+| （接线） | `installSkills` 加 4 技能 + `init.ts` 播 3 模板 + `tsconfig.hooks.json` 加 `src/specs/**` + pre-read/pre-write 注入 spec/TDD + kilo-plugin pre-read 一句话 + `openwolf spec` CLI（set/status/next/phase/pause/resume/block/complete） |
+| （自测） | `pnpm build` 全绿、`pnpm test` 149/149、dogfood 冒烟 `init --agent kilo` 在干净临时项目落盘 `.wolf/spec-templates/` 3 文件 + `.wolf/specs-state.json` + `.kilo/command/` 6 技能 |
+| （benchmark） | `benchmarks/seams.json` 加 specs 域 + `performance.ts` 加 3 采样：`spec.advancePhase` 61 万 ops/s（0.002ms）、`spec.nextTask` 16 万 ops/s（0.008ms）、`spec.buildSpecContext` 1728 万 ops/s（≈0ms）——注入开销可忽略；覆盖 27.4%→30.7% |
+
+**教训**：① `src/specs` 必须只用 node 内建（不 import `src/utils`），因为 `tsconfig.hooks.json` 独立编译时只含 `src/hooks`+`src/hippocampus`+`src/specs`，跨域 import 会炸钩子构建——这是接缝约束，不是洁癖；② 冒烟测试没切 workdir，`init` 从 `process.cwd()` 探项目根，结果作用到了 openwolf 仓库本体而非临时目录（好在 `.wolf` 不入库、产物正确，反而先证明了播种逻辑对）；③ 状态机两个轴（phase 前进序 + status 终态机）里 `complete` 只留一处，避免 agent 写错。
+
 ## 这个项目如何教 vibe coding with AI
 
 ### 人的工作（决定 / 纠正 / 叫停）
@@ -200,3 +227,8 @@
 - **覆盖数 27.4% 是函数名 grep 下界**（低估间接覆盖）；精确行覆盖需 `pnpm benchmark --coverage`（默认关，避免二次跑全量测试）。
 - **dashboard 函数级 UI 覆盖延后**（需 vitest+jsdom，v1 只做 build 通过 + 文件存在性）。
 - **import 归一化延后**（src/dist 混导入使自动覆盖率失真，统一到 src 是侵入性改动）。
+- **轨迹匹配实现未开始**（`docs3/trajectory-matching.md`）：4 个纯函数 + 接线 post-write，TDD 走；v1 用 k=2~3 小后缀 + timestamp 排序，不修 `turn_in_session`、不做跨 session、不做位置联合签名。
+- **`turn_in_session` 硬编码 0**：事件没有真实「第几步」，轨迹排序暂靠 timestamp；真 turn 号是独立待办。
+- **`post-write.ts:289` `is_recurring: editCount>=3` 疑似漏网旧启发式**：实现轨迹匹配前核对该不该一并退役。
+- **SDD 第一片（2026-08-29，未提交）**：`src/specs/` 状态机（phase: specify→plan→tasks→implement + status: active/paused/blocked/complete，`complete` 只在 status 终态）、`tests/specs.test.ts` 35 条、4 技能（`src/templates/skills/{specify,plan,tasks,implement}.md`）、3 模板（`src/templates/specs/` → `.wolf/spec-templates/`）、`openwolf spec` CLI、pre-read/pre-write/kilo-plugin 注入、`benchmarks/seams.json` specs 域 + 3 性能采样。评审整改已落地：`set` 幂等（重复 set 同一 spec 保持 phase）、id slug 校验、注入串抽 `kilo-plugin/spec.ts` + 奇偶校验测试。
+- **SDD 全链 dogfood 已完成（2026-08-29）**：拿 `specs/001-spec-cli`（`spec list` + `next` 自动 complete）在本仓库走完 `/specify→/plan→/tasks→/implement`，TDD 红（41/45）→绿（160/160），`.wolf/specs-state.json` 走到 complete，pre-read 钩子实测打出 `📋 OpenWolf spec: 001-spec-cli · phase implement`。更新路径也已接通：`update.ts` 复用 `seedSpecTemplates` + 播种 `specs-state.json`，`openwolf update` 已把 SDD 技能/模板/状态传播到全部 10 个注册项目。剩余：CLI 动作直接单测（现靠 spawnSync 冒烟）。

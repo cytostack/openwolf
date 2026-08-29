@@ -18,6 +18,7 @@ export interface PerformanceResult {
 }
 
 const DIST = path.join(import.meta.dirname, "..", "dist", "hooks", "hippocampus");
+const SPEC_DIST = path.join(import.meta.dirname, "..", "dist", "hooks", "specs");
 
 function round3(n: number): number {
   return Math.round(n * 1000) / 1000;
@@ -158,6 +159,43 @@ export async function collectPerformance(options?: {
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+
+  // SDD spec layer (src/specs): state machine, task parsing, context injection.
+  let specMods: Record<string, any>;
+  try {
+    specMods = {
+      types: await import(pathToFileURL(path.join(SPEC_DIST, "types.js")).href),
+      phaseMachine: await import(pathToFileURL(path.join(SPEC_DIST, "phase-machine.js")).href),
+      tasksParse: await import(pathToFileURL(path.join(SPEC_DIST, "tasks-parse.js")).href),
+      inject: await import(pathToFileURL(path.join(SPEC_DIST, "inject.js")).href),
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { error: `spec dist not built (${msg}); run pnpm build`, ops };
+  }
+
+  const specState = {
+    ...specMods.types.createEmptySpecState("2026-01-01T00:00:00.000Z"),
+    activeSpec: "001-user-auth",
+    currentTask: "T042",
+  };
+  const tasksMd = "- [x] T001 - done\n- [ ] T002 - next\n".repeat(50);
+
+  ops.push(
+    measure("spec.advancePhase", "pure", micro, () => {
+      specMods.phaseMachine.advancePhase(specState, "plan");
+    })
+  );
+  ops.push(
+    measure("spec.nextTask", "pure", micro, () => {
+      specMods.tasksParse.nextTask(tasksMd);
+    })
+  );
+  ops.push(
+    measure("spec.buildSpecContext", "pure", micro, () => {
+      specMods.inject.buildSpecContext(specState);
+    })
+  );
 
   return { ops };
 }

@@ -11,5 +11,5 @@
     "resolveJsonModule": true,
     "sourceMap": false
   },
-  "include": ["src/hooks/**/*.ts", "src/hippocampus/**/*.ts"]
+  "include": ["src/hooks/**/*.ts", "src/hippocampus/**/*.ts", "src/specs/**/*.ts"]
 }

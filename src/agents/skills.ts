@@ -10,7 +10,7 @@ import { safeCopyFile } from "../utils/fs-safe.js";
 //   Codex       → .codex/prompts/<name>.md     (custom prompt)
 // Gemini CLI and Cursor have no project-level command surface we target yet.
 
-const SKILLS = ["security-audit", "reframe"];
+const SKILLS = ["security-audit", "reframe", "specify", "plan", "tasks", "implement"];
 
 export function installSkills(projectRoot: string, templatesDir: string, agents: string[]): string[] {
   const skillsDir = path.join(templatesDir, "skills");

@@ -214,6 +214,20 @@ export async function initCommand(options?: { agent?: string[] }): Promise<void>
     }
   }
 
+  // --- SDD spec templates + durable spec state ---
+  seedSpecTemplates(actualTemplatesDir, wolfDir);
+  const specsStatePath = path.join(wolfDir, "specs-state.json");
+  if (!fs.existsSync(specsStatePath)) {
+    writeJSON(specsStatePath, {
+      version: 1,
+      activeSpec: null,
+      phase: "specify",
+      currentTask: null,
+      status: "active",
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
   // config.json: create-if-missing, and on a fresh create allocate a port
   // pair that no other registered project is using. Existing configs keep
   // their ports untouched so a re-init never resets them.
@@ -466,6 +480,19 @@ function writeTemplateFile(templatesDir: string, wolfDir: string, file: string):
     safeCopyFile(srcPath, destPath);
   } else {
     generateTemplate(destPath, file);
+  }
+}
+
+// Copy SDD spec/plan/tasks templates from src/templates/specs/ into
+// .wolf/spec-templates/ so the /specify, /plan, /tasks skills can read them.
+// Shared with cli/update.ts (exported) so `openwolf update` propagates them too.
+export function seedSpecTemplates(templatesDir: string, wolfDir: string): void {
+  const src = path.join(templatesDir, "specs");
+  if (!fs.existsSync(src)) return;
+  const dest = path.join(wolfDir, "spec-templates");
+  ensureDir(dest);
+  for (const f of fs.readdirSync(src)) {
+    if (f.endsWith(".md")) safeCopyFile(path.join(src, f), path.join(dest, f));
   }
 }
 
