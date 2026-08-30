@@ -655,7 +655,7 @@ function seedIdentity(wolfDir: string, projectRoot: string): void {
   writeText(identityPath, content);
 }
 
-function copyHookScripts(wolfDir: string): void {
+export function copyHookScripts(wolfDir: string): void {
   const hooksDir = path.join(wolfDir, "hooks");
   ensureDir(hooksDir);
 
@@ -730,6 +730,21 @@ function copyHookScripts(wolfDir: string): void {
       }
     }
     console.log("  ✓ Hippocampus episodic memory module installed");
+  }
+
+  // Copy SDD spec runtime to .wolf/specs/ (pre-read/pre-write import it as ../specs/…).
+  // Self-contained (only node:* + ./types.js); without it a fresh init's hooks
+  // throw MODULE_NOT_FOUND (caught → fail open, SDD injection silently dead).
+  const specsSrc = path.resolve(__dirname, "..", "specs");
+  const specsDest = path.join(wolfDir, "specs");
+  if (fs.existsSync(specsSrc) && fs.existsSync(path.join(specsSrc, "spec-store.js"))) {
+    ensureDir(specsDest);
+    for (const file of fs.readdirSync(specsSrc)) {
+      if (file.endsWith(".js") && !file.endsWith(".js.map")) {
+        fs.copyFileSync(path.join(specsSrc, file), path.join(specsDest, file));
+      }
+    }
+    console.log("  ✓ SDD spec runtime installed");
   }
 
   // Always write a package.json with type:module so ESM hooks work in any project

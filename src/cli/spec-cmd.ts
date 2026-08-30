@@ -30,9 +30,23 @@ export function createSpecCommand(): Command {
   spec
     .command("status")
     .description("Show the active spec, phase, and current task")
-    .action(() => {
+    .option("--json", "Emit a single JSON object")
+    .action((opts: { json?: boolean }) => {
       const { wolfDir } = resolveWolf();
       const state = loadSpecState(wolfDir);
+
+      if (opts.json) {
+        console.log(
+          JSON.stringify({
+            activeSpec: state.activeSpec,
+            phase: state.phase,
+            currentTask: state.currentTask,
+            status: state.status,
+          }),
+        );
+        return;
+      }
+
       if (!state.activeSpec) {
         console.log("No active spec. Run: openwolf spec set <id>");
         return;

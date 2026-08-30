@@ -490,6 +490,18 @@ function copyHookScripts(wolfDir: string): void {
     }
   }
 
+  // Hooks import the SDD spec runtime from ../specs/*.js (pre-read/pre-write).
+  const specsSrc = path.resolve(__dirname, "..", "specs");
+  const specsDest = path.join(wolfDir, "specs");
+  if (fs.existsSync(specsSrc) && fs.existsSync(path.join(specsSrc, "spec-store.js"))) {
+    ensureDir(specsDest);
+    for (const file of fs.readdirSync(specsSrc)) {
+      if (file.endsWith(".js") && !file.endsWith(".js.map")) {
+        safeCopyFile(path.join(specsSrc, file), path.join(specsDest, file));
+      }
+    }
+  }
+
   // Always ensure package.json with type:module
   const hooksPkgPath = path.join(hooksDir, "package.json");
   fs.writeFileSync(hooksPkgPath, JSON.stringify({ type: "module" }, null, 2) + "\n", "utf-8");

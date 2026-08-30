@@ -20,6 +20,7 @@ import {
 } from "../dist/src/specs/index.js";
 import type { SpecState } from "../dist/src/specs/index.js";
 import { formatSpecContext } from "../src/templates/kilo-plugin/spec.ts";
+import { copyHookScripts } from "../dist/src/cli/init.js";
 
 const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "wolf-specs-"));
 
@@ -196,6 +197,23 @@ describe("spec injection format parity (kilo-plugin vs src/specs)", () => {
   test("both return empty when no active spec", () => {
     assert.strictEqual(buildSpecContext(createEmptySpecState()), "");
     assert.strictEqual(formatSpecContext(null, "specify", null), "");
+  });
+});
+
+describe("copyHookScripts ships the SDD spec runtime", () => {
+  test("copies .wolf/specs/*.js so pre-read/pre-write can import ../specs", () => {
+    const wolfDir = path.join(tmpDir(), ".wolf");
+    copyHookScripts(wolfDir);
+    for (const f of [
+      "spec-store.js",
+      "inject.js",
+      "types.js",
+      "phase-machine.js",
+      "tasks-parse.js",
+      "status-check.js",
+    ]) {
+      assert.ok(fs.existsSync(path.join(wolfDir, "specs", f)), `missing .wolf/specs/${f}`);
+    }
   });
 });
 
@@ -421,5 +439,25 @@ describe("openwolf spec CLI", () => {
     fs.writeFileSync(path.join(root, ".wolf", "STATUS.md"), "Active: 001-user-auth\n", "utf-8");
     const status = run(root, ["spec", "status"]);
     assert.doesNotMatch(status.stderr, /STATUS.md does not mention/);
+  });
+
+  test("status --json emits valid JSON with the state fields", () => {
+    const root = specProject();
+    assert.strictEqual(run(root, ["spec", "set", "001-user-auth"]).status, 0);
+    const r = run(root, ["spec", "status", "--json"]);
+    assert.strictEqual(r.status, 0);
+    const parsed = JSON.parse(r.stdout);
+    assert.strictEqual(parsed.activeSpec, "001-user-auth");
+    assert.strictEqual(parsed.phase, "specify");
+    assert.strictEqual(parsed.currentTask, null);
+    assert.strictEqual(parsed.status, "active");
+  });
+
+  test("status --json with no active spec emits activeSpec null and exits 0", () => {
+    const root = specProject();
+    const r = run(root, ["spec", "status", "--json"]);
+    assert.strictEqual(r.status, 0);
+    const parsed = JSON.parse(r.stdout);
+    assert.strictEqual(parsed.activeSpec, null);
   });
 });
