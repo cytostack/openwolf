@@ -7,6 +7,7 @@ import {
   isSensitiveFile, getProjectDir, resolveProjectPath
 } from "./shared.js";
 import { Hippocampus } from "../hippocampus/index.js";
+import { buildTrajectoryIndex, matchTrajectory, eventSignature } from "../hippocampus/trajectory.js";
 import { loadStoreReconciled, saveStore, renderToFile, sha256 } from "./anatomy-store.js";
 import { withAnatomyLock, HOOK_LOCK_BUDGET_MS } from "./anatomy-lock.js";
 import { extractSymbols, symbolsSupported, SYMBOL_MIN_TOKENS } from "./symbol-extractor.js";
@@ -291,6 +292,24 @@ async function main(): Promise<void> {
       source: "hook",
       tags: ["file-write", action, path.extname(absolutePath).slice(1) || "unknown"],
     });
+
+    // Trajectory prediction: warn when the current action sequence matches a
+    // historical sequence that led to a bad outcome (penalty/trauma).
+    try {
+      const sessionId = process.env.CLAUDE_SESSION_ID || "unknown";
+      const allEvents = hippocampus.getEvents();
+      const index = buildTrajectoryIndex(allEvents);
+      const sessionSignatures = allEvents
+        .filter((e) => e.session_id === sessionId)
+        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+        .map(eventSignature);
+      const prediction = matchTrajectory(sessionSignatures, index, 3);
+      if (prediction.matched && prediction.samples >= 3 && prediction.bad_ratio >= 0.5) {
+        process.stderr.write(
+          `🧠 OpenWolf trajectory: 当前动作序列历史上 ${prediction.samples} 次中 ${Math.round(prediction.bad_ratio * 100)}% 下一步通向坏结果（${prediction.next_signature}）。\n`
+        );
+      }
+    } catch {}
   } catch (e) {
     // Fail silently - hippocampus should not break existing functionality
   }
