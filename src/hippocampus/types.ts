@@ -44,7 +44,6 @@ export interface EventOutcome {
   valence: Valence;
   intensity: number;
   reflection: string;
-  first_event_id?: string;
   user_correction?: string;
 }
 
