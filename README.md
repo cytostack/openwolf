@@ -179,9 +179,15 @@ Events are stored in `hippocampus.json` and indexed in `cue-index.json` for fast
 
 ### Valence Detection
 
-- **Trauma** (3+ edits to same file): Flagged as high-intensity — something needed fixing
-- **Neutral** (new file or 1-2 edits): Normal work activity
-- **Reward/Penalty**: Future hooks will track successful vs failed actions
+- **Penalty**: a deterministic detector flags an explicit user correction or a
+  failing test run (`user-prompt` / `post-test` hooks)
+- **Trauma**: a high-intensity negative event, surfaced again on read and never
+  decayed
+- **Neutral**: ordinary file operations
+
+The old "3+ edits = trauma" heuristic was retired — it produced only false
+positives (51 in one dogfood period), so valence now comes from explicit
+signals, not edit counts.
 
 ### Recall
 

@@ -181,6 +181,15 @@
 
 **教训**：① `src/specs` 必须只用 node 内建（不 import `src/utils`），因为 `tsconfig.hooks.json` 独立编译时只含 `src/hooks`+`src/hippocampus`+`src/specs`，跨域 import 会炸钩子构建——这是接缝约束，不是洁癖；② 冒烟测试没切 workdir，`init` 从 `process.cwd()` 探项目根，结果作用到了 openwolf 仓库本体而非临时目录（好在 `.wolf` 不入库、产物正确，反而先证明了播种逻辑对）；③ 状态机两个轴（phase 前进序 + status 终态机）里 `complete` 只留一处，避免 agent 写错。
 
+## 第 16 节 · bugfix copyHookScripts + 002 收尾（2026-08-30）
+
+| 我 | 你 |
+|----|-----|
+| 「learn from D:\GitRepo-My\godot\.wolf\cerebrum.md seems we have bug need fix first」+「continue original next phase」 | 读 godot cerebrum 定位 bug：`copyHookScripts`（init.ts + update.ts 各一份）拷 hippocampus 但不拷 `src/specs` 运行时，导致新项目 `pre-read.js`/`pre-write.js` 引 `../specs/spec-store.js` 时 MODULE_NOT_FOUND（fail-open 静默吞掉，SDD 注入死）。TDD 修复：先写复现测试（红）→ 两处 copyHookScripts 加 specs 拷贝 + 导出 + e2e fresh-init 验证 exit 0 无 MODULE_NOT_FOUND |
+| （续 002） | 实现 `spec status --json`（T101/T102 测试红 51/53 → 绿 53/53 → 全量 168/168），`spec next` 自动 complete，`--json` 输出 `{"activeSpec":...,"phase":...,"currentTask":...,"status":...}` |
+
+**教训**：① godot 仓库是「已注册项目」，它的 cerebrum 记了一个 openwolf 源头的 bug——**狗粮项目的记忆会反向暴露源仓库的缺陷**，这正是「把 openwolf 装到别处吃狗粮」的价值；② `copyHookScripts` 两份拷贝已经在漂移（update.ts 的 hook 列表缺 `user-prompt.js`/`post-test.js`），本次只修了 specs 这个点，去重待办。
+
 ## 这个项目如何教 vibe coding with AI
 
 ### 人的工作（决定 / 纠正 / 叫停）

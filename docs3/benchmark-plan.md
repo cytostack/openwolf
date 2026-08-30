@@ -84,6 +84,8 @@
 - 断言期望值来自独立来源（字面量、手算样例、规范），**不**用与实现相同的算法重算。
 - 测试名读起来像规格说明（"recall repairs a stale persisted index"，而非"testRecallFunction"）。
 - 零时间依赖：不读墙钟的测试数据，或把 `now` 注入。
+- 不弱化断言：不用 `toBeDefined`/`toBeTruthy` 代替真值；不 mock 掉被测逻辑本身。
+- 红检：green 之后故意改坏行为（改个运算符、反转条件），测试必须变红；不红 = 没在测，重写。
 
 ### 4.2 覆盖映射闸门（防丢回归）
 

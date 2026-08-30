@@ -1,13 +1,13 @@
 # OpenWolf Benchmark
 
-> Generated 2026-08-29T04:14:05.924Z · Node v22.23.2
+> Generated 2026-08-29T14:08:27.179Z · Node v22.23.2
 
 ## Coverage
 
-- Seams: **51/186** tested (27.4%)
+- Seams: **61/199** tested (30.7%)
 - Automated line coverage: not run (pass --coverage)
 
-### Gaps (135 untested seams)
+### Gaps (138 untested seams)
 
 - `hippocampus.event-store.createEmptyStore`
 - `hippocampus.event-store.addEventToStore`
@@ -120,6 +120,7 @@
 - `cli.cron-cmd.cronRun`
 - `cli.cron-cmd.cronRetry`
 - `cli.bug-cmd.bugSearch`
+- `cli.spec-cmd.createSpecCommand`
 - `daemon.cron-engine.CronEngine`
 - `daemon.file-watcher.startFileWatcher`
 - `daemon.wolf-daemon.detectProjectMeta`
@@ -144,16 +145,21 @@
 - `scanner.anatomy-scanner.updateAnatomyEntry`
 - `scanner.description-extractor.extractDescription`
 - `scanner.project-root.findProjectRoot`
+- `specs.types.isSpecPhase`
+- `specs.types.isSpecStatus`
 
 ## Performance
 
 | Op | Kind | Iterations | ops/sec | median (ms) | p95 (ms) |
 |---|---|---:|---:|---:|---:|
-| calculateDecay | pure | 100000 | 1577795 | 0.001 | 0.001 |
-| calculateConsolidationScore | pure | 100000 | 1618796 | 0.001 | 0.001 |
-| buildIndex | pure | 5000 | 4839 | 0.194 | 0.295 |
-| addEventToStore | pure | 10000 | 2841313 | 0 | 0 |
-| Hippocampus.addMany | io | 20 | 47 | 22.344 | 32.532 |
+| calculateDecay | pure | 100000 | 1287906 | 0.002 | 0.002 |
+| calculateConsolidationScore | pure | 100000 | 1214376 | 0.001 | 0.001 |
+| buildIndex | pure | 5000 | 2925 | 0.332 | 0.752 |
+| addEventToStore | pure | 10000 | 1581553 | 0 | 0 |
+| Hippocampus.addMany | io | 20 | 39 | 26.102 | 31.262 |
+| spec.advancePhase | pure | 100000 | 611682 | 0.002 | 0.002 |
+| spec.nextTask | pure | 100000 | 164147 | 0.008 | 0.01 |
+| spec.buildSpecContext | pure | 100000 | 17284292 | 0 | 0 |
 
 ## Outcome
 
