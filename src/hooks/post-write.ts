@@ -287,7 +287,6 @@ async function main(): Promise<void> {
         valence,
         intensity,
         reflection,
-        is_recurring: editCount >= 3,
       },
       source: "hook",
       tags: ["file-write", action, path.extname(absolutePath).slice(1) || "unknown"],

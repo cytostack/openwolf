@@ -68,7 +68,6 @@ async function main(): Promise<void> {
         valence: "penalty",
         intensity: 0.7,
         reflection: `User correction${signal.path ? ` in ${signal.path}` : ""}: ${signal.message.slice(0, 160)}`,
-        is_recurring: false,
       },
       source: "hook",
       tags: ["user-correction", "penalty"],

@@ -186,7 +186,6 @@ function isWolfEvent(value: unknown): value is WolfEvent {
     typeof outcome.intensity === "number" && Number.isFinite(outcome.intensity) &&
     outcome.intensity >= 0 && outcome.intensity <= 1 &&
     isString(outcome.reflection) &&
-    isOptionalBoolean(outcome.is_recurring) &&
     isOptionalString(outcome.first_event_id) &&
     isOptionalString(outcome.user_correction) &&
     typeof consolidation.stage === "string" && CONSOLIDATION_STAGES.has(consolidation.stage) &&

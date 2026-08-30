@@ -92,7 +92,6 @@ async function main(): Promise<void> {
         valence: "penalty",
         intensity: 0.8,
         reflection: `Test failure: ${signature}`,
-        is_recurring: false,
       },
       source: "hook",
       tags: ["test-failure", "penalty", "verify"],

@@ -192,6 +192,5 @@ describe("post-write no longer fabricates trauma from edit counts", () => {
     assert.strictEqual(store.stats.neutral_count, 1);
     const evt = store.buffer[store.buffer.length - 1];
     assert.strictEqual(evt.outcome.valence, "neutral");
-    assert.strictEqual(evt.outcome.is_recurring, true);
   });
 });
