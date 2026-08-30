@@ -1,10 +1,10 @@
 # OpenWolf Benchmark
 
-> Generated 2026-08-29T14:08:27.179Z · Node v22.23.2
+> Generated 2026-08-30T14:54:58.771Z · Node v22.23.2
 
 ## Coverage
 
-- Seams: **61/199** tested (30.7%)
+- Seams: **64/202** tested (31.7%)
 - Automated line coverage: not run (pass --coverage)
 
 ### Gaps (138 untested seams)
@@ -152,19 +152,22 @@
 
 | Op | Kind | Iterations | ops/sec | median (ms) | p95 (ms) |
 |---|---|---:|---:|---:|---:|
-| calculateDecay | pure | 100000 | 1287906 | 0.002 | 0.002 |
-| calculateConsolidationScore | pure | 100000 | 1214376 | 0.001 | 0.001 |
-| buildIndex | pure | 5000 | 2925 | 0.332 | 0.752 |
-| addEventToStore | pure | 10000 | 1581553 | 0 | 0 |
-| Hippocampus.addMany | io | 20 | 39 | 26.102 | 31.262 |
-| spec.advancePhase | pure | 100000 | 611682 | 0.002 | 0.002 |
-| spec.nextTask | pure | 100000 | 164147 | 0.008 | 0.01 |
-| spec.buildSpecContext | pure | 100000 | 17284292 | 0 | 0 |
+| calculateDecay | pure | 100000 | 1505410 | 0.001 | 0.001 |
+| calculateConsolidationScore | pure | 100000 | 1584711 | 0.001 | 0.001 |
+| buildIndex | pure | 5000 | 4771 | 0.193 | 0.228 |
+| trajectory.eventSignature | pure | 100000 | 90277151 | 0 | 0 |
+| trajectory.buildTrajectoryIndex | pure | 5000 | 11305 | 0.086 | 0.091 |
+| trajectory.matchTrajectory | pure | 100000 | 254612 | 0.004 | 0.004 |
+| addEventToStore | pure | 10000 | 2785515 | 0 | 0 |
+| Hippocampus.addMany | io | 20 | 52 | 18.938 | 23.468 |
+| spec.advancePhase | pure | 100000 | 810250 | 0.001 | 0.001 |
+| spec.nextTask | pure | 100000 | 285981 | 0.003 | 0.006 |
+| spec.buildSpecContext | pure | 100000 | 19079236 | 0 | 0 |
 
 ## Outcome
 
 ⚠️ **Insufficient data**: no negative writes recorded yet (dogfood dormant), so recurrence_rate is undefined.
-- token savings vs bare CLI: 1151042
-- repeated reads blocked: 468
+- token savings vs bare CLI: 1151783
+- repeated reads blocked: 471
 - anatomy hits: 471
 - recurrences / negative writes: 0 / 0

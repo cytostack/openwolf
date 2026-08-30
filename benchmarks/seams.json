@@ -13,7 +13,8 @@
         { "name": "claims", "file": "src/hippocampus/claims.ts", "functions": ["validateClaimObservation", "normalizeClaimStatement", "normalizeClaimScope", "buildClaimIdentityKey", "tokenizeClaim", "evidenceStrength", "calculateClaimConfidence", "determineClaimStatus", "applyClaimObservation", "recallClaims"] },
         { "name": "claim-store", "file": "src/hippocampus/claim-store.ts", "functions": ["isClaimStore", "createEmptyClaimStore", "loadClaimStore", "refreshClaimStoreStats", "saveClaimStore"] },
         { "name": "claim-index", "file": "src/hippocampus/claim-index.ts", "functions": ["buildClaimIndex", "isClaimIndex", "loadClaimIndex", "saveClaimIndex", "claimIndexNeedsRebuild"] },
-        { "name": "claim-candidate-store", "file": "src/hippocampus/claim-candidate-store.ts", "functions": ["isClaimCandidateStore", "createEmptyClaimCandidateStore", "loadClaimCandidateStore", "refreshClaimCandidateStoreStats", "saveClaimCandidateStore", "createClaimCandidate"] }
+        { "name": "claim-candidate-store", "file": "src/hippocampus/claim-candidate-store.ts", "functions": ["isClaimCandidateStore", "createEmptyClaimCandidateStore", "loadClaimCandidateStore", "refreshClaimCandidateStoreStats", "saveClaimCandidateStore", "createClaimCandidate"] },
+        { "name": "trajectory", "file": "src/hippocampus/trajectory.ts", "functions": ["eventSignature", "buildTrajectoryIndex", "matchTrajectory"] }
       ]
     },
     {

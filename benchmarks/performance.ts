@@ -108,13 +108,14 @@ export async function collectPerformance(options?: {
       cueIndex: await import(pathToFileURL(path.join(DIST, "cue-index.js")).href),
       consolidation: await import(pathToFileURL(path.join(DIST, "consolidation.js")).href),
       hippocampus: await import(pathToFileURL(path.join(DIST, "index.js")).href),
+      trajectory: await import(pathToFileURL(path.join(DIST, "trajectory.js")).href),
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { error: `dist not built (${msg}); run pnpm build`, ops: [] };
   }
 
-  const { eventStore, cueIndex, consolidation, hippocampus } = mods;
+  const { eventStore, cueIndex, consolidation, hippocampus, trajectory } = mods;
   const events = Array.from({ length: 100 }, (_, i) => makeEvent(i));
   const ev = makeEvent(0);
 
@@ -136,6 +137,25 @@ export async function collectPerformance(options?: {
   ops.push(
     measure("buildIndex", "pure", buildN, () => {
       cueIndex.buildIndex(events);
+    })
+  );
+
+  // Trajectory matching (src/hippocampus/trajectory.ts): sequence prediction.
+  const trajIndex = trajectory.buildTrajectoryIndex(events);
+  const trajSigs = events.map((e) => trajectory.eventSignature(e));
+  ops.push(
+    measure("trajectory.eventSignature", "pure", micro, () => {
+      trajectory.eventSignature(ev);
+    })
+  );
+  ops.push(
+    measure("trajectory.buildTrajectoryIndex", "pure", buildN, () => {
+      trajectory.buildTrajectoryIndex(events);
+    })
+  );
+  ops.push(
+    measure("trajectory.matchTrajectory", "pure", micro, () => {
+      trajectory.matchTrajectory(trajSigs, trajIndex, 3);
     })
   );
 
