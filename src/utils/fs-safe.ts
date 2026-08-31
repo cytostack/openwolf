@@ -56,13 +56,22 @@ export function writeJSON(filePath: string, data: unknown): void {
     fs.mkdirSync(dir, { recursive: true });
   }
   const tmp = filePath + "." + crypto.randomBytes(4).toString("hex") + ".tmp";
+  const payload = JSON.stringify(data, null, 2);
   try {
-    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf-8");
+    // fsync before rename so a crash never leaves a torn write as the
+    // canonical file — same crash-consistency guarantee as writeJsonAtomic.
+    const fd = fs.openSync(tmp, "wx");
+    try {
+      fs.writeFileSync(fd, payload, "utf-8");
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
     fs.renameSync(tmp, filePath);
   } catch {
     // On Windows, rename can fail if another process holds a handle.
     // Fall back to direct write and clean up the tmp file.
-    try { fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8"); } catch {}
+    try { fs.writeFileSync(filePath, payload, "utf-8"); } catch {}
     try { fs.unlinkSync(tmp); } catch {}
   }
 }
