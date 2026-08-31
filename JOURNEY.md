@@ -10,7 +10,7 @@
 
 > 扫一眼就知道还欠什么、哪会裂。详细版在文末「未决事项」；正文各段落的描述未删。
 
-- **轨迹匹配实现未开始**——设计稿 `docs3/trajectory-matching.md` 已写（§14），`eventSignature` + `buildTrajectoryIndex` + `matchTrajectory` + 接线 post-write 待实现；`turn_in_session` 硬编码 0、`post-write.ts:289` 的 `is_recurring: editCount>=3` 旧启发式疑似漏网待确认。
+- **轨迹匹配已实现并提交（`aa6bce2`）**——4 纯函数 + post-write 接线 + 4 测试 + benchmark 覆盖（coverage 61/199→64/202）；两个死字段 `is_recurring`/`first_event_id` 已退役（`13e314c`/`f25748b`）；剩 `turn_in_session` 硬编码 0 未修（P0 之一，见 `docs5/brainstorm-100.md`）。
 - **全量重写 109 个测试（P4）尚未开始**——benchmark harness（P1-P3）已上线：覆盖 51/186（27.4%）、135 缺口；但「按 TDD 质量标准重写全部测试 + 覆盖映射闸门」是大头，还没动（§13）。
 - **覆盖数 27.4% 是下界**——按函数名 grep 测试源码，低估「经 `Hippocampus` 类间接覆盖」的函数，只当趋势基线用（§13）。
 - **dashboard 函数级 UI 覆盖延后**——`node --test` 跑不了 React，需 vitest+jsdom；v1 只做 build 通过 + 文件存在性（§13）。
@@ -190,6 +190,21 @@
 
 **教训**：① godot 仓库是「已注册项目」，它的 cerebrum 记了一个 openwolf 源头的 bug——**狗粮项目的记忆会反向暴露源仓库的缺陷**，这正是「把 openwolf 装到别处吃狗粮」的价值；② `copyHookScripts` 两份拷贝已经在漂移（update.ts 的 hook 列表缺 `user-prompt.js`/`post-test.js`），本次只修了 specs 这个点，去重待办。
 
+## 第 17 节 · trajectory 收尾 + 两个死字段退役 + benchmark + brainstorm 100 条（2026-08-30）
+
+| 我 | 你 |
+|----|-----|
+| 「current status / what is next phase」 | 读 STATUS.md + git status，发现工作树有未提交的 trajectory 在途（`trajectory.ts`/测试/设计稿 + post-write 接线），且 STATUS.md 的「next phase」还写着 outcome 测量、与实际在做的 trajectory 对不上——两处漂移 |
+| 「先把 A 收尾（提交或回滚），再更新 STATUS.md」 | 提交 trajectory slice `aa6bce2` + SDD 遗留文档 `9a17a61`，回滚 AGENTS.md（纯 LF→CRLF 换行、内容 diff 0 字符），更新 STATUS.md 把 trajectory 记为已完成、下一阶段改 outcome 测量 |
+| 「is_recurring 是什么问题？」 | grep 全项目钉死：`is_recurring` 是「写进去没人读」的死字段——3 个 hook 写（post-write `editCount>=3`、post-test/user-prompt 硬编码 false）、1 处 validator 校验（index.ts 是类型校验不是消费）、1 处测试断言，但零 recall/stats/report 消费；真正的复发度量走 `recordRecurrence()`→`store.stats.recurrences`，跟它无关。且 `editCount>=3` 是已退役的「编辑次数=坏信号」启发式的漏网 |
+| 「先确认测试测了什么」 | 读 `tests/hippocampus-outcomes.test.ts:163-196`，确认它是「编辑次数不再造 trauma」的回归测试，195 行 `is_recurring===true` 是顺带断言（锁死字段旧行为），190-194 四条（trauma=0/penalty=0/neutral=1/valence=neutral）才是核心 |
+| 「A」 | 退役 is_recurring：6 文件各删 1 行（types/index/post-write/post-test/user-prompt + 测试 195 行），168/168 通过，`13e314c` |
+| 「先做 benchmark 补 trajectory 覆盖再一起提交」 | `seams.json` 加 `hippocampus.trajectory` 模块 + `performance.ts` 加 3 个 perf op，重跑 benchmark：coverage 61/199→64/202（31.7%），`9a06ef0` |
+| 「1 退役 2 brainstorm 100个建议」 | 退役 first_event_id（与 is_recurring 同病，2 文件 -2 行，`f25748b`）+ 写 `docs5/brainstorm-100.md`（100 条建议、10 维度，参考 AGENTS_REPO.md 六大类外部做法） |
+| 「每一大类别都排出优先级」 | 重排：每条标 P0/P1/P2，维度内按优先级排序，P0=18 / P1=54 / P2=28，P0 全清单钉进文件末尾 |
+
+**教训**：① 死字段 = 有 writer 没 reader，`grep 全项目 + 确认 validator 是「校验」不是「消费」` 就能定案；is_recurring/first_event_id 同病，一次清两个，并固化成 cerebrum Do-Not-Repeat「别写只写不读的字段」；② 删字段前先确认测试断言的语义——195 行断的是「死字段按老启发式写对了」，不是有价值的行为，删它保 190-194 四条核心；③ benchmark coverage 的 seam 靠「测试源码 grep 函数名」判定，seams.json 手动维护会漂移（刚删的 is_recurring 本就不该在 seams 里）。
+
 ## 这个项目如何教 vibe coding with AI
 
 ### 人的工作（决定 / 纠正 / 叫停）
@@ -236,8 +251,8 @@
 - **覆盖数 27.4% 是函数名 grep 下界**（低估间接覆盖）；精确行覆盖需 `pnpm benchmark --coverage`（默认关，避免二次跑全量测试）。
 - **dashboard 函数级 UI 覆盖延后**（需 vitest+jsdom，v1 只做 build 通过 + 文件存在性）。
 - **import 归一化延后**（src/dist 混导入使自动覆盖率失真，统一到 src 是侵入性改动）。
-- **轨迹匹配实现未开始**（`docs3/trajectory-matching.md`）：4 个纯函数 + 接线 post-write，TDD 走；v1 用 k=2~3 小后缀 + timestamp 排序，不修 `turn_in_session`、不做跨 session、不做位置联合签名。
+- **轨迹匹配已实现并提交**（`aa6bce2`）：4 纯函数 + post-write 接线 + 4 测试 + benchmark 覆盖；两个死字段 `is_recurring`/`first_event_id` 已退役。剩 `turn_in_session` 硬编码 0 未修（P0）。
 - **`turn_in_session` 硬编码 0**：事件没有真实「第几步」，轨迹排序暂靠 timestamp；真 turn 号是独立待办。
-- **`post-write.ts:289` `is_recurring: editCount>=3` 疑似漏网旧启发式**：实现轨迹匹配前核对该不该一并退役。
-- **SDD 第一片（2026-08-29，未提交）**：`src/specs/` 状态机（phase: specify→plan→tasks→implement + status: active/paused/blocked/complete，`complete` 只在 status 终态）、`tests/specs.test.ts` 35 条、4 技能（`src/templates/skills/{specify,plan,tasks,implement}.md`）、3 模板（`src/templates/specs/` → `.wolf/spec-templates/`）、`openwolf spec` CLI、pre-read/pre-write/kilo-plugin 注入、`benchmarks/seams.json` specs 域 + 3 性能采样。评审整改已落地：`set` 幂等（重复 set 同一 spec 保持 phase）、id slug 校验、注入串抽 `kilo-plugin/spec.ts` + 奇偶校验测试。
+- **`is_recurring`/`first_event_id` 已退役**（`13e314c`/`f25748b`）：两个死字段（定义+校验+写入，零消费）已删，recurrence 只走 `recordRecurrence()`。
+- **SDD 第一片（2026-08-29，已提交 `9a17a61`）**：`src/specs/` 状态机（phase: specify→plan→tasks→implement + status: active/paused/blocked/complete，`complete` 只在 status 终态）、`tests/specs.test.ts` 35 条、4 技能（`src/templates/skills/{specify,plan,tasks,implement}.md`）、3 模板（`src/templates/specs/` → `.wolf/spec-templates/`）、`openwolf spec` CLI、pre-read/pre-write/kilo-plugin 注入、`benchmarks/seams.json` specs 域 + 3 性能采样。评审整改已落地：`set` 幂等（重复 set 同一 spec 保持 phase）、id slug 校验、注入串抽 `kilo-plugin/spec.ts` + 奇偶校验测试。
 - **SDD 全链 dogfood 已完成（2026-08-29）**：拿 `specs/001-spec-cli`（`spec list` + `next` 自动 complete）在本仓库走完 `/specify→/plan→/tasks→/implement`，TDD 红（41/45）→绿（160/160），`.wolf/specs-state.json` 走到 complete，pre-read 钩子实测打出 `📋 OpenWolf spec: 001-spec-cli · phase implement`。更新路径也已接通：`update.ts` 复用 `seedSpecTemplates` + 播种 `specs-state.json`，`openwolf update` 已把 SDD 技能/模板/状态传播到全部 10 个注册项目。剩余：CLI 动作直接单测（现靠 spawnSync 冒烟）。
