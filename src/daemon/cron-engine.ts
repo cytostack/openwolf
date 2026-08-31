@@ -31,7 +31,7 @@ interface CronManifest {
 
 interface ExecutionEntry {
   task_id: string;
-  status: "success" | "failed";
+  status: "success" | "failed" | "pending";
   timestamp: string;
   duration_ms: number;
   error?: string;
@@ -121,6 +121,27 @@ export class CronEngine {
   private async executeTask(task: CronTask): Promise<void> {
     const startTime = Date.now();
     this.logger.info(`Executing task: ${task.name}`);
+
+    // HITL gate: ai_task with a non-empty human_gate list requires human
+    // approval before running; record it as pending and skip execution.
+    const gate = task.action.type === "ai_task"
+      ? (task.action.params?.human_gate as string[] | undefined)
+      : undefined;
+    if (Array.isArray(gate) && gate.length > 0) {
+      const state = this.readState();
+      state.execution_log.push({
+        task_id: task.id,
+        status: "pending",
+        timestamp: new Date().toISOString(),
+        duration_ms: 0,
+        error: `requires human approval: ${gate.join(", ")}`,
+      });
+      if (state.execution_log.length > 100) state.execution_log = state.execution_log.slice(-100);
+      this.writeState(state);
+      this.broadcast({ type: "cron_pending", task_id: task.id, gate });
+      this.logger.info(`Task ${task.name} pending human approval: ${gate.join(", ")}`);
+      return;
+    }
 
     try {
       await this.runAction(task.action);
@@ -325,7 +346,7 @@ export class CronEngine {
     }
   }
 
-  private async runAiTask(params: { prompt: string; context_files: string[] }): Promise<void> {
+  private async runAiTask(params: { prompt: string; context_files: string[]; timeout_ms?: number }): Promise<void> {
     if (!this.hasClaude()) {
       throw new Error("Claude CLI not found. Install it from https://claude.ai/download or add it to PATH.");
     }
@@ -356,7 +377,7 @@ export class CronEngine {
       const claudeBin = process.platform === "win32" ? "claude.cmd" : "claude";
       const proc = spawnSync(claudeBin, ["-p", "--output-format", "text"], {
         input: fullPrompt,
-        timeout: 120000,
+        timeout: params.timeout_ms ?? 120000,
         encoding: "utf-8",
         cwd: this.projectRoot,
         env,
