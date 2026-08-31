@@ -205,6 +205,18 @@
 
 **教训**：① 死字段 = 有 writer 没 reader，`grep 全项目 + 确认 validator 是「校验」不是「消费」` 就能定案；is_recurring/first_event_id 同病，一次清两个，并固化成 cerebrum Do-Not-Repeat「别写只写不读的字段」；② 删字段前先确认测试断言的语义——195 行断的是「死字段按老启发式写对了」，不是有价值的行为，删它保 190-194 四条核心；③ benchmark coverage 的 seam 靠「测试源码 grep 函数名」判定，seams.json 手动维护会漂移（刚删的 is_recurring 本就不该在 seams 里）。
 
+## 第 18 节 · P0 执行开始：brainstorm→plan→critic→证伪→重做（2026-08-31）
+
+| 我 | 你 |
+|----|-----|
+| 「plan goals and test and spec for all P0」 | 写 `docs5/p0-plan.md`（18 条 P0 的 goal/test/spec） |
+| （贴 critic 报告）「respond to carefully」 | 核验 critic 锚点全属实（`schema_version` 已存在、事件 ID 已用 `crypto.randomUUID`、`isSensitiveFile` 吃 basename、cron 无阶段机、`EVIDENCE_WEIGHTS` 是 kebab、`estimateTokens` 5 份拷贝、`outcome` 两套公式），重写 p0-plan.md：P0-31 verifier / P0-86 outcome 移出，剩 16 代码项 |
+| 「先提交文档，从最难 P0 开始」 | 提交文档（`7333a39`/`aeeee66`）；选 P0-58（并发丢事件，数据安全+最难诊断）——先写 8×10 事件复现测试，5 次全绿，证伪（锁正确、ID 已是 UUID），降级 + 保留更严回归测试（`c2f2bba`） |
+| （贴 P0-5 report）「respond to」 | 核实 P0-5 实现：功能对但跳过了 plan；实测 benchmark `addEventToStore` 5.2 倍回退（278 万→54 万 ops/sec） |
+| 「开发流程不对，重做上一个 feat」 | 回滚 P0-5 未提交实现（回到 `c2f2bba`），写 plan v1 → critic 子代理 → 核实 critic 的 3 个 blocking（① post-write 查询侧没同步改排序属实；② evict 不回退 max 是 critic 误判、consolidation 回退真实；③ O(N²) 论据错、稳态是 O(500)）→ plan v2 |
+
+**教训**：① P0-58 证伪：先写复现用例证明「并发丢事件」不存在，避免在没病的锁上瞎改——critic 的「读改写覆盖丢事件」是推测，被测试证伪；② 核实 critic 的承重结论，不全盘接受也不全盘否定——critic 的 evict 分析有误（evict 移除最早 non-trauma 不回退 max），但 consolidation 回退真实；③ 「先 plan 后 code」的代价：上一个 P0-5 跳过了 plan，性能回退/契约变化在实现后才暴露，被迫回滚重做。
+
 ## 这个项目如何教 vibe coding with AI
 
 ### 人的工作（决定 / 纠正 / 叫停）
