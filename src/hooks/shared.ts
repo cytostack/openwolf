@@ -621,6 +621,13 @@ export function extractDescription(filePath: string): string {
   return "";
 }
 
+/**
+ * Coarse token estimate. Ratios (code 3.5 / prose 4.0 chars-per-token) are the
+ * common English-language approximation, NOT a tokenizer: they are uncalibrated
+ * for CJK/emoji and for exact count a real tokenizer would be required (which
+ * would break the node-builtin-only constraint). Kept in sync across
+ * shared.ts / token-estimator.ts / anatomy-scanner.ts / plugin fs.ts.
+ */
 export function estimateTokens(text: string, type: "code" | "prose" | "mixed" = "mixed"): number {
   const ratio = type === "code" ? 3.5 : type === "prose" ? 4.0 : 3.75;
   return Math.ceil(text.length / ratio);
