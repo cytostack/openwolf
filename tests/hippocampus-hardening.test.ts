@@ -83,6 +83,34 @@ function writerScript(projectRoot: string, index: number): string {
   `;
 }
 
+function writerScriptMany(projectRoot: string, index: number, count: number): string {
+  return `
+    const { Hippocampus } = await import(${JSON.stringify(hippoUrl)});
+    const root = ${JSON.stringify(projectRoot)};
+    const h = new Hippocampus(root);
+    for (let i = 0; i < ${count}; i++) {
+      h.addEvent({
+        version: 1,
+        timestamp: new Date().toISOString(),
+        session_id: "writer-${index}",
+        context: {
+          project_root: root,
+          files_involved: ["src/concurrent-${index}-" + i + ".ts"],
+          cwd_at_time: root,
+          spatial_path: "src",
+          spatial_depth: 1,
+          session_start: new Date().toISOString(),
+          turn_in_session: i + 1
+        },
+        action: { type: "write", description: "writer ${index} event " + i, tokens_spent: 1, succeeded: true },
+        outcome: { valence: "neutral", intensity: 0.2, reflection: "writer-${index}-" + i },
+        source: "manual",
+        tags: ["concurrent-many"]
+      });
+    }
+  `;
+}
+
 function runChild(script: string): Promise<number> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, ["--input-type=module", "-e", script], {
@@ -108,6 +136,28 @@ describe("hippocampus persistence and index consistency", () => {
     assert.deepStrictEqual(
       new Set(index!.event_ids),
       new Set(store!.buffer.map((event) => event.id))
+    );
+  });
+
+  test("concurrent writers each adding N events lose none", async () => {
+    const root = tmpProject();
+    fs.mkdirSync(path.join(root, ".wolf"), { recursive: true });
+    const N = 10;
+    const W = 8;
+    const codes = await Promise.all(
+      Array.from({ length: W }, (_, index) => runChild(writerScriptMany(root, index, N)))
+    );
+    assert.deepStrictEqual(codes, Array(W).fill(0));
+
+    const store = loadStore(path.join(root, ".wolf", "hippocampus.json"));
+    const index = loadIndex(path.join(root, ".wolf", "cue-index.json"));
+    assert.ok(store && index);
+    assert.strictEqual(store!.buffer.length, W * N);
+    const ids = store!.buffer.map((event) => event.id);
+    assert.strictEqual(new Set(ids).size, W * N, "no duplicate IDs");
+    assert.deepStrictEqual(
+      new Set(index!.event_ids),
+      new Set(ids)
     );
   });
 

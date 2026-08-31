@@ -109,13 +109,11 @@
 - **spec**：验证 `fs-safe.ts` 的 `writeJsonAtomic` 在 Windows 上是否足够，不足则补 fsync/FlushFileBuffers。
 - 锚点：`fs-safe.ts`、`persistence.ts`。
 
-## P0-58. 并发写不丢事件（锁粒度，非 ID 生成）
+## P0-58. 并发写不丢事件 —— **已证伪 / 降级（2026-08-31）**
 
-- **现状**：事件 ID **已是** `crypto.randomUUID()`（`index.ts:414`、`:468`）。丢事件更可能是"没锁 / 读改写覆盖"，不是 UUID 撞。
-- **goal**：8 进程并发写不丢事件。
-- **test**：红——8 进程并发各写 N 事件，断言总事件数 = 8N 且无重复 ID。绿——修锁后通过。
-- **spec**：检查 `withHippocampusLock` 是否覆盖 `addEvent`/`addMany` 的"读 store → 改 → 写回"全程；丢事件就修锁粒度，**不改 ID 生成**（已是 UUID）。
-- 锚点：`index.ts:414/468`（ID 生成）、`withHippocampusLock`（`persistence.ts`）。
+- **结论**：锁是对的，不丢事件。critic 的"读改写覆盖丢事件"推测被证伪。
+- **证据**：`addEvent`/`addMany` 的 `loadStoreOrCreate → addEventToStore → saveStore` 全程在 `withHippocampusLock` 内（`index.ts:426-441`、`:480-495`）。新增回归测试 `tests/hippocampus-hardening.test.ts` `"concurrent writers each adding N events lose none"`——8 进程各写 10 个事件（80 次独立锁竞争），断言 `buffer.length === 80`、无重复 ID、index 一致；**5 次全绿，全套 169/169**。
+- **处置**：P0 降级。事件 ID 已是 `crypto.randomUUID()`（`index.ts:414/468`）无需改；锁粒度无需改。更严的并发测试保留作回归锁（原测试只覆盖"各写 1 个"）。
 
 ## P0-60. 敏感路径（先列允许表，再决定扩不扩 API）
 
