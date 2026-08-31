@@ -138,7 +138,7 @@ export function appendMarkdown(filePath: string, line: string): void {
 const SENSITIVE_EXTENSIONS = new Set([
   ".pem", ".key", ".p8", ".p12", ".pfx", ".keystore", ".jks", ".ppk", ".kdbx", ".tfstate",
 ]);
-const SENSITIVE_BASENAMES = new Set([".npmrc", ".netrc", ".htpasswd", ".pgpass"]);
+const SENSITIVE_BASENAMES = new Set([".npmrc", ".netrc", ".htpasswd", ".pgpass", ".pypirc", "kubeconfig", ".dockercfg"]);
 
 export function isSensitiveFile(basename: string): boolean {
   const lower = basename.toLowerCase();
