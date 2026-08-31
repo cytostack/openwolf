@@ -68,7 +68,19 @@ export function saveStore(hippocampusPath: string, store: HippocampusStore): voi
   writeJsonAtomic(hippocampusPath, store);
 }
 
+/** Next 1-based turn for `sessionId` from events already in the buffer. */
+export function nextTurnInSession(store: HippocampusStore, sessionId: string): number {
+  let max = 0;
+  for (const event of store.buffer) {
+    if (event.session_id !== sessionId) continue;
+    const turn = event.context.turn_in_session;
+    if (Number.isInteger(turn) && turn > max) max = turn;
+  }
+  return max + 1;
+}
+
 export function addEventToStore(store: HippocampusStore, event: WolfEvent): void {
+  event.context.turn_in_session = nextTurnInSession(store, event.session_id);
   store.buffer.push(event);
   store.stats.total_events++;
 

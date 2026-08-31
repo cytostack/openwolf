@@ -83,7 +83,8 @@ function writerScript(projectRoot: string, index: number): string {
   `;
 }
 
-function writerScriptMany(projectRoot: string, index: number, count: number): string {
+function writerScriptMany(projectRoot: string, index: number, count: number, sessionId?: string): string {
+  const session = sessionId ?? `writer-${index}`;
   return `
     const { Hippocampus } = await import(${JSON.stringify(hippoUrl)});
     const root = ${JSON.stringify(projectRoot)};
@@ -92,7 +93,7 @@ function writerScriptMany(projectRoot: string, index: number, count: number): st
       h.addEvent({
         version: 1,
         timestamp: new Date().toISOString(),
-        session_id: "writer-${index}",
+        session_id: ${JSON.stringify(session)},
         context: {
           project_root: root,
           files_involved: ["src/concurrent-${index}-" + i + ".ts"],
@@ -100,7 +101,7 @@ function writerScriptMany(projectRoot: string, index: number, count: number): st
           spatial_path: "src",
           spatial_depth: 1,
           session_start: new Date().toISOString(),
-          turn_in_session: i + 1
+          turn_in_session: 0
         },
         action: { type: "write", description: "writer ${index} event " + i, tokens_spent: 1, succeeded: true },
         outcome: { valence: "neutral", intensity: 0.2, reflection: "writer-${index}-" + i },
@@ -158,6 +159,61 @@ describe("hippocampus persistence and index consistency", () => {
     assert.deepStrictEqual(
       new Set(index!.event_ids),
       new Set(ids)
+    );
+  });
+
+  test("addEventToStore stamps strictly increasing turn_in_session per session", () => {
+    const root = tmpProject();
+    const hippo = new Hippocampus(root);
+    const make = (session: string) => {
+      const d = eventData(root, "src/a.ts");
+      d.session_id = session;
+      d.context.turn_in_session = 0;
+      return d;
+    };
+    const a1 = hippo.addEvent(make("sess-a"));
+    const a2 = hippo.addEvent(make("sess-a"));
+    const a3 = hippo.addEvent(make("sess-a"));
+    const b1 = hippo.addEvent(make("sess-b"));
+    const b2 = hippo.addEvent(make("sess-b"));
+    assert.deepStrictEqual(
+      [a1, a2, a3].map((e) => e.context.turn_in_session),
+      [1, 2, 3]
+    );
+    assert.deepStrictEqual(
+      [b1, b2].map((e) => e.context.turn_in_session),
+      [1, 2]
+    );
+  });
+
+  test("addEventToStore unconditionally stamps turn (overrides caller value)", () => {
+    const root = tmpProject();
+    const hippo = new Hippocampus(root);
+    const base = eventData(root, "src/a.ts");
+    base.session_id = "sess-a";
+    base.context.turn_in_session = 99;
+    const e1 = hippo.addEvent(base);
+    assert.strictEqual(e1.context.turn_in_session, 1, "caller turn 99 overridden to 1");
+  });
+
+  test("concurrent addEvent on one session never collide on turn_in_session", async () => {
+    const root = tmpProject();
+    fs.mkdirSync(path.join(root, ".wolf"), { recursive: true });
+    const N = 5;
+    const W = 2;
+    const session = "sess-shared";
+    const codes = await Promise.all(
+      Array.from({ length: W }, (_, index) => runChild(writerScriptMany(root, index, N, session)))
+    );
+    assert.deepStrictEqual(codes, Array(W).fill(0));
+    const store = loadStore(path.join(root, ".wolf", "hippocampus.json"));
+    assert.ok(store);
+    assert.strictEqual(store!.buffer.length, W * N);
+    const turns = store!.buffer.map((e) => e.context.turn_in_session);
+    assert.deepStrictEqual(
+      [...turns].sort((a, b) => a - b),
+      Array.from({ length: W * N }, (_, i) => i + 1),
+      "turns must be 1..10 with no collisions"
     );
   });
 

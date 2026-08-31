@@ -5,10 +5,22 @@ export function eventSignature(event: WolfEvent): string {
   return `${event.action.type}:${event.outcome.valence}`;
 }
 
+function sessionOrder(a: WolfEvent, b: WolfEvent): number {
+  const ta = a.context.turn_in_session;
+  const tb = b.context.turn_in_session;
+  if (ta > 0 && tb > 0 && ta !== tb) return ta - tb;
+  return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+}
+
+/** Sort a session's events oldest-first, preferring turn when both stamped. */
+export function sortSessionEvents(events: WolfEvent[]): WolfEvent[] {
+  return [...events].sort(sessionOrder);
+}
+
 /**
  * Group events by session and produce each session's ordered signature
- * sequence (oldest first). Order is reconstructed from `timestamp` because
- * `turn_in_session` is not populated yet.
+ * sequence (oldest first). Prefer `turn_in_session` when both sides are
+ * stamped (> 0); fall back to timestamp for legacy zeros.
  */
 export function buildTrajectoryIndex(events: WolfEvent[]): Map<string, string[]> {
   const bySession = new Map<string, WolfEvent[]>();
@@ -20,9 +32,7 @@ export function buildTrajectoryIndex(events: WolfEvent[]): Map<string, string[]>
 
   const index = new Map<string, string[]>();
   for (const [sessionId, list] of bySession) {
-    list.sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
+    list.sort(sessionOrder);
     index.set(sessionId, list.map(eventSignature));
   }
   return index;

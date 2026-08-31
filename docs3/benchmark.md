@@ -1,16 +1,15 @@
 # OpenWolf Benchmark
 
-> Generated 2026-08-30T14:54:58.771Z · Node v22.23.2
+> Generated 2026-08-31T16:46:41.947Z · Node v22.23.2
 
 ## Coverage
 
-- Seams: **64/202** tested (31.7%)
+- Seams: **67/202** tested (33.2%)
 - Automated line coverage: not run (pass --coverage)
 
-### Gaps (138 untested seams)
+### Gaps (135 untested seams)
 
 - `hippocampus.event-store.createEmptyStore`
-- `hippocampus.event-store.addEventToStore`
 - `hippocampus.event-store.getEventsByLocation`
 - `hippocampus.event-store.getTraumaEvents`
 - `hippocampus.event-store.getTraumaEventsForPath`
@@ -76,7 +75,6 @@
 - `hooks.shared.readMarkdown`
 - `hooks.shared.appendMarkdown`
 - `hooks.shared.serializeAnatomy`
-- `hooks.shared.extractDescription`
 - `hooks.shared.estimateTokens`
 - `hooks.shared.timeShort`
 - `hooks.shared.readStdin`
@@ -143,7 +141,6 @@
 - `scanner.anatomy-scanner.scanProject`
 - `scanner.anatomy-scanner.buildAnatomy`
 - `scanner.anatomy-scanner.updateAnatomyEntry`
-- `scanner.description-extractor.extractDescription`
 - `scanner.project-root.findProjectRoot`
 - `specs.types.isSpecPhase`
 - `specs.types.isSpecStatus`
@@ -152,22 +149,22 @@
 
 | Op | Kind | Iterations | ops/sec | median (ms) | p95 (ms) |
 |---|---|---:|---:|---:|---:|
-| calculateDecay | pure | 100000 | 1505410 | 0.001 | 0.001 |
-| calculateConsolidationScore | pure | 100000 | 1584711 | 0.001 | 0.001 |
-| buildIndex | pure | 5000 | 4771 | 0.193 | 0.228 |
-| trajectory.eventSignature | pure | 100000 | 90277151 | 0 | 0 |
-| trajectory.buildTrajectoryIndex | pure | 5000 | 11305 | 0.086 | 0.091 |
-| trajectory.matchTrajectory | pure | 100000 | 254612 | 0.004 | 0.004 |
-| addEventToStore | pure | 10000 | 2785515 | 0 | 0 |
-| Hippocampus.addMany | io | 20 | 52 | 18.938 | 23.468 |
-| spec.advancePhase | pure | 100000 | 810250 | 0.001 | 0.001 |
-| spec.nextTask | pure | 100000 | 285981 | 0.003 | 0.006 |
-| spec.buildSpecContext | pure | 100000 | 19079236 | 0 | 0 |
+| calculateDecay | pure | 100000 | 1558169 | 0.001 | 0.001 |
+| calculateConsolidationScore | pure | 100000 | 1596806 | 0.001 | 0.001 |
+| buildIndex | pure | 5000 | 4267 | 0.231 | 0.351 |
+| trajectory.eventSignature | pure | 100000 | 57191879 | 0 | 0 |
+| trajectory.buildTrajectoryIndex | pure | 5000 | 121285 | 0.006 | 0.008 |
+| trajectory.matchTrajectory | pure | 100000 | 238508 | 0.004 | 0.006 |
+| addEventToStore | pure | 10000 | 807233 | 0.001 | 0.001 |
+| Hippocampus.addMany | io | 20 | 43 | 21.525 | 24.123 |
+| spec.advancePhase | pure | 100000 | 754208 | 0.001 | 0.001 |
+| spec.nextTask | pure | 100000 | 237857 | 0.003 | 0.005 |
+| spec.buildSpecContext | pure | 100000 | 14162300 | 0 | 0 |
 
 ## Outcome
 
 ⚠️ **Insufficient data**: no negative writes recorded yet (dogfood dormant), so recurrence_rate is undefined.
-- token savings vs bare CLI: 1151783
-- repeated reads blocked: 471
-- anatomy hits: 471
+- token savings vs bare CLI: 1232781
+- repeated reads blocked: 566
+- anatomy hits: 532
 - recurrences / negative writes: 0 / 0

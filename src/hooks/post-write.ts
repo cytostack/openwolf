@@ -7,7 +7,7 @@ import {
   isSensitiveFile, getProjectDir, resolveProjectPath
 } from "./shared.js";
 import { Hippocampus } from "../hippocampus/index.js";
-import { buildTrajectoryIndex, matchTrajectory, eventSignature } from "../hippocampus/trajectory.js";
+import { buildTrajectoryIndex, matchTrajectory, eventSignature, sortSessionEvents } from "../hippocampus/trajectory.js";
 import { loadStoreReconciled, saveStore, renderToFile, sha256 } from "./anatomy-store.js";
 import { withAnatomyLock, HOOK_LOCK_BUDGET_MS } from "./anatomy-lock.js";
 import { extractSymbols, symbolsSupported, SYMBOL_MIN_TOKENS } from "./symbol-extractor.js";
@@ -298,10 +298,9 @@ async function main(): Promise<void> {
       const sessionId = process.env.CLAUDE_SESSION_ID || "unknown";
       const allEvents = hippocampus.getEvents();
       const index = buildTrajectoryIndex(allEvents);
-      const sessionSignatures = allEvents
-        .filter((e) => e.session_id === sessionId)
-        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
-        .map(eventSignature);
+      const sessionSignatures = sortSessionEvents(
+        allEvents.filter((e) => e.session_id === sessionId)
+      ).map(eventSignature);
       const prediction = matchTrajectory(sessionSignatures, index, 3);
       if (prediction.matched && prediction.samples >= 3 && prediction.bad_ratio >= 0.5) {
         process.stderr.write(

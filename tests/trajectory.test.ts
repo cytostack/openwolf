@@ -50,6 +50,15 @@ test("eventSignature collapses an event to action:valence", () => {
   assert.strictEqual(eventSignature(e), "edit:penalty");
 });
 
+test("buildTrajectoryIndex prefers turn_in_session over later timestamp", () => {
+  const laterFirst = makeEvent("1", "s1", "2026-01-01T00:00:02Z", "fix", "neutral");
+  laterFirst.context.turn_in_session = 1;
+  const earlierSecond = makeEvent("2", "s1", "2026-01-01T00:00:01Z", "edit", "penalty");
+  earlierSecond.context.turn_in_session = 2;
+  const index = buildTrajectoryIndex([laterFirst, earlierSecond]);
+  assert.deepStrictEqual(index.get("s1"), ["fix:neutral", "edit:penalty"]);
+});
+
 test("buildTrajectoryIndex groups by session and orders by timestamp", () => {
   const a = makeEvent("1", "s1", "2026-01-01T00:00:02Z", "fix", "neutral");
   const b = makeEvent("2", "s1", "2026-01-01T00:00:01Z", "edit", "penalty");
