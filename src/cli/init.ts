@@ -11,6 +11,7 @@ import { registerProject, getRegisteredProjects } from "./registry.js";
 import { resolveAgents, detectInstalledAgents } from "../agents/index.js";
 import { installSkills } from "../agents/skills.js";
 import { newStore, importFromMarkdown, saveStore, loadStore, STORE_FILE, sha256 as storeSha256 } from "../hooks/anatomy-store.js";
+import { HOOK_FILES, findHooksSourceDir } from "./copy-hooks.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -659,38 +660,10 @@ export function copyHookScripts(wolfDir: string): void {
   const hooksDir = path.join(wolfDir, "hooks");
   ensureDir(hooksDir);
 
-  // Look for compiled hooks in multiple possible locations relative to __dirname
-  // __dirname at runtime is dist/src/cli/ so ../hooks = dist/src/hooks/
-  const candidates = [
-    path.join(__dirname, "..", "hooks"),           // dist/src/hooks (from tsc main build)
-    path.resolve(__dirname, "..", "..", "hooks"),   // dist/hooks (from tsconfig.hooks.json)
-    path.resolve(__dirname, "..", "..", "dist", "hooks"), // fallback
-  ];
+  // Look for compiled hooks in multiple possible locations relative to __dirname.
   const srcHooksDir = path.resolve(__dirname, "..", "..", "src", "hooks");
-
-  let sourceDir = "";
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate) && fs.existsSync(path.join(candidate, "shared.js"))) {
-      sourceDir = candidate;
-      break;
-    }
-  }
-
-  const hookFiles = [
-    "session-start.js",
-    "user-prompt.js",
-    "pre-read.js",
-    "pre-write.js",
-    "post-read.js",
-    "post-write.js",
-    "post-test.js",
-    "precompact.js",
-    "stop.js",
-    "shared.js",
-    "anatomy-store.js",
-    "anatomy-lock.js",
-    "symbol-extractor.js",
-  ];
+  const sourceDir = findHooksSourceDir(__dirname);
+  const hookFiles = HOOK_FILES;
 
   let copiedAny = false;
   if (sourceDir) {

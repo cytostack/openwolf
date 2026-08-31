@@ -16,6 +16,7 @@ import { ensureDir } from "../utils/paths.js";
 import { resolveAgents, availableAgents } from "../agents/index.js";
 import { newStore, importFromMarkdown, saveStore, STORE_FILE, sha256 as storeSha256 } from "../hooks/anatomy-store.js";
 import { installSkills } from "../agents/skills.js";
+import { HOOK_FILES, findHooksSourceDir } from "./copy-hooks.js";
 import { seedSpecTemplates } from "./init.js";
 import { createEmptySpecState } from "../specs/types.js";
 
@@ -449,25 +450,8 @@ function copyHookScripts(wolfDir: string): void {
   const hooksDir = path.join(wolfDir, "hooks");
   ensureDir(hooksDir);
 
-  const candidates = [
-    path.join(__dirname, "..", "hooks"),
-    path.resolve(__dirname, "..", "..", "hooks"),
-    path.resolve(__dirname, "..", "..", "dist", "hooks"),
-  ];
-
-  let sourceDir = "";
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate) && fs.existsSync(path.join(candidate, "shared.js"))) {
-      sourceDir = candidate;
-      break;
-    }
-  }
-
-  const hookFiles = [
-    "session-start.js", "pre-read.js", "pre-write.js",
-    "post-read.js", "post-write.js", "precompact.js", "stop.js", "shared.js",
-    "anatomy-store.js", "anatomy-lock.js", "symbol-extractor.js",
-  ];
+  const sourceDir = findHooksSourceDir(__dirname);
+  const hookFiles = HOOK_FILES;
 
   if (sourceDir) {
     for (const file of hookFiles) {
