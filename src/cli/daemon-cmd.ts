@@ -1,4 +1,4 @@
-import { execFileSync, execSync } from "node:child_process";
+import { execFileSync, execSync, fork } from "node:child_process";
 import * as fs from "node:fs";
 import * as net from "node:net";
 import * as path from "node:path";
@@ -81,13 +81,24 @@ export function daemonStart(): void {
     return;
   }
 
-  if (!hasPm2()) {
-    console.log("pm2 not found. Install with: pnpm add -g pm2");
-    return;
-  }
   const name = getPm2Name();
   // Resolve daemon script relative to openwolf's install dir, not the target project
   const daemonScript = path.resolve(__dirname, "..", "daemon", "wolf-daemon.js");
+
+  if (!hasPm2()) {
+    // No pm2: fork a detached daemon so cron/consolidation/heartbeat still run.
+    const child = fork(daemonScript, [], {
+      cwd: projectRoot,
+      env: { ...process.env, OPENWOLF_PROJECT_ROOT: projectRoot },
+      execArgv: [],
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+    console.log(`\n  ✓ Daemon started (detached, no pm2): ${name}`);
+    console.log("  Tip: Install pm2 (pnpm add -g pm2) for boot persistence and auto-restart.");
+    return;
+  }
 
   try {
     execFileSync(pm2Bin(), ["start", daemonScript, "--name", name, "--cwd", projectRoot], {
