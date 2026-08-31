@@ -36,31 +36,36 @@ function round3(n: number): number {
   return Math.round(n * 1000) / 1000;
 }
 
-export function collectOutcome(wolfDir: string): OutcomeResult {
-  const ledger = readJson<LedgerLike>(path.join(wolfDir, "token-ledger.json"));
-  const hippo = readJson<HippoLike>(path.join(wolfDir, "hippocampus.json"));
-
-  const lifetime = ledger?.lifetime ?? {};
-  const stats = hippo?.stats ?? {};
-
-  const recurrences = Number(stats.recurrences ?? lifetime.recurrences ?? 0);
-  const negativeWrites = Number(stats.negative_writes ?? lifetime.negative_writes ?? 0);
+export function computeOutcome(
+  lifetime: LedgerLike["lifetime"],
+  stats: HippoLike["stats"]
+): OutcomeResult {
+  const lf = lifetime ?? {};
+  const st = stats ?? {};
+  const recurrences = Number(st.recurrences ?? lf.recurrences ?? 0);
+  const negativeWrites = Number(st.negative_writes ?? lf.negative_writes ?? 0);
   const insufficient = negativeWrites === 0;
 
   return {
     token_savings_vs_bare_cli:
-      typeof lifetime.estimated_savings_vs_bare_cli === "number"
-        ? lifetime.estimated_savings_vs_bare_cli
+      typeof lf.estimated_savings_vs_bare_cli === "number"
+        ? lf.estimated_savings_vs_bare_cli
         : null,
     repeated_reads_blocked:
-      typeof lifetime.repeated_reads_blocked === "number"
-        ? lifetime.repeated_reads_blocked
+      typeof lf.repeated_reads_blocked === "number"
+        ? lf.repeated_reads_blocked
         : null,
     anatomy_hits:
-      typeof lifetime.anatomy_hits === "number" ? lifetime.anatomy_hits : null,
+      typeof lf.anatomy_hits === "number" ? lf.anatomy_hits : null,
     recurrences,
     negative_writes: negativeWrites,
     recurrence_rate: insufficient ? null : round3(recurrences / negativeWrites),
     insufficient_data: insufficient,
   };
+}
+
+export function collectOutcome(wolfDir: string): OutcomeResult {
+  const ledger = readJson<LedgerLike>(path.join(wolfDir, "token-ledger.json"));
+  const hippo = readJson<HippoLike>(path.join(wolfDir, "hippocampus.json"));
+  return computeOutcome(ledger?.lifetime ?? {}, hippo?.stats ?? {});
 }
