@@ -10,12 +10,29 @@ import { handlePostRead } from "./post-read.js"
 import { handlePostWrite } from "./post-write.js"
 import { handleStop } from "./stop.js"
 
+// Self-contained copy of src/agents/session-id.ts canonicalSessionId (plugins
+// cannot import from src/). Kilo nests at properties.info.id; OpenCode/Claude
+// use top-level sessionID/session_id.
+function sessionIdOf(
+  event: { properties?: Record<string, unknown> } & Record<string, unknown>,
+): string {
+  const properties = (event.properties ?? {}) as Record<string, unknown>
+  const info = properties.info as { id?: string } | undefined
+  return String(
+    info?.id ||
+    properties.sessionID ||
+    event.sessionID ||
+    event.session_id ||
+    "",
+  )
+}
+
 export const OpenWolf: Plugin = async ({ directory }: { directory: string }) => {
   return {
     event: async ({ event }: { event: { type: string; [key: string]: unknown } }) => {
       if (event.type === "session.created" && !wolfDirExists(directory)) return
 
-      const sessionId = (event as any).session_id || (event as any).sessionID
+      const sessionId = sessionIdOf(event)
       if (!sessionId) return
 
       if (event.type === "session.created") {
@@ -77,7 +94,7 @@ export const OpenWolf: Plugin = async ({ directory }: { directory: string }) => 
     stop: async (input: Record<string, unknown>) => {
       if (!wolfDirExists(directory)) return
 
-      const sessionId = (input as any).sessionID || (input as any).session_id
+      const sessionId = sessionIdOf(input)
       if (!sessionId) return
 
       handleStop(directory, sessionId)
