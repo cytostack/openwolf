@@ -11,6 +11,7 @@ import { reportCommand } from "./report.js";
 import { createClaimCommand } from "./claim.js";
 import { surveyCommand } from "./survey.js";
 import { createSpecCommand } from "./spec-cmd.js";
+import { doctorCommand } from "./doctor.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -72,6 +73,11 @@ export function createProgram(): Command {
     .command("report")
     .description("Token report: estimated vs measured (from harness transcripts)")
     .action(reportCommand);
+
+  program
+    .command("doctor")
+    .description("Health check: cue-index/STATUS drift, hook completeness")
+    .action(doctorCommand);
 
   const daemon = program
     .command("daemon")
