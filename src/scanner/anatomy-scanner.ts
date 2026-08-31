@@ -100,10 +100,10 @@ function walkDir(
   rootDir: string,
   excludePatterns: string[],
   maxFiles: number,
-  files: Record<string, StoreFileEntry>
+  files: Record<string, StoreFileEntry>,
+  state: { truncated: boolean }
 ): void {
-  let totalFiles = Object.keys(files).length;
-  if (totalFiles >= maxFiles) return;
+  if (Object.keys(files).length >= maxFiles) { state.truncated = true; return; }
 
   let items: fs.Dirent[];
   try {
@@ -121,7 +121,8 @@ function walkDir(
     if (shouldExclude(relPath, excludePatterns)) continue;
 
     if (item.isDirectory()) {
-      walkDir(fullPath, rootDir, excludePatterns, maxFiles, files);
+      walkDir(fullPath, rootDir, excludePatterns, maxFiles, files, state);
+      if (Object.keys(files).length >= maxFiles) { state.truncated = true; return; }
     } else if (item.isFile()) {
       const ext = path.extname(item.name).toLowerCase();
       if (BINARY_EXTENSIONS.has(ext)) continue;
@@ -161,8 +162,7 @@ function walkDir(
         symbols: symbols && symbols.length > 0 ? symbols : undefined,
       };
 
-      totalFiles++;
-      if (totalFiles >= maxFiles) return;
+      if (Object.keys(files).length >= maxFiles) { state.truncated = true; return; }
     }
   }
 }
@@ -171,7 +171,7 @@ function walkDir(
 /**
  * Scan the project and return the anatomy content and file count WITHOUT writing to disk.
  */
-export function buildAnatomy(wolfDir: string, projectRoot: string): { content: string; fileCount: number; store: AnatomyStoreData } {
+export function buildAnatomy(wolfDir: string, projectRoot: string): { content: string; fileCount: number; store: AnatomyStoreData; truncated: boolean } {
   const configPath = path.join(wolfDir, "config.json");
   const config = readJSON<WolfConfig>(configPath, {
     version: 1,
@@ -186,19 +186,26 @@ export function buildAnatomy(wolfDir: string, projectRoot: string): { content: s
   });
 
   const store = newStore();
+  const state = { truncated: false };
   walkDir(
     projectRoot,
     projectRoot,
     config.openwolf.anatomy.exclude_patterns,
     config.openwolf.anatomy.max_files,
-    store.files
+    store.files,
+    state
   );
 
-  return { content: renderStore(store), fileCount: Object.keys(store.files).length, store };
+  return { content: renderStore(store), fileCount: Object.keys(store.files).length, store, truncated: state.truncated };
 }
 
 export function scanProject(wolfDir: string, projectRoot: string): number {
-  const { fileCount, store: fresh } = buildAnatomy(wolfDir, projectRoot);
+  const { fileCount, store: fresh, truncated } = buildAnatomy(wolfDir, projectRoot);
+  if (truncated) {
+    process.stderr.write(
+      `⚠️ OpenWolf anatomy: file count exceeded max_files, only ${fileCount} files indexed. Raise .wolf/config.json openwolf.anatomy.max_files or scope the scan.\n`
+    );
+  }
 
   const result = withAnatomyLock(wolfDir, CLI_LOCK_BUDGET_MS, () => {
     // Absorb md-side edits, then full-replace: the fresh disk walk defines
