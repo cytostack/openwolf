@@ -267,7 +267,7 @@ export interface ClaimRecallResponse {
 
 export interface HippocampusStore {
   version: 1;
-  schema_version: 1;
+  schema_version: number;
   project_root: string;
   created_at: string;
   last_updated: string;

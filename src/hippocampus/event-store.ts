@@ -12,11 +12,13 @@ const DEFAULT_CONFIG = {
   max_buffer_size: 500,
 };
 
+export const CURRENT_SCHEMA_VERSION = 2;
+
 export function createEmptyStore(projectRoot: string): HippocampusStore {
   const now = new Date().toISOString();
   return {
     version: 1,
-    schema_version: 1,
+    schema_version: CURRENT_SCHEMA_VERSION,
     project_root: projectRoot,
     created_at: now,
     last_updated: now,
@@ -44,7 +46,27 @@ export function loadStore(
   recoverCorrupt: boolean = false
 ): HippocampusStore | null {
   const store = readJsonFile<HippocampusStore>(hippocampusPath, recoverCorrupt);
-  return store ? normalizeStoreStats(store) : null;
+  return store ? migrateStore(normalizeStoreStats(store)) : null;
+}
+
+/**
+ * Migrate a store loaded from disk to the current schema version.
+ * v1 -> v2: strip the retired outcome.is_recurring / outcome.first_event_id
+ * fields from every buffered event (removed from WolfEvent but lingering in
+ * old stores). Idempotent: re-running is a no-op.
+ */
+export function migrateStore(store: HippocampusStore): HippocampusStore {
+  let version = typeof store.schema_version === "number" ? store.schema_version : 1;
+  if (version < 2) {
+    for (const event of store.buffer) {
+      const outcome = event.outcome as unknown as Record<string, unknown>;
+      delete outcome.is_recurring;
+      delete outcome.first_event_id;
+    }
+    version = 2;
+  }
+  store.schema_version = version;
+  return store;
 }
 
 /**
