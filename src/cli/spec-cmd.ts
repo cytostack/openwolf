@@ -5,7 +5,7 @@ import { findProjectRoot } from "../scanner/project-root.js";
 import { loadSpecState, saveSpecState } from "../specs/spec-store.js";
 import { advancePhase, setStatus } from "../specs/phase-machine.js";
 import { nextTask } from "../specs/tasks-parse.js";
-import { statusMentionsActiveSpec } from "../specs/status-check.js";
+import { statusMentionsActiveSpec, syncActiveSpecToStatusMd } from "../specs/status-check.js";
 import type { SpecPhase, SpecStatus } from "../specs/types.js";
 
 // `openwolf spec` — the sole writer of .wolf/specs-state.json. The /specify,
@@ -31,7 +31,8 @@ export function createSpecCommand(): Command {
     .command("status")
     .description("Show the active spec, phase, and current task")
     .option("--json", "Emit a single JSON object")
-    .action((opts: { json?: boolean }) => {
+    .option("--sync", "Write the active-spec block into STATUS.md (touches only the delimited block)")
+    .action((opts: { json?: boolean; sync?: boolean }) => {
       const { wolfDir } = resolveWolf();
       const state = loadSpecState(wolfDir);
 
@@ -44,6 +45,14 @@ export function createSpecCommand(): Command {
             status: state.status,
           }),
         );
+        return;
+      }
+
+      if (opts.sync && state.activeSpec) {
+        const statusPath = path.join(wolfDir, "STATUS.md");
+        const statusMd = fs.existsSync(statusPath) ? fs.readFileSync(statusPath, "utf-8") : "";
+        fs.writeFileSync(statusPath, syncActiveSpecToStatusMd(statusMd, state.activeSpec), "utf-8");
+        console.log(`Wrote active-spec block for "${state.activeSpec}" to STATUS.md`);
         return;
       }
 
