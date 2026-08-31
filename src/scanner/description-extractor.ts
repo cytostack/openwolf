@@ -162,13 +162,13 @@ export function extractDescription(filePath: string): string {
   const doc = extractDocblock(content, ext);
   if (doc) return doc;
 
+  // Language-specific smart extraction (class/function beats header comment)
+  const smart = extractSmart(content, ext, basename, filePath);
+  if (smart) return smart;
+
   // Header comment
   const hdr = extractHeaderComment(content, ext);
   if (hdr) return hdr;
-
-  // Language-specific smart extraction
-  const smart = extractSmart(content, ext, basename, filePath);
-  if (smart) return smart;
 
   // Generic fallback
   return extractGenericFallback(content);
@@ -180,7 +180,7 @@ function extractDocblock(content: string, ext: string): string {
   const jsdoc = content.match(/\/\*\*\s*\n?\s*\*?\s*(.+)/);
   if (jsdoc) {
     const line = jsdoc[1].replace(/\*\/$/, "").trim();
-    if (line && !line.startsWith("@") && line.length > 5) return line;
+    if (line && !line.startsWith("@") && line.length > 5 && !/^\*+$/.test(line)) return line;
   }
 
   // Python docstring
@@ -282,6 +282,9 @@ function extractSmart(content: string, ext: string, basename: string, filePath: 
     case ".ex": case ".exs": return extractElixir(content);
     case ".lua": return extractLua(content);
     case ".zig": return extractZig(content);
+    case ".c": case ".cpp": case ".cc": case ".cxx":
+    case ".h": case ".hpp": case ".hh": case ".hxx":
+      return extractCpp(content);
     default: return "";
   }
 }
@@ -969,6 +972,60 @@ function extractZig(content: string): string {
   const fns = (content.match(/pub\s+fn\s+(\w+)/g) || [])
     .map(m => m.match(/fn\s+(\w+)/)?.[1]).filter(Boolean);
   if (fns.length) return fns.length > 5 ? `${fns.slice(0, 4).join(", ")} + ${fns.length - 4} more` : fns.join(", ");
+  return "";
+}
+
+// ─── C/C++ ───────────────────────────────────────────────────
+const CPP_RESERVED = new Set([
+  "if", "for", "while", "switch", "case", "default", "return", "sizeof", "typeof",
+  "new", "delete", "catch", "throw", "template", "static_cast", "dynamic_cast",
+  "reinterpret_cast", "const_cast",
+]);
+
+function cppCallees(content: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const re = /(\w+)\s*\(/g;
+  let m;
+  while ((m = re.exec(content)) !== null) {
+    const name = m[1];
+    if (CPP_RESERVED.has(name) || seen.has(name)) continue;
+    seen.add(name);
+    out.push(name);
+  }
+  return out;
+}
+
+function stripCppComments(content: string): string {
+  return content
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/\/\/[^\n]*/g, " ");
+}
+
+function extractCpp(content: string): string {
+  const code = stripCppComments(content);
+  // class/struct with optional inheritance
+  const cls = code.match(/\b(class|struct)\s+(\w+)(?:\s*:\s*(?:public|protected|private)\s+(\w+))?/);
+  if (cls) {
+    const kind = cls[1] === "class" ? "Class" : "Struct";
+    const base = cls[3] ? ` extends ${cls[3]}` : "";
+    const methods = cppCallees(code).filter((n) => n !== cls[2]);
+    if (methods.length) {
+      return `${kind}: ${cls[2]}${base}: ${methods.slice(0, 4).join(", ")}${methods.length > 4 ? ` + ${methods.length - 4} more` : ""}`;
+    }
+    return `${kind}: ${cls[2]}${base}`;
+  }
+  // enum / enum class
+  const en = code.match(/\benum\s+(?:class\s+)?(\w+)/);
+  if (en) return `Enum: ${en[1]}`;
+  // namespace
+  const ns = code.match(/\bnamespace\s+(\w+)/);
+  if (ns) return `Namespace: ${ns[1]}`;
+  // free functions
+  const fns = cppCallees(code);
+  if (fns.length) {
+    return fns.length > 5 ? `${fns.slice(0, 4).join(", ")} + ${fns.length - 4} more` : fns.join(", ");
+  }
   return "";
 }
 
