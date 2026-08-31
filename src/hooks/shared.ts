@@ -151,6 +151,24 @@ export function isSensitiveFile(basename: string): boolean {
   return false;
 }
 
+const SECRET_PATTERNS: RegExp[] = [
+  /\bsk-[A-Za-z0-9_-]{16,}\b/g, // OpenAI / Anthropic
+  /\bAKIA[0-9A-Z]{16}\b/g, // AWS access key id
+  /\bghp_[A-Za-z0-9]{36}\b/g, // GitHub PAT
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, // Slack
+  /\bAIza[0-9A-Za-z_-]{35}\b/g, // Google API
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, // PEM
+];
+
+/** Redact known secret shapes (API keys, PATs, PEM keys) from text. */
+export function redactSecrets(text: string): string {
+  let out = text;
+  for (const re of SECRET_PATTERNS) {
+    out = out.replace(re, "[redacted]");
+  }
+  return out;
+}
+
 export function extractDescription(filePath: string): string {
   const MAX_DESC = 150;
   const basename = path.basename(filePath);

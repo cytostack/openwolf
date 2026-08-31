@@ -4,7 +4,7 @@ import * as crypto from "node:crypto";
 import {
   getWolfDir, ensureWolfDir, readJSON, writeJSON, readMarkdown,
   extractDescription, estimateTokens, appendMarkdown, timeShort, readStdin, normalizePath,
-  isSensitiveFile, getProjectDir, resolveProjectPath
+  isSensitiveFile, getProjectDir, resolveProjectPath, redactSecrets
 } from "./shared.js";
 import { Hippocampus } from "../hippocampus/index.js";
 import { buildTrajectoryIndex, matchTrajectory, eventSignature, sortSessionEvents } from "../hippocampus/trajectory.js";
@@ -286,7 +286,7 @@ async function main(): Promise<void> {
       outcome: {
         valence,
         intensity,
-        reflection,
+        reflection: redactSecrets(reflection),
       },
       source: "hook",
       tags: ["file-write", action, path.extname(absolutePath).slice(1) || "unknown"],
