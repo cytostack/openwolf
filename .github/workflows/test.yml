@@ -1,0 +1,36 @@
+name: Test + Coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
+
+      - name: Test with coverage gate
+        run: |
+          node --test --experimental-test-coverage tests/*.test.ts 2>&1 | tee /tmp/cov.txt
+          node -e "
+            const fs = require('fs');
+            const line = fs.readFileSync('/tmp/cov.txt', 'utf8').split('\n').find(l => l.startsWith('# all files'));
+            if (!line) { console.error('coverage report not found'); process.exit(1); }
+            const stmts = parseFloat(line.split('|')[1]);
+            console.log('statement coverage: ' + stmts + '%');
+            if (stmts < 60) { console.error('below 60% threshold'); process.exit(1); }
+          "
