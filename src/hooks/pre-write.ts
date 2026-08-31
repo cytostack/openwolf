@@ -137,7 +137,7 @@ function checkBugLog(wolfDir: string, filePath: string, oldStr: string, newStr: 
   if (relevant === null) {
     // Legacy path: ONLY surface bugs recorded against the SAME file.
     const fileMatches = bugLog.bugs.filter(b => {
-      const bugBasename = path.basename(b.file);
+      const bugBasename = path.basename(b.file ?? "");
       return bugBasename === basename;
     });
     if (fileMatches.length === 0) return [];
