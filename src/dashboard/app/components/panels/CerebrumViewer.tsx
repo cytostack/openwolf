@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import type { WolfData } from "../../hooks/useWolfData.js";
 import { SearchInput } from "../shared/SearchInput.js";
+import { CollapseCard } from "../shared/CollapseCard.js";
 
 export function CerebrumViewer({ data }: { data: WolfData }) {
   const { cerebrum } = data;
@@ -22,17 +23,19 @@ export function CerebrumViewer({ data }: { data: WolfData }) {
       <SearchInput value={search} onChange={setSearch} placeholder="Search cerebrum..." ariaLabel="Search cerebrum" className="w-full rounded-lg px-3 py-2 text-sm mb-4" />
 
       {/* Do-Not-Repeat — prominent */}
-      <div className="rounded-xl mb-4 overflow-hidden" style={{ background: "var(--danger-subtle)", border: "1px solid color-mix(in srgb, var(--danger) 20%, transparent)" }}>
-        <button onClick={() => toggle("doNotRepeat")} className="wd-danger-head w-full flex items-center justify-between px-5 py-3 transition-colors"
+      <div className="space-y-4">
+        <CollapseCard
+          expanded={expanded.doNotRepeat}
+          onToggle={() => toggle("doNotRepeat")}
+          header={
+            <div className="flex items-center gap-2">
+              <span style={{ color: "var(--danger)" }}>⊘</span>
+              <h3 className="font-medium" style={{ color: "var(--danger)" }}>Do-Not-Repeat</h3>
+              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "color-mix(in srgb, var(--danger) 10%, transparent)", color: "var(--danger)" }}>{cerebrum.doNotRepeat.length}</span>
+              <span className="text-sm" style={{ color: "var(--text-faint)" }}>{expanded.doNotRepeat ? "▼" : "▶"}</span>
+            </div>
+          }
         >
-          <div className="flex items-center gap-2">
-            <span style={{ color: "var(--danger)" }}>⊘</span>
-            <h3 className="font-medium" style={{ color: "var(--danger)" }}>Do-Not-Repeat</h3>
-            <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "color-mix(in srgb, var(--danger) 10%, transparent)", color: "var(--danger)" }}>{cerebrum.doNotRepeat.length}</span>
-          </div>
-          <span className="text-sm" style={{ color: "var(--text-faint)" }}>{expanded.doNotRepeat ? "▼" : "▶"}</span>
-        </button>
-        {expanded.doNotRepeat && (
           <div className="px-5 pb-4 space-y-2">
             {cerebrum.doNotRepeat.filter((d) => matchesSearch(d.text)).map((entry, i) => (
               <div key={i} className="rounded-lg p-3" style={{ background: "color-mix(in srgb, var(--danger) 5%, transparent)", border: "1px solid color-mix(in srgb, var(--danger) 10%, transparent)" }}>
@@ -42,20 +45,21 @@ export function CerebrumViewer({ data }: { data: WolfData }) {
             ))}
             {cerebrum.doNotRepeat.length === 0 && <p className="text-sm" style={{ color: "var(--text-muted)" }}>No entries yet.</p>}
           </div>
-        )}
-      </div>
+        </CollapseCard>
 
-      {/* User Preferences */}
-      <div className="rounded-xl mb-4 overflow-hidden" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
-        <button onClick={() => toggle("preferences")} className="wd-collapse-head w-full flex items-center justify-between px-5 py-3 transition-colors">
-          <div className="flex items-center gap-2">
-            <span style={{ color: "var(--text-muted)" }}>◈</span>
-            <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>User Preferences</h3>
-            <span className="text-xs" style={{ color: "var(--text-faint)" }}>{cerebrum.preferences.length}</span>
-          </div>
-          <span className="text-sm" style={{ color: "var(--text-faint)" }}>{expanded.preferences ? "▼" : "▶"}</span>
-        </button>
-        {expanded.preferences && (
+        {/* User Preferences */}
+        <CollapseCard
+          expanded={expanded.preferences}
+          onToggle={() => toggle("preferences")}
+          header={
+            <div className="flex items-center gap-2">
+              <span style={{ color: "var(--text-muted)" }}>◈</span>
+              <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>User Preferences</h3>
+              <span className="text-xs" style={{ color: "var(--text-faint)" }}>{cerebrum.preferences.length}</span>
+              <span className="text-sm" style={{ color: "var(--text-faint)" }}>{expanded.preferences ? "▼" : "▶"}</span>
+            </div>
+          }
+        >
           <div className="px-5 pb-4">
             {cerebrum.preferences.filter(matchesSearch).map((item, i) => (
               <div key={i} className="flex items-start gap-2 py-1.5">
@@ -65,47 +69,49 @@ export function CerebrumViewer({ data }: { data: WolfData }) {
             ))}
             {cerebrum.preferences.length === 0 && <p className="text-sm" style={{ color: "var(--text-muted)" }}>No preferences recorded yet.</p>}
           </div>
-        )}
-      </div>
+        </CollapseCard>
 
-      {/* Key Learnings */}
-      <div className="rounded-xl mb-4 overflow-hidden" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
-        <button onClick={() => toggle("learnings")} className="wd-collapse-head w-full flex items-center justify-between px-5 py-3 transition-colors">
-          <div className="flex items-center gap-2">
-            <span style={{ color: "var(--accent)" }}>◎</span>
-            <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>Key Learnings</h3>
-            <span className="text-xs" style={{ color: "var(--text-faint)" }}>{cerebrum.learnings.length}</span>
-          </div>
-          <span className="text-sm" style={{ color: "var(--text-faint)" }}>{expanded.learnings ? "▼" : "▶"}</span>
-        </button>
-        {expanded.learnings && (
+        {/* Key Learnings */}
+        <CollapseCard
+          expanded={expanded.learnings}
+          onToggle={() => toggle("learnings")}
+          header={
+            <div className="flex items-center gap-2">
+              <span style={{ color: "var(--accent)" }}>◎</span>
+              <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>Key Learnings</h3>
+              <span className="text-xs" style={{ color: "var(--text-faint)" }}>{cerebrum.learnings.length}</span>
+              <span className="text-sm" style={{ color: "var(--text-faint)" }}>{expanded.learnings ? "▼" : "▶"}</span>
+            </div>
+          }
+        >
           <div className="px-5 pb-4 space-y-2">
             {cerebrum.learnings.filter(matchesSearch).map((item, i) => (
               <div key={i} className="rounded-lg p-3 text-sm" style={{ background: "var(--bg-surface-hover)", color: "var(--text-secondary)" }}>{item}</div>
             ))}
             {cerebrum.learnings.length === 0 && <p className="text-sm" style={{ color: "var(--text-muted)" }}>No learnings recorded yet.</p>}
           </div>
-        )}
-      </div>
+        </CollapseCard>
 
-      {/* Decision Log */}
-      <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
-        <button onClick={() => toggle("decisions")} className="wd-collapse-head w-full flex items-center justify-between px-5 py-3 transition-colors">
-          <div className="flex items-center gap-2">
-            <span style={{ color: "var(--text-muted)" }}>⚖</span>
-            <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>Decision Log</h3>
-            <span className="text-xs" style={{ color: "var(--text-faint)" }}>{cerebrum.decisions.length}</span>
-          </div>
-          <span className="text-sm" style={{ color: "var(--text-faint)" }}>{expanded.decisions ? "▼" : "▶"}</span>
-        </button>
-        {expanded.decisions && (
+        {/* Decision Log */}
+        <CollapseCard
+          expanded={expanded.decisions}
+          onToggle={() => toggle("decisions")}
+          header={
+            <div className="flex items-center gap-2">
+              <span style={{ color: "var(--text-muted)" }}>⚖</span>
+              <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>Decision Log</h3>
+              <span className="text-xs" style={{ color: "var(--text-faint)" }}>{cerebrum.decisions.length}</span>
+              <span className="text-sm" style={{ color: "var(--text-faint)" }}>{expanded.decisions ? "▼" : "▶"}</span>
+            </div>
+          }
+        >
           <div className="px-5 pb-4 space-y-2">
             {cerebrum.decisions.filter(matchesSearch).map((item, i) => (
               <div key={i} className="rounded-lg p-3 text-sm" style={{ background: "var(--bg-surface-hover)", color: "var(--text-secondary)" }}>{item}</div>
             ))}
             {cerebrum.decisions.length === 0 && <p className="text-sm" style={{ color: "var(--text-muted)" }}>No decisions logged yet.</p>}
           </div>
-        )}
+        </CollapseCard>
       </div>
     </div>
   );
