@@ -73,7 +73,7 @@ export function CronStatus({ data }: { data: WolfData }) {
                     color: runningTasks[row.id] === "error" ? "var(--danger)" : "var(--text-secondary)",
                     opacity: runningTasks[row.id] === "running" ? 0.6 : 1,
                   }}
-                >{runningTasks[row.id] === "running" ? "Running…" : runningTasks[row.id] === "ok" ? "✓ Queued" : runningTasks[row.id] === "error" ? "✗ Failed" : "Run Now"}</button>
+                >{runningTasks[row.id] === "running" ? "Running…" : runningTasks[row.id] === "ok" ? "Queued" : runningTasks[row.id] === "error" ? "Failed" : "Run Now"}</button>
               ),
             },
           ]}

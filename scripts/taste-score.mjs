@@ -38,7 +38,7 @@ function readAll(dir) {
       if (e.name.startsWith(".") || e.name === "node_modules" || e.name === "dist") continue;
       const p = path.join(d, e.name);
       if (e.isDirectory()) walk(p);
-      else if (/\.(tsx|ts|css)$/.test(e.name)) out[p] = fs.readFileSync(p, "utf-8");
+      else if (/\.(tsx|ts|css)$/.test(e.name)) out[p.replace(/\\/g, "/")] = fs.readFileSync(p, "utf-8");
     }
   }
   walk(dir);
@@ -55,7 +55,7 @@ function stripComments(code) {
     .replace(/\/\/[^\n]*/g, "");
 }
 const allCode = stripComments(Object.values(files).join("\n"));
-const globals = stripComments(files[path.join(DIR, "styles", "globals.css")] || "");
+const globals = stripComments(files[path.join(DIR, "styles", "globals.css").replace(/\\/g, "/")] || "");
 const components = Object.values(files)
   .filter((p) => {
     const k = Object.keys(files).find((k) => files[k] === p);

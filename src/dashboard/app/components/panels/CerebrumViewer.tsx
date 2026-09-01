@@ -98,7 +98,7 @@ export function CerebrumViewer({ data }: { data: WolfData }) {
           onToggle={() => toggle("decisions")}
           header={
             <div className="flex items-center gap-2">
-              <span style={{ color: "var(--text-muted)" }}>⚖</span>
+              <span style={{ color: "var(--text-muted)" }}>◈</span>
               <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>Decision Log</h3>
               <span className="text-xs" style={{ color: "var(--text-faint)" }}>{cerebrum.decisions.length}</span>
               <span className="text-sm" style={{ color: "var(--text-faint)" }}>{expanded.decisions ? "▼" : "▶"}</span>

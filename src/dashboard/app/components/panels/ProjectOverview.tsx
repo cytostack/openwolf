@@ -28,7 +28,7 @@ function weeklyActivity(data: WolfData): DotBarDatum[] {
  */
 function nextPhase(statusDoc: string): string[] {
   const lines = statusDoc.split(/\r?\n/);
-  const start = lines.findIndex((l) => /^## 🚀/.test(l));
+  const start = lines.findIndex((l) => /^## \u{1F680}/.test(l));
   if (start === -1) return [];
   const out: string[] = [];
   for (let i = start + 1; i < lines.length && out.length < 5; i++) {
