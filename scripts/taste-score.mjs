@@ -90,7 +90,10 @@ function accessibility() {
   add(8, hasGlobal(":focus-visible"), "no global :focus-visible ring");
   const bareOutline = count("focus:outline-none");
   add(5, bareOutline === 0, `focus:outline-none ×${bareOutline} without a focus-visible replacement`);
-  add(4, has("aria-label") && count("aria-label") > 0, "no aria-label anywhere");
+  // coverage-style: every text input should go through SearchInput (which
+  // carries aria-label); a bare <input type="text"> means no label for SRs.
+  const bareTextInputs = count("<input type=\"text\"");
+  add(4, bareTextInputs === 0, `bare text input ×${bareTextInputs} (use <SearchInput/> for aria-label)`);
   add(4, has("aria-expanded"), "no aria-expanded (collapse cards)");
   add(4, hasGlobal("prefers-reduced-motion"), "no prefers-reduced-motion");
   return s;
@@ -109,7 +112,10 @@ function colorLine() {
   add(6, rawRed === 0, `raw rgba(220,38,38) ×${rawRed}`);
   const strayRed = (compCode.match(/#e5484d/g) || []).length;
   add(3, strayRed === 0, `stray #e5484d ×${strayRed}`);
-  add(3, count("color-mix") > 0, "no color-mix for subtle tones");
+  // coverage-style: any alpha tone in components must use color-mix (not a
+  // bare rgba()), otherwise a single color-mix would earn full marks.
+  const bareRgba = (compCode.match(/rgba\(/g) || []).length;
+  add(3, bareRgba === 0, `bare rgba() ×${bareRgba} in components (use color-mix)`);
   return s;
 }
 
