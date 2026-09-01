@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import type { WolfData } from "../../hooks/useWolfData.js";
 import { SearchInput } from "../shared/SearchInput.js";
 import { EmptyState } from "../shared/EmptyState.js";
+import { CollapseCard } from "../shared/CollapseCard.js";
 
 export function BugLog({ data }: { data: WolfData }) {
   const { buglog } = data;
@@ -53,46 +54,48 @@ export function BugLog({ data }: { data: WolfData }) {
         {filtered.map((bug: any) => {
           const isExpanded = expandedId === bug.id;
           return (
-            <div key={bug.id} className="rounded-xl overflow-hidden" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
-              <button onClick={() => setExpandedId(isExpanded ? null : bug.id)}
-                className="wd-collapse-head w-full flex items-start gap-3 px-5 py-3 transition-colors text-left"
-              >
-                <span className="text-sm mt-0.5" style={{ color: "var(--text-faint)" }}>{isExpanded ? "▼" : "▶"}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm truncate" style={{ color: "var(--text-primary)" }}>{bug.error_message}</p>
-                  <div className="flex items-center gap-3 mt-1">
-                    <span className="text-xs" style={{ color: "var(--text-faint)" }}>{bug.file}</span>
-                    <span className="text-xs" style={{ color: "var(--text-faint)" }}>{bug.timestamp?.slice(0, 10)}</span>
+            <CollapseCard
+              key={bug.id}
+              expanded={isExpanded}
+              onToggle={() => setExpandedId(isExpanded ? null : bug.id)}
+              header={
+                <div className="flex items-start gap-3 text-left w-full">
+                  <span className="text-sm mt-0.5" style={{ color: "var(--text-faint)" }}>{isExpanded ? "▼" : "▶"}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm truncate" style={{ color: "var(--text-primary)" }}>{bug.error_message}</p>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="text-xs" style={{ color: "var(--text-faint)" }}>{bug.file}</span>
+                      <span className="text-xs" style={{ color: "var(--text-faint)" }}>{bug.timestamp?.slice(0, 10)}</span>
+                    </div>
                   </div>
+                  {bug.occurrences > 1 && (
+                    <span className="shrink-0 px-2 py-0.5 rounded-full text-xs" style={{ background: "var(--warning-subtle)", color: "var(--warning)" }}>
+                      Seen {bug.occurrences}x
+                    </span>
+                  )}
                 </div>
-                {bug.occurrences > 1 && (
-                  <span className="shrink-0 px-2 py-0.5 rounded-full text-xs" style={{ background: "var(--warning-subtle)", color: "var(--warning)" }}>
-                    Seen {bug.occurrences}x
-                  </span>
-                )}
-              </button>
-              {isExpanded && (
-                <div className="px-5 py-4 space-y-3" style={{ borderTop: "1px solid var(--border)" }}>
-                  <div>
-                    <p className="text-xs uppercase mb-1" style={{ color: "var(--text-faint)" }}>Error Message</p>
-                    <pre className="text-sm rounded-lg p-3 overflow-x-auto font-mono" style={{ color: "var(--danger)", background: "var(--danger-subtle)" }}>{bug.error_message}</pre>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase mb-1" style={{ color: "var(--text-faint)" }}>Root Cause</p>
-                    <p className="text-sm" style={{ color: "var(--text-secondary)" }}>{bug.root_cause}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase mb-1" style={{ color: "var(--text-faint)" }}>Fix</p>
-                    <pre className="text-sm rounded-lg p-3 overflow-x-auto font-mono" style={{ color: "var(--accent)", background: "var(--accent-subtle)" }}>{bug.fix}</pre>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {bug.tags.map((tag: string) => (
-                      <span key={tag} className="px-2 py-0.5 text-xs rounded-full" style={{ background: "var(--bg-surface-hover)", border: "1px solid var(--border-subtle)", color: "var(--text-muted)" }}>{tag}</span>
-                    ))}
-                  </div>
+              }
+            >
+              <div className="px-5 py-4 space-y-3">
+                <div>
+                  <p className="text-xs uppercase mb-1" style={{ color: "var(--text-faint)" }}>Error Message</p>
+                  <pre className="text-sm rounded-lg p-3 overflow-x-auto font-mono" style={{ color: "var(--danger)", background: "var(--danger-subtle)" }}>{bug.error_message}</pre>
                 </div>
-              )}
-            </div>
+                <div>
+                  <p className="text-xs uppercase mb-1" style={{ color: "var(--text-faint)" }}>Root Cause</p>
+                  <p className="text-sm" style={{ color: "var(--text-secondary)" }}>{bug.root_cause}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase mb-1" style={{ color: "var(--text-faint)" }}>Fix</p>
+                  <pre className="text-sm rounded-lg p-3 overflow-x-auto font-mono" style={{ color: "var(--accent)", background: "var(--accent-subtle)" }}>{bug.fix}</pre>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {bug.tags.map((tag: string) => (
+                    <span key={tag} className="px-2 py-0.5 text-xs rounded-full" style={{ background: "var(--bg-surface-hover)", border: "1px solid var(--border-subtle)", color: "var(--text-muted)" }}>{tag}</span>
+                  ))}
+                </div>
+              </div>
+            </CollapseCard>
           );
         })}
       </div>

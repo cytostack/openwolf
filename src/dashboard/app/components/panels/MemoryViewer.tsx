@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import type { WolfData } from "../../hooks/useWolfData.js";
 import { SearchInput } from "../shared/SearchInput.js";
 import { CollapseCard } from "../shared/CollapseCard.js";
+import { WdTable } from "../shared/WdTable.js";
 
 export function MemoryViewer({ data }: { data: WolfData }) {
   const { memory } = data;
@@ -47,28 +48,22 @@ export function MemoryViewer({ data }: { data: WolfData }) {
                 }
               >
                 {session.entries.length > 0 && (
-                  <table className="w-full">
-                    <thead>
-                      <tr className="text-xs uppercase" style={{ color: "var(--text-faint)" }}>
-                        <th className="text-left px-4 py-2 w-16">Time</th>
-                        <th className="text-left px-4 py-2">Action</th>
-                        <th className="text-left px-4 py-2 hidden md:table-cell">Files</th>
-                        <th className="text-left px-4 py-2 hidden md:table-cell">Outcome</th>
-                        <th className="text-right px-4 py-2 w-20">Tokens</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {session.entries.map((entry, j) => (
-                        <tr key={j} className="wd-row" style={{ borderBottom: "1px solid var(--border)" }}>
-                          <td className="px-4 py-2 text-xs font-mono" style={{ color: "var(--text-faint)" }}>{entry.time}</td>
-                          <td className="px-4 py-2 text-sm" style={{ color: "var(--text-secondary)" }}>{entry.action}</td>
-                          <td className="px-4 py-2 text-sm hidden md:table-cell" style={{ color: "var(--text-muted)" }}>{entry.files}</td>
-                          <td className="px-4 py-2 text-sm hidden md:table-cell" style={{ color: "var(--text-muted)" }}>{entry.outcome}</td>
-                          <td className="px-4 py-2 text-xs font-mono text-right" style={{ color: "var(--text-faint)" }}>{entry.tokens}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <WdTable
+                    columns={[
+                      { key: "time", label: "Time", className: "w-16", cellClassName: "text-xs font-mono text-faint" },
+                      { key: "action", label: "Action", cellClassName: "text-sm text-secondary" },
+                      { key: "files", label: "Files", className: "hidden md:table-cell", cellClassName: "text-sm text-muted" },
+                      { key: "outcome", label: "Outcome", className: "hidden md:table-cell", cellClassName: "text-sm text-muted" },
+                      { key: "tokens", label: "Tokens", align: "right", className: "w-20", cellClassName: "text-xs font-mono text-faint" },
+                    ]}
+                    rows={session.entries.map((entry) => ({
+                      time: entry.time,
+                      action: entry.action,
+                      files: entry.files,
+                      outcome: entry.outcome,
+                      tokens: entry.tokens,
+                    }))}
+                  />
                 )}
               </CollapseCard>
             );

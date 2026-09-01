@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { StatusBadge } from "../shared/StatusBadge.js";
+import { CollapseCard } from "../shared/CollapseCard.js";
+import { WdTable } from "../shared/WdTable.js";
 import { relativeTime, formatSchedule } from "../../lib/utils.js";
 import { dashboardFetch } from "../../lib/wolf-client.js";
 import type { WolfData } from "../../hooks/useWolfData.js";
@@ -39,59 +41,72 @@ export function CronStatus({ data }: { data: WolfData }) {
   return (
     <div>
       {/* Task table */}
-      <div className="rounded-xl overflow-hidden mb-6" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
-        <table className="w-full">
-          <thead>
-            <tr style={{ borderBottom: "1px solid var(--border)" }}>
-              <th className="text-left px-4 py-3 text-xs font-medium uppercase" style={{ color: "var(--text-faint)" }}>Status</th>
-              <th className="text-left px-4 py-3 text-xs font-medium uppercase" style={{ color: "var(--text-faint)" }}>Task</th>
-              <th className="text-left px-4 py-3 text-xs font-medium uppercase hidden md:table-cell" style={{ color: "var(--text-faint)" }}>Schedule</th>
-              <th className="text-left px-4 py-3 text-xs font-medium uppercase hidden md:table-cell" style={{ color: "var(--text-faint)" }}>Last Run</th>
-              <th className="text-right px-4 py-3 text-xs font-medium uppercase" style={{ color: "var(--text-faint)" }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {cronManifest.tasks.map((task: any) => (
-              <tr key={task.id} className="wd-row transition-colors" style={{ borderBottom: "1px solid var(--border)" }}>
-                <td className="px-4 py-3"><StatusBadge status={task.enabled ? getTaskStatus(task.id) : "disabled"} /></td>
-                <td className="px-4 py-3">
-                  <p className="text-sm" style={{ color: "var(--text-primary)" }}>{task.name}</p>
-                  <p className="text-xs" style={{ color: "var(--text-faint)" }}>{task.description}</p>
-                </td>
-                <td className="px-4 py-3 hidden md:table-cell text-sm" style={{ color: "var(--text-muted)" }}>{formatSchedule(task.schedule)}</td>
-                <td className="px-4 py-3 hidden md:table-cell text-sm" style={{ color: "var(--text-faint)" }}>{getLastRun(task.id)}</td>
-                <td className="px-4 py-3 text-right">
-                  <button onClick={() => triggerTask(task.id)}
-                    disabled={runningTasks[task.id] === "running"}
-                    className="px-3 py-1 text-xs rounded-md transition-colors"
-                    style={{
-                      background: "var(--bg-surface-hover)",
-                      border: "1px solid var(--border-subtle)",
-                      color: runningTasks[task.id] === "error" ? "var(--danger)" : "var(--text-secondary)",
-                      opacity: runningTasks[task.id] === "running" ? 0.6 : 1,
-                    }}
-                  >{runningTasks[task.id] === "running" ? "Running…" : runningTasks[task.id] === "ok" ? "✓ Queued" : runningTasks[task.id] === "error" ? "✗ Failed" : "Run Now"}</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="wd-card overflow-x-auto mb-6">
+        <WdTable
+          cellClassName="px-4 py-3"
+          columns={[
+            { key: "status", label: "Status", render: (row) => <StatusBadge status={row.status} /> },
+            {
+              key: "task",
+              label: "Task",
+              render: (row) => (
+                <>
+                  <p className="text-sm" style={{ color: "var(--text-primary)" }}>{row.name}</p>
+                  <p className="text-xs" style={{ color: "var(--text-faint)" }}>{row.description}</p>
+                </>
+              ),
+            },
+            { key: "schedule", label: "Schedule", className: "hidden md:table-cell", render: (row) => <span className="text-sm" style={{ color: "var(--text-muted)" }}>{row.schedule}</span> },
+            { key: "lastRun", label: "Last Run", className: "hidden md:table-cell", render: (row) => <span className="text-sm" style={{ color: "var(--text-faint)" }}>{row.lastRun}</span> },
+            {
+              key: "actions",
+              label: "Actions",
+              align: "right",
+              render: (row) => (
+                <button
+                  onClick={() => triggerTask(row.id)}
+                  disabled={runningTasks[row.id] === "running"}
+                  className="px-3 py-1 text-xs rounded-md transition-colors"
+                  style={{
+                    background: "var(--bg-surface-hover)",
+                    border: "1px solid var(--border-subtle)",
+                    color: runningTasks[row.id] === "error" ? "var(--danger)" : "var(--text-secondary)",
+                    opacity: runningTasks[row.id] === "running" ? 0.6 : 1,
+                  }}
+                >{runningTasks[row.id] === "running" ? "Running…" : runningTasks[row.id] === "ok" ? "✓ Queued" : runningTasks[row.id] === "error" ? "✗ Failed" : "Run Now"}</button>
+              ),
+            },
+          ]}
+          rows={cronManifest.tasks.map((task: any) => ({
+            id: task.id,
+            status: task.enabled ? getTaskStatus(task.id) : "disabled",
+            name: task.name,
+            description: task.description,
+            schedule: formatSchedule(task.schedule),
+            lastRun: getLastRun(task.id),
+          }))}
+        />
       </div>
 
       {/* Dead letter queue */}
-      <div className="rounded-xl p-5 mb-6" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
-        <button onClick={() => setShowDeadLetters(!showDeadLetters)} className="flex items-center gap-2 w-full text-left">
-          <span className="text-sm" style={{ color: "var(--text-muted)" }}>{showDeadLetters ? "▼" : "▶"}</span>
-          <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>Dead Letter Queue</h3>
-          <span className="text-xs" style={{ color: "var(--text-faint)" }}>({cronState.dead_letter_queue.length})</span>
-        </button>
-        {showDeadLetters && (
-          cronState.dead_letter_queue.length === 0 ? (
-            <div className="text-center py-6 text-sm mt-2" style={{ color: "var(--text-muted)" }}>
+      <div className="mb-6">
+        <CollapseCard
+          expanded={showDeadLetters}
+          onToggle={() => setShowDeadLetters(!showDeadLetters)}
+          header={
+            <div className="flex items-center gap-2">
+              <span className="text-sm" style={{ color: "var(--text-muted)" }}>{showDeadLetters ? "▼" : "▶"}</span>
+              <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>Dead Letter Queue</h3>
+              <span className="text-xs" style={{ color: "var(--text-faint)" }}>({cronState.dead_letter_queue.length})</span>
+            </div>
+          }
+        >
+          {cronState.dead_letter_queue.length === 0 ? (
+            <div className="px-5 pb-4 pt-4 text-sm" style={{ color: "var(--text-muted)" }}>
               No dead letters — all systems healthy
             </div>
           ) : (
-            <div className="space-y-3 mt-3">
+            <div className="px-5 pb-4 pt-3 space-y-3">
               {cronState.dead_letter_queue.map((dl: any, i: number) => (
                 <div key={i} className="rounded-lg p-4" style={{ background: "var(--danger-subtle)", border: "1px solid color-mix(in srgb, var(--danger) 20%, transparent)" }}>
                   <div className="flex items-start justify-between">
@@ -108,18 +123,25 @@ export function CronStatus({ data }: { data: WolfData }) {
                 </div>
               ))}
             </div>
-          )
-        )}
+          )}
+        </CollapseCard>
       </div>
 
       {/* Execution history */}
-      <div className="rounded-xl p-5" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
-        <button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-2 w-full text-left">
-          <span className="text-sm" style={{ color: "var(--text-muted)" }}>{showHistory ? "▼" : "▶"}</span>
-          <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>Execution History</h3>
-        </button>
-        {showHistory && (
-          <div className="mt-3">
+      <CollapseCard
+        expanded={showHistory}
+        onToggle={() => setShowHistory(!showHistory)}
+        header={
+          <div className="flex items-center gap-2">
+            <span className="text-sm" style={{ color: "var(--text-muted)" }}>{showHistory ? "▼" : "▶"}</span>
+            <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>Execution History</h3>
+          </div>
+        }
+      >
+        {cronState.execution_log.length === 0 ? (
+          <p className="px-5 py-4 text-sm text-center" style={{ color: "var(--text-muted)" }}>No executions yet.</p>
+        ) : (
+          <div className="px-5 py-3">
             {cronState.execution_log.slice(-30).reverse().map((entry: any, i: number) => (
               <div key={i} className="flex items-center gap-4 py-2" style={{ borderBottom: "1px solid var(--border)" }}>
                 <span className="text-xs font-mono" style={{ color: "var(--text-faint)" }}>{entry.timestamp?.slice(11, 16)}</span>
@@ -128,12 +150,9 @@ export function CronStatus({ data }: { data: WolfData }) {
                 <StatusBadge status={entry.status} />
               </div>
             ))}
-            {cronState.execution_log.length === 0 && (
-              <p className="text-sm py-4 text-center" style={{ color: "var(--text-muted)" }}>No executions yet.</p>
-            )}
           </div>
         )}
-      </div>
+      </CollapseCard>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import React from "react";
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ComposedChart } from "recharts";
 import { formatTokens } from "../../lib/utils.js";
 import { StatTile } from "../shared/StatTile.js";
+import { WdTable } from "../shared/WdTable.js";
 import type { WolfData, LedgerSession } from "../../hooks/useWolfData.js";
 
 function fmt(n: number | undefined): string {
@@ -113,30 +114,25 @@ export function TokenUsage({ data }: { data: WolfData }) {
           <p className="text-sm mt-3" style={{ color: "var(--text-muted)" }}>No sessions recorded yet.</p>
         ) : (
           <div className="overflow-x-auto mt-3">
-            <table className="w-full text-sm font-mono">
-              <thead>
-                <tr className="wd-label" style={{ color: "var(--text-faint)" }}>
-                  <th className="text-left py-2 font-normal">agent</th>
-                  <th className="text-right py-2 font-normal">sessions</th>
-                  <th className="text-right py-2 font-normal">estimated</th>
-                  <th className="text-right py-2 font-normal">measured in</th>
-                  <th className="text-right py-2 font-normal">measured out</th>
-                  <th className="text-right py-2 font-normal">cache read</th>
-                </tr>
-              </thead>
-              <tbody>
-                {agents.map((row) => (
-                  <tr key={row.agent} style={{ borderTop: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}>
-                    <td className="py-2.5" style={{ color: "var(--text-primary)" }}>{row.agent}</td>
-                    <td className="text-right py-2.5">{fmt(row.sessions)}</td>
-                    <td className="text-right py-2.5">{formatTokens(row.estimated)}</td>
-                    <td className="text-right py-2.5">{row.realIn > 0 ? formatTokens(row.realIn) : "—"}</td>
-                    <td className="text-right py-2.5">{row.realOut > 0 ? formatTokens(row.realOut) : "—"}</td>
-                    <td className="text-right py-2.5">{row.cacheRead > 0 ? formatTokens(row.cacheRead) : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <WdTable
+              className="w-full text-sm font-mono"
+              columns={[
+                { key: "agent", label: "agent" },
+                { key: "sessions", label: "sessions", align: "right", cellClassName: "text-secondary" },
+                { key: "estimated", label: "estimated", align: "right", cellClassName: "text-secondary" },
+                { key: "measuredIn", label: "measured in", align: "right", cellClassName: "text-secondary" },
+                { key: "measuredOut", label: "measured out", align: "right", cellClassName: "text-secondary" },
+                { key: "cacheRead", label: "cache read", align: "right", cellClassName: "text-secondary" },
+              ]}
+              rows={agents.map((row) => ({
+                agent: <span style={{ color: "var(--text-primary)" }}>{row.agent}</span>,
+                sessions: fmt(row.sessions),
+                estimated: formatTokens(row.estimated),
+                measuredIn: row.realIn > 0 ? formatTokens(row.realIn) : "—",
+                measuredOut: row.realOut > 0 ? formatTokens(row.realOut) : "—",
+                cacheRead: row.cacheRead > 0 ? formatTokens(row.cacheRead) : "—",
+              }))}
+            />
           </div>
         )}
         <p className="wd-label mt-3" style={{ color: "var(--text-faint)" }}>
