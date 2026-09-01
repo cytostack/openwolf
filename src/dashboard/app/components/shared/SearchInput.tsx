@@ -26,12 +26,7 @@ export function SearchInput({
       placeholder={placeholder}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className={className}
-      style={{
-        background: "var(--bg-surface)",
-        border: "1px solid var(--border)",
-        color: "var(--text-primary)",
-      }}
+      className={`${className} wd-panel text-primary`}
     />
   );
 }

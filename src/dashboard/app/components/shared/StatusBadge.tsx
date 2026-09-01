@@ -25,11 +25,7 @@ export function StatusBadge({ status, className }: { status?: string | null; cla
     : { background: "var(--text-faint)" };
   return (
     <span
-      className={cn("inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full wd-label", className)}
-      style={{
-        border: "1px solid var(--border)",
-        color: tone === "bad" ? "var(--accent)" : "var(--text-secondary)",
-      }}
+      className={cn("inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full wd-label wd-badge", tone === "bad" ? "text-accent" : "text-secondary", className)}
     >
       <span className={cn("rounded-full", tone === "ok" && label.toLowerCase() === "running" ? "rec-pulse" : "")}
         style={{ width: 6, height: 6, ...dotStyle }} />

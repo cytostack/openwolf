@@ -31,17 +31,21 @@ export function WdTable({
   rowKey = (_row, i) => i,
   className = "w-full text-sm",
   cellClassName = "px-4 py-2",
+  caption,
 }: {
   columns: WdColumn[];
   rows: Record<string, any>[];
   rowKey?: (row: Record<string, any>, i: number) => string | number;
   className?: string;
   cellClassName?: string;
+  caption?: string;
 }) {
+  const label = caption ?? "Data table";
   return (
-    <table className={className}>
+    <table className={className} aria-label={label}>
+      <caption className="sr-only">{label}</caption>
       <thead>
-        <tr className="wd-label" style={{ color: "var(--text-faint)" }}>
+        <tr className="wd-label text-faint">
           {columns.map((c) => (
             <th
               key={c.key}
@@ -54,7 +58,7 @@ export function WdTable({
       </thead>
       <tbody>
         {rows.map((row, i) => (
-          <tr key={rowKey(row, i)} className="wd-row" style={{ borderBottom: "1px solid var(--border)" }}>
+          <tr key={rowKey(row, i)} className="wd-row wd-divide">
             {columns.map((c) => (
               <td
                 key={c.key}

@@ -15,10 +15,10 @@ export function AISuggestions({ data }: { data: WolfData }) {
   if (!suggestions) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="text-4xl mb-3" style={{ color: "var(--text-faint)" }}>◆</div>
-        <h3 className="font-medium mb-1" style={{ color: "var(--text-secondary)" }}>AI suggestions generate weekly</h3>
-        <p className="text-sm max-w-sm" style={{ color: "var(--text-muted)" }}>
-          Run <code style={{ color: "var(--text-secondary)" }}>openwolf cron run project-suggestions</code> to generate now.
+        <div className="text-4xl mb-3 text-faint">◆</div>
+        <h3 className="font-medium mb-1 text-secondary">AI suggestions generate weekly</h3>
+        <p className="text-sm max-w-sm text-muted">
+          Run <code className="text-secondary">openwolf cron run project-suggestions</code> to generate now.
         </p>
       </div>
     );
@@ -27,12 +27,11 @@ export function AISuggestions({ data }: { data: WolfData }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <span className="text-sm" style={{ color: "var(--text-faint)" }}>
+        <span className="text-sm text-faint">
           Generated: {suggestions.generated_at ? relativeTime(suggestions.generated_at) : "unknown"}
         </span>
         <button onClick={() => client?.send({ type: "trigger_task", task_id: "project-suggestions" })}
-          className="px-3 py-1.5 text-xs rounded-lg transition-colors"
-          style={{ background: "var(--bg-surface-hover)", border: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}
+          className="px-3 py-1.5 text-xs rounded-lg transition-colors wd-chip-secondary"
         >Regenerate</button>
       </div>
 
@@ -46,12 +45,12 @@ export function AISuggestions({ data }: { data: WolfData }) {
                 <h3 className="font-medium" style={{ color }}>{title}</h3>
               </div>
               {items.length === 0 ? (
-                <p className="text-sm" style={{ color: "var(--text-muted)" }}>None reported.</p>
+                <p className="text-sm text-muted">None reported.</p>
               ) : (
                 <ul className="space-y-2">
                   {items.map((item: string, i: number) => (
-                    <li key={i} className="text-sm flex items-start gap-2" style={{ color: "var(--text-secondary)" }}>
-                      <span className="mt-1 shrink-0" style={{ color: "var(--text-faint)" }}>•</span>
+                    <li key={i} className="text-sm flex items-start gap-2 text-secondary">
+                      <span className="mt-1 shrink-0 text-faint">•</span>
                       <span>{item}</span>
                     </li>
                   ))}

@@ -65,15 +65,15 @@ export function ProjectOverview({ data }: { data: WolfData }) {
       {/* Header row */}
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <h2 className="dot-display text-4xl" style={{ color: "var(--text-primary)" }}>{projectName}</h2>
-          <p className="wd-label mt-2" style={{ color: "var(--text-muted)" }}>
+          <h2 className="dot-display text-4xl text-primary">{projectName}</h2>
+          <p className="wd-label mt-2 text-muted">
             one brain · {config.agents.length} agent{config.agents.length === 1 ? "" : "s"} wired
           </p>
         </div>
         <div className="flex items-center gap-3">
           <StatusBadge status={health.status} />
           {health.uptime_seconds > 0 && (
-            <span className="wd-label" style={{ color: "var(--text-faint)" }}>
+            <span className="wd-label text-faint">
               up {Math.floor(health.uptime_seconds / 3600)}h {Math.floor((health.uptime_seconds % 3600) / 60)}m
             </span>
           )}
@@ -96,18 +96,18 @@ export function ProjectOverview({ data }: { data: WolfData }) {
         {/* Measured usage */}
         <div className="wd-card p-5 flex flex-col justify-between gap-3 min-h-[132px]">
           <div className="flex items-start justify-between">
-            <span className="wd-label" style={{ color: "var(--text-muted)" }}>measured · transcripts</span>
-            {measured && <span className="rounded-full" style={{ width: 6, height: 6, background: "var(--accent)" }} />}
+            <span className="wd-label text-muted">measured · transcripts</span>
+            {measured && <span className="rounded-full wd-dot" style={{ width: 6, height: 6 }} />}
           </div>
           {measured ? (
-            <div className="space-y-1.5 font-mono text-sm" style={{ color: "var(--text-secondary)" }}>
-              <div className="flex justify-between"><span>in</span><span className="dot-display text-base" style={{ color: "var(--text-primary)" }}>{fmt(lt.real_input_tokens)}</span></div>
-              <div className="flex justify-between"><span>out</span><span className="dot-display text-base" style={{ color: "var(--text-primary)" }}>{fmt(lt.real_output_tokens)}</span></div>
-              <div className="flex justify-between"><span>cache read</span><span className="dot-display text-base" style={{ color: "var(--text-primary)" }}>{fmt(lt.real_cache_read_tokens)}</span></div>
-              <div className="flex justify-between wd-label pt-1" style={{ color: "var(--text-faint)" }}><span>api calls</span><span>{fmt(lt.real_api_calls)}</span></div>
+            <div className="space-y-1.5 font-mono text-sm text-secondary">
+              <div className="flex justify-between"><span>in</span><span className="dot-display text-base text-primary">{fmt(lt.real_input_tokens)}</span></div>
+              <div className="flex justify-between"><span>out</span><span className="dot-display text-base text-primary">{fmt(lt.real_output_tokens)}</span></div>
+              <div className="flex justify-between"><span>cache read</span><span className="dot-display text-base text-primary">{fmt(lt.real_cache_read_tokens)}</span></div>
+              <div className="flex justify-between wd-label pt-1 text-faint"><span>api calls</span><span>{fmt(lt.real_api_calls)}</span></div>
             </div>
           ) : (
-            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+            <p className="text-sm text-muted">
               No measured usage yet — real token counts are read from each session's transcript at Stop.
             </p>
           )}
@@ -115,15 +115,15 @@ export function ProjectOverview({ data }: { data: WolfData }) {
 
         {/* Agents */}
         <div className="wd-card p-5 flex flex-col justify-between gap-3 min-h-[132px]">
-          <span className="wd-label" style={{ color: "var(--text-muted)" }}>agents</span>
+          <span className="wd-label text-muted">agents</span>
           <div className="flex flex-wrap gap-2">
             {config.agents.map((a) => (
               <span key={a} className="flex flex-col items-center gap-1.5">
-                <span className="dot-display flex items-center justify-center rounded-full text-sm"
-                  style={{ width: 44, height: 44, border: "1px solid var(--border)", color: "var(--text-primary)" }}>
+                <span className="dot-display wd-avatar text-primary flex items-center justify-center rounded-full text-sm"
+                  style={{ width: 44, height: 44 }}>
                   {a.slice(0, 2).toUpperCase()}
                 </span>
-                <span className="wd-label" style={{ color: "var(--text-faint)", fontSize: "0.55rem" }}>{a}</span>
+                <span className="wd-label text-faint" style={{ fontSize: "0.55rem" }}>{a}</span>
               </span>
             ))}
           </div>
@@ -150,12 +150,12 @@ export function ProjectOverview({ data }: { data: WolfData }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="wd-card p-5">
           <div className="flex items-center justify-between mb-3">
-            <span className="wd-label" style={{ color: "var(--text-muted)" }}>context health</span>
+            <span className="wd-label text-muted">context health</span>
             {scanAgeH !== null && scanAgeH > 6 && (
-              <span className="wd-label" style={{ color: "var(--accent)" }}>stale — run openwolf scan</span>
+              <span className="wd-label text-accent">stale — run openwolf scan</span>
             )}
           </div>
-          <div className="space-y-2 font-mono text-sm" style={{ color: "var(--text-secondary)" }}>
+          <div className="space-y-2 font-mono text-sm text-secondary">
             <div className="flex justify-between">
               <span>anatomy scanned</span>
               <span>{scanAgeH === null ? "no scan state" : scanAgeH === 0 ? "under 1h ago" : `${scanAgeH}h ago`}</span>
@@ -172,15 +172,15 @@ export function ProjectOverview({ data }: { data: WolfData }) {
         </div>
 
         <div className="wd-card p-5">
-          <span className="wd-label" style={{ color: "var(--text-muted)" }}>next phase · status.md</span>
+          <span className="wd-label text-muted">next phase · status.md</span>
           {phase.length > 0 ? (
-            <div className="mt-3 space-y-1.5 text-sm" style={{ color: "var(--text-secondary)" }}>
+            <div className="mt-3 space-y-1.5 text-sm text-secondary">
               {phase.map((line, i) => (
                 <p key={i} className={i === 0 ? "font-medium" : ""} style={i === 0 ? { color: "var(--text-primary)" } : undefined}>{line}</p>
               ))}
             </div>
           ) : (
-            <p className="mt-3 text-sm" style={{ color: "var(--text-muted)" }}>
+            <p className="mt-3 text-sm text-muted">
               No handoff yet — .wolf/STATUS.md fills in as work completes.
             </p>
           )}
@@ -190,13 +190,13 @@ export function ProjectOverview({ data }: { data: WolfData }) {
       {/* Weekly activity dot chart */}
       <div className="wd-card p-5">
         <div className="flex items-center justify-between mb-4">
-          <span className="wd-label" style={{ color: "var(--text-muted)" }}>sessions / week</span>
-          <span className="wd-label" style={{ color: "var(--text-faint)" }}>last {Math.min(tokenLedger.sessions.length, 60)} sessions</span>
+          <span className="wd-label text-muted">sessions / week</span>
+          <span className="wd-label text-faint">last {Math.min(tokenLedger.sessions.length, 60)} sessions</span>
         </div>
         {tokenLedger.sessions.length > 0 ? (
           <DotBar data={weeklyActivity(data)} rows={7} unit="sessions" />
         ) : (
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>No sessions yet — start your agent and this fills in live.</p>
+          <p className="text-sm text-muted">No sessions yet — start your agent and this fills in live.</p>
         )}
       </div>
     </div>

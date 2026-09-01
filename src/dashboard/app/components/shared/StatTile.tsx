@@ -24,8 +24,7 @@ export function StatTile({ label, value, sub, variant = "default", accent, size 
         {corner}
       </div>
       <div>
-        <div className={`dot-display ${sizeMap[size]}`}
-          style={{ color: accent ? "var(--accent)" : undefined }}>
+        <div className={`dot-display ${sizeMap[size]} ${accent ? "text-accent" : ""}`}>
           {value}
         </div>
         {sub && <p className="wd-label mt-2" style={{ color: mutedColor }}>{sub}</p>}

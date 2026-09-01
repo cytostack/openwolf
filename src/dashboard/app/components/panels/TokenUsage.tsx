@@ -81,11 +81,11 @@ export function TokenUsage({ data }: { data: WolfData }) {
       {/* Usage over time */}
       <div className="wd-card p-5">
         <div className="flex items-center justify-between mb-4">
-          <span className="wd-label" style={{ color: "var(--text-muted)" }}>usage over time · per session</span>
-          <span className="wd-label" style={{ color: "var(--text-faint)" }}>tokens</span>
+          <span className="wd-label text-muted">usage over time · per session</span>
+          <span className="wd-label text-faint">tokens</span>
         </div>
         {chartData.length === 0 ? (
-          <div className="text-sm py-8 text-center" style={{ color: "var(--text-muted)" }}>No session data yet.</div>
+          <div className="text-sm py-8 text-center text-muted">No session data yet.</div>
         ) : (
           <ResponsiveContainer width="100%" height={260}>
             <ComposedChart data={chartData}>
@@ -109,9 +109,9 @@ export function TokenUsage({ data }: { data: WolfData }) {
 
       {/* Per-agent breakdown */}
       <div className="wd-card p-5">
-        <span className="wd-label" style={{ color: "var(--text-muted)" }}>by agent</span>
+        <span className="wd-label text-muted">by agent</span>
         {agents.length === 0 ? (
-          <p className="text-sm mt-3" style={{ color: "var(--text-muted)" }}>No sessions recorded yet.</p>
+          <p className="text-sm mt-3 text-muted">No sessions recorded yet.</p>
         ) : (
           <div className="overflow-x-auto mt-3">
             <WdTable
@@ -125,7 +125,7 @@ export function TokenUsage({ data }: { data: WolfData }) {
                 { key: "cacheRead", label: "cache read", align: "right", cellClassName: "text-secondary" },
               ]}
               rows={agents.map((row) => ({
-                agent: <span style={{ color: "var(--text-primary)" }}>{row.agent}</span>,
+                agent: <span className="text-primary">{row.agent}</span>,
                 sessions: fmt(row.sessions),
                 estimated: formatTokens(row.estimated),
                 measuredIn: row.realIn > 0 ? formatTokens(row.realIn) : "—",
@@ -135,7 +135,7 @@ export function TokenUsage({ data }: { data: WolfData }) {
             />
           </div>
         )}
-        <p className="wd-label mt-3" style={{ color: "var(--text-faint)" }}>
+        <p className="wd-label mt-3 text-faint">
           estimated = char-ratio heuristic · measured = summed from harness transcripts at session end
         </p>
       </div>
@@ -143,16 +143,16 @@ export function TokenUsage({ data }: { data: WolfData }) {
       {/* Waste alerts */}
       {tokenLedger.waste_flags.length > 0 && (
         <div className="wd-card p-5">
-          <span className="wd-label" style={{ color: "var(--text-muted)" }}>waste alerts</span>
+          <span className="wd-label text-muted">waste alerts</span>
           <div className="space-y-3 mt-3">
             {tokenLedger.waste_flags.map((flag: any, i: number) => (
-              <div key={i} className="rounded-xl p-4" style={{ background: "var(--danger-subtle)", border: "1px solid var(--border)" }}>
+              <div key={i} className="rounded-xl p-4 wd-danger-box">
                 <div className="flex items-start gap-2.5">
-                  <span className="rounded-full mt-1.5" style={{ width: 6, height: 6, background: "var(--accent)", flexShrink: 0 }} />
+                  <span className="rounded-full mt-1.5 wd-dot" style={{ width: 6, height: 6 }} />
                   <div>
-                    <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{flag.pattern}</p>
-                    <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>{flag.description}</p>
-                    <p className="wd-label mt-2" style={{ color: "var(--text-faint)" }}>{flag.suggestion}</p>
+                    <p className="text-sm font-medium text-primary">{flag.pattern}</p>
+                    <p className="text-sm mt-1 text-muted">{flag.description}</p>
+                    <p className="wd-label mt-2 text-faint">{flag.suggestion}</p>
                   </div>
                 </div>
               </div>

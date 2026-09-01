@@ -51,13 +51,13 @@ export function CronStatus({ data }: { data: WolfData }) {
               label: "Task",
               render: (row) => (
                 <>
-                  <p className="text-sm" style={{ color: "var(--text-primary)" }}>{row.name}</p>
-                  <p className="text-xs" style={{ color: "var(--text-faint)" }}>{row.description}</p>
+                  <p className="text-sm text-primary">{row.name}</p>
+                  <p className="text-xs text-faint">{row.description}</p>
                 </>
               ),
             },
-            { key: "schedule", label: "Schedule", className: "hidden md:table-cell", render: (row) => <span className="text-sm" style={{ color: "var(--text-muted)" }}>{row.schedule}</span> },
-            { key: "lastRun", label: "Last Run", className: "hidden md:table-cell", render: (row) => <span className="text-sm" style={{ color: "var(--text-faint)" }}>{row.lastRun}</span> },
+            { key: "schedule", label: "Schedule", className: "hidden md:table-cell", render: (row) => <span className="text-sm text-muted">{row.schedule}</span> },
+            { key: "lastRun", label: "Last Run", className: "hidden md:table-cell", render: (row) => <span className="text-sm text-faint">{row.lastRun}</span> },
             {
               key: "actions",
               label: "Actions",
@@ -66,13 +66,8 @@ export function CronStatus({ data }: { data: WolfData }) {
                 <button
                   onClick={() => triggerTask(row.id)}
                   disabled={runningTasks[row.id] === "running"}
-                  className="px-3 py-1 text-xs rounded-md transition-colors"
-                  style={{
-                    background: "var(--bg-surface-hover)",
-                    border: "1px solid var(--border-subtle)",
-                    color: runningTasks[row.id] === "error" ? "var(--danger)" : "var(--text-secondary)",
-                    opacity: runningTasks[row.id] === "running" ? 0.6 : 1,
-                  }}
+                  className={`px-3 py-1 text-xs rounded-md transition-colors wd-btn-status ${runningTasks[row.id] === "error" ? "text-danger" : "text-secondary"}`}
+                  style={{ opacity: runningTasks[row.id] === "running" ? 0.6 : 1 }}
                 >{runningTasks[row.id] === "running" ? "Running…" : runningTasks[row.id] === "ok" ? "Queued" : runningTasks[row.id] === "error" ? "Failed" : "Run Now"}</button>
               ),
             },
@@ -95,29 +90,28 @@ export function CronStatus({ data }: { data: WolfData }) {
           onToggle={() => setShowDeadLetters(!showDeadLetters)}
           header={
             <div className="flex items-center gap-2">
-              <span className="text-sm" style={{ color: "var(--text-muted)" }}>{showDeadLetters ? "▼" : "▶"}</span>
-              <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>Dead Letter Queue</h3>
-              <span className="text-xs" style={{ color: "var(--text-faint)" }}>({cronState.dead_letter_queue.length})</span>
+              <span className="text-sm text-muted">{showDeadLetters ? "▼" : "▶"}</span>
+              <h3 className="font-medium text-secondary">Dead Letter Queue</h3>
+              <span className="text-xs text-faint">({cronState.dead_letter_queue.length})</span>
             </div>
           }
         >
           {cronState.dead_letter_queue.length === 0 ? (
-            <div className="px-5 pb-4 pt-4 text-sm" style={{ color: "var(--text-muted)" }}>
+            <div className="px-5 pb-4 pt-4 text-sm text-muted">
               No dead letters — all systems healthy
             </div>
           ) : (
             <div className="px-5 pb-4 pt-3 space-y-3">
               {cronState.dead_letter_queue.map((dl: any, i: number) => (
-                <div key={i} className="rounded-lg p-4" style={{ background: "var(--danger-subtle)", border: "1px solid color-mix(in srgb, var(--danger) 20%, transparent)" }}>
+                <div key={i} className="rounded-lg p-4 wd-danger-box-mix">
                   <div className="flex items-start justify-between">
                     <div>
-                      <p className="text-sm font-medium" style={{ color: "var(--danger)" }}>{dl.task_id}</p>
-                      <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{dl.error}</p>
-                      <p className="text-xs mt-1" style={{ color: "var(--text-faint)" }}>{relativeTime(dl.timestamp)} · {dl.attempts} attempts</p>
+                      <p className="text-sm font-medium text-danger">{dl.task_id}</p>
+                      <p className="text-xs mt-1 text-muted">{dl.error}</p>
+                      <p className="text-xs mt-1 text-faint">{relativeTime(dl.timestamp)} · {dl.attempts} attempts</p>
                     </div>
                     <button onClick={() => retryDeadLetter(dl.task_id)}
-                      className="px-3 py-1 text-xs rounded-md"
-                      style={{ background: "var(--bg-surface-hover)", border: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}
+                      className="px-3 py-1 text-xs rounded-md wd-chip-secondary"
                     >Retry</button>
                   </div>
                 </div>
@@ -133,20 +127,20 @@ export function CronStatus({ data }: { data: WolfData }) {
         onToggle={() => setShowHistory(!showHistory)}
         header={
           <div className="flex items-center gap-2">
-            <span className="text-sm" style={{ color: "var(--text-muted)" }}>{showHistory ? "▼" : "▶"}</span>
-            <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>Execution History</h3>
+            <span className="text-sm text-muted">{showHistory ? "▼" : "▶"}</span>
+            <h3 className="font-medium text-secondary">Execution History</h3>
           </div>
         }
       >
         {cronState.execution_log.length === 0 ? (
-          <p className="px-5 py-4 text-sm text-center" style={{ color: "var(--text-muted)" }}>No executions yet.</p>
+          <p className="px-5 py-4 text-sm text-center text-muted">No executions yet.</p>
         ) : (
           <div className="px-5 py-3">
             {cronState.execution_log.slice(-30).reverse().map((entry: any, i: number) => (
-              <div key={i} className="flex items-center gap-4 py-2" style={{ borderBottom: "1px solid var(--border)" }}>
-                <span className="text-xs font-mono" style={{ color: "var(--text-faint)" }}>{entry.timestamp?.slice(11, 16)}</span>
-                <span className="text-sm flex-1" style={{ color: "var(--text-secondary)" }}>{entry.task_id}</span>
-                <span className="text-xs font-mono" style={{ color: "var(--text-faint)" }}>{entry.duration_ms}ms</span>
+              <div key={i} className="flex items-center gap-4 py-2 wd-divide">
+                <span className="text-xs font-mono text-faint">{entry.timestamp?.slice(11, 16)}</span>
+                <span className="text-sm flex-1 text-secondary">{entry.task_id}</span>
+                <span className="text-xs font-mono text-faint">{entry.duration_ms}ms</span>
                 <StatusBadge status={entry.status} />
               </div>
             ))}

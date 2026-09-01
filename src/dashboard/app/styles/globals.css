@@ -1,5 +1,25 @@
 @import "tailwindcss";
 
+/* Register design tokens with Tailwind 4 (CSS-first @theme). Components can
+   then use framework utilities (bg-*, text-*, border-*) backed by the same
+   tokens the :root / [data-theme] blocks define below. */
+@theme {
+  --color-base: var(--bg-base);
+  --color-surface: var(--bg-surface);
+  --color-surface-hover: var(--bg-surface-hover);
+  --color-elevated: var(--bg-elevated);
+  --color-ink: var(--text-primary);
+  --color-ink-secondary: var(--text-secondary);
+  --color-ink-muted: var(--text-muted);
+  --color-ink-faint: var(--text-faint);
+  --color-signal: var(--accent);
+  --color-danger: var(--danger);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-warning: var(--warning);
+  --color-line: var(--border);
+  --color-line-subtle: var(--border-subtle);
+}
+
 /* ─────────────────────────────────────────────────────────────────────────
    OpenWolf Dashboard 2.0 — dot-matrix design system
    Monochrome surfaces, one signal-red accent, dot-display numerals.
@@ -156,6 +176,55 @@ code, pre, .font-mono {
 .text-secondary { color: var(--text-secondary); }
 .text-muted { color: var(--text-muted); }
 .text-faint { color: var(--text-faint); }
+.text-accent { color: var(--accent); }
+.text-danger { color: var(--danger); }
+.text-warning { color: var(--warning); }
+
+.bg-surface-hover { background-color: var(--bg-surface-hover); }
+.bg-danger-subtle { background-color: var(--danger-subtle); }
+.bg-accent-subtle { background-color: var(--accent-subtle); }
+.bg-warning-subtle { background-color: var(--warning-subtle); }
+
+.wd-divide { border-bottom: 1px solid var(--border); }
+.wd-divide-top { border-top: 1px solid var(--border); }
+
+/* Semantic classes extracted from one-off inline theme styles */
+.wd-panel { background-color: var(--bg-surface); border: 1px solid var(--border); }
+.wd-panel-muted { background-color: var(--bg-surface); border: 1px solid var(--border); color: var(--text-muted); }
+.wd-chip { background-color: var(--bg-surface-hover); border: 1px solid var(--border-subtle); color: var(--text-muted); }
+.wd-chip-secondary { background-color: var(--bg-surface-hover); border: 1px solid var(--border-subtle); color: var(--text-secondary); }
+.wd-chip-plain { background-color: var(--bg-surface-hover); color: var(--text-secondary); }
+.wd-warning-chip { background-color: var(--warning-subtle); color: var(--warning); }
+.wd-danger-box { background-color: var(--danger-subtle); border: 1px solid var(--border); }
+.wd-danger-box-mix { background-color: var(--danger-subtle); border: 1px solid color-mix(in srgb, var(--danger) 20%, transparent); }
+.wd-pre-danger { color: var(--danger); background-color: var(--danger-subtle); }
+.wd-pre-accent { color: var(--accent); background-color: var(--accent-subtle); }
+.wd-danger-note { background-color: color-mix(in srgb, var(--danger) 5%, transparent); border: 1px solid color-mix(in srgb, var(--danger) 10%, transparent); }
+.wd-danger-count { background-color: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); }
+.wd-danger-date { color: color-mix(in srgb, var(--danger) 60%, transparent); }
+.wd-topbar { background-color: var(--bg-base); border-bottom: 1px solid var(--border-subtle); }
+.wd-tooltip { background-color: var(--chart-tooltip-bg); border: 1px solid var(--chart-tooltip-border); color: var(--text-primary); }
+.wd-dot { border-radius: 9999px; background-color: var(--accent); flex-shrink: 0; }
+.wd-dot-static { border-radius: 9999px; background-color: var(--accent); }
+
+/* Small circular avatar / badge with a ring */
+.wd-avatar { border: 1px solid var(--border); }
+.wd-badge { border: 1px solid var(--border); }
+.wd-seg-active { background-color: var(--bg-surface-hover); color: var(--text-primary); }
+.wd-btn-status { background-color: var(--bg-surface-hover); border: 1px solid var(--border-subtle); }
+
+/* State-driven bullet dot backgrounds (replaces ternary inline styles) */
+.wd-bullet { width: 6px; height: 6px; border-radius: 9999px; flex-shrink: 0; }
+.wd-bullet-ink { background-color: var(--text-primary); }
+.wd-bullet-muted { background-color: var(--text-muted); }
+.wd-bullet-faint { background-color: var(--text-faint); }
+
+/* DotBar series dots (replaces ternary inline styles) */
+.wd-dotseries { width: 6px; height: 6px; border-radius: 9999px; }
+.wd-dotseries-red { background-color: var(--series-red); }
+.wd-dotseries-1 { background-color: var(--series-1); }
+.wd-dotseries-2 { background-color: var(--series-2); }
+.wd-dotseries-off { background-color: var(--dot-off); }
 
 /* Accordion / collapse card header hover (replaces per-frame onMouseEnter) */
 .wd-collapse-head { background: transparent; }
@@ -164,10 +233,10 @@ code, pre, .font-mono {
 .wd-danger-head:hover { background: color-mix(in srgb, var(--danger) 8%, transparent); }
 
 /* TopNav item — color hover via CSS (was a per-frame onMouseEnter style write) */
-.wd-nav { color: var(--text-muted); }
+.wd-nav { color: var(--text-muted); border: 1px solid transparent; background: transparent; }
 .wd-nav:hover { color: var(--text-secondary); }
-.wd-nav[data-active="true"] { color: var(--text-primary); }
-.wd-nav[data-active="true"]:hover { color: var(--text-primary); }
+.wd-nav[data-active="true"] { color: var(--text-primary); background: var(--bg-surface); border-color: var(--border); }
+.wd-nav[data-active="true"]:hover { color: var(--text-primary); background: var(--bg-surface); border-color: var(--border); }
 
 /* Data-table row hover (replaces per-frame onMouseEnter) */
 .wd-row { transition: background-color 0.15s; }

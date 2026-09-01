@@ -25,7 +25,7 @@ export function MemoryViewer({ data }: { data: WolfData }) {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="text-center py-12" style={{ color: "var(--text-muted)" }}>No sessions found.</div>
+        <div className="text-center py-12 text-muted">No sessions found.</div>
       ) : (
         <div className="space-y-3">
           {filtered.map((session, i) => {
@@ -39,11 +39,11 @@ export function MemoryViewer({ data }: { data: WolfData }) {
                 header={
                   <>
                     <div className="flex items-center gap-3">
-                      <span className="text-sm" style={{ color: "var(--text-faint)" }}>{isExpanded ? "▼" : "▶"}</span>
-                      <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{session.date} {session.time}</span>
-                      <span className="text-xs" style={{ color: "var(--text-faint)" }}>{session.entries.length} actions</span>
+                      <span className="text-sm text-faint">{isExpanded ? "▼" : "▶"}</span>
+                      <span className="text-sm font-medium text-primary">{session.date} {session.time}</span>
+                      <span className="text-xs text-faint">{session.entries.length} actions</span>
                     </div>
-                    {totalTokens > 0 && <span className="text-xs font-mono" style={{ color: "var(--text-faint)" }}>~{totalTokens} tok</span>}
+                    {totalTokens > 0 && <span className="text-xs font-mono text-faint">~{totalTokens} tok</span>}
                   </>
                 }
               >

@@ -52,12 +52,11 @@ function DirNode({ node, search, depth = 0 }: { node: TreeNode; search: string; 
   return (
     <div className="ml-3">
       {node.name !== "." && (
-        <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-1.5 py-1 text-sm transition-colors"
-          style={{ color: "var(--text-secondary)" }}>
-          <span className="w-4 text-center" style={{ color: "var(--text-faint)" }}>{expanded ? "▼" : "▶"}</span>
-          <span style={{ color: "var(--text-muted)" }}>▸</span>
+        <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-1.5 py-1 text-sm transition-colors text-secondary">
+          <span className="w-4 text-center text-faint">{expanded ? "▼" : "▶"}</span>
+          <span className="text-muted">▸</span>
           <span>{node.name}/</span>
-          <span className="text-xs" style={{ color: "var(--text-faint)" }}>{countFiles(node)} files</span>
+          <span className="text-xs text-faint">{countFiles(node)} files</span>
         </button>
       )}
       {(expanded || node.name === ".") && (
@@ -65,20 +64,20 @@ function DirNode({ node, search, depth = 0 }: { node: TreeNode; search: string; 
           {matchedFiles.sort((a, b) => a.file.localeCompare(b.file)).map((f) => (
             <div key={f.file} className="py-1 pl-5">
               <div className="flex items-center gap-2">
-                <span style={{ color: "var(--text-faint)" }}>▪</span>
-                <span className="text-sm font-mono" style={{ color: "var(--text-primary)" }}>{f.file}</span>
-                {f.description && <span className="text-xs truncate max-w-xs" style={{ color: "var(--text-faint)" }}>— {f.description}</span>}
+                <span className="text-faint">▪</span>
+                <span className="text-sm font-mono text-primary">{f.file}</span>
+                {f.description && <span className="text-xs truncate max-w-xs text-faint">— {f.description}</span>}
                 <TokenBadge tokens={f.tokens} className="ml-auto shrink-0" />
               </div>
               {f.symbols && f.symbols.length > 0 && (
                 <div className="pl-6 pt-0.5 flex flex-wrap gap-x-3">
                   {f.symbols.slice(0, 8).map((s) => (
-                    <span key={`${s.name}-${s.startLine}`} className="wd-label" style={{ color: "var(--text-faint)", fontSize: "0.6rem" }}>
+                    <span key={`${s.name}-${s.startLine}`} className="wd-label text-faint" style={{ fontSize: "0.6rem" }}>
                       {s.kind} {s.name} L{s.startLine}-{s.endLine}
                     </span>
                   ))}
                   {f.symbols.length > 8 && (
-                    <span className="wd-label" style={{ color: "var(--text-faint)", fontSize: "0.6rem" }}>+{f.symbols.length - 8} more</span>
+                    <span className="wd-label text-faint" style={{ fontSize: "0.6rem" }}>+{f.symbols.length - 8} more</span>
                   )}
                 </div>
               )}
@@ -122,19 +121,18 @@ export function AnatomyBrowser({ data }: { data: WolfData }) {
     <div>
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <SearchInput value={search} onChange={setSearch} placeholder="Search files..." ariaLabel="Search files" />
-        <button onClick={() => setSortBySize(!sortBySize)}
-          className="px-3 py-2 text-xs rounded-lg"
-          style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
-        >{sortBySize ? "Sort: Size" : "Sort: A-Z"}</button>
+        <button onClick={() => setSortBySize(!sortBySize)} className="px-3 py-2 text-xs rounded-lg wd-panel-muted">
+          {sortBySize ? "Sort: Size" : "Sort: A-Z"}
+        </button>
       </div>
 
-      <div className="flex gap-4 mb-4 text-sm" style={{ color: "var(--text-muted)" }}>
+      <div className="flex gap-4 mb-4 text-sm text-muted">
         <span>{stats.total} files tracked</span>
         <span>Avg: {stats.avg} tok/file</span>
         <span>Largest: {stats.largest} tok</span>
       </div>
 
-      <div className="rounded-xl p-4" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
+      <div className="rounded-xl p-4 wd-panel">
         {anatomy.entries.length === 0 ? (
           <EmptyState icon="◇" title="No anatomy data"
             description="Run openwolf scan to index your project." />

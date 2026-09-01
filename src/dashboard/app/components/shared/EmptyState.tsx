@@ -13,14 +13,13 @@ export function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
-      <div aria-hidden="true" className="text-4xl mb-3" style={{ color: "var(--text-faint)" }}>{icon}</div>
-      <h3 className="font-medium mb-1" style={{ color: "var(--text-secondary)" }}>{title}</h3>
-      <p className="text-sm max-w-sm" style={{ color: "var(--text-muted)" }}>{description}</p>
+      <div aria-hidden="true" className="text-4xl mb-3 text-faint">{icon}</div>
+      <h3 className="font-medium mb-1 text-secondary">{title}</h3>
+      <p className="text-sm max-w-sm text-muted">{description}</p>
       {action && (
         <button
           onClick={action.onClick}
-          className="mt-4 px-3 py-1.5 text-xs rounded-lg transition-colors cursor-pointer active:translate-y-[1px]"
-          style={{ background: "var(--bg-surface-hover)", border: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}
+          className="mt-4 px-3 py-1.5 text-xs rounded-lg transition-colors cursor-pointer active:translate-y-[1px] wd-chip-secondary"
         >
           {action.label}
         </button>

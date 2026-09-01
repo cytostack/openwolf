@@ -18,10 +18,7 @@ export function CollapseCard({
   children: React.ReactNode;
 }) {
   return (
-    <div
-      className="rounded-xl overflow-hidden"
-      style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
-    >
+    <div className="rounded-xl overflow-hidden wd-panel">
       <button
         onClick={onToggle}
         aria-expanded={expanded}
@@ -29,7 +26,7 @@ export function CollapseCard({
       >
         {header}
       </button>
-      {expanded && <div style={{ borderTop: "1px solid var(--border)" }}>{children}</div>}
+      {expanded && <div className="wd-divide-top">{children}</div>}
     </div>
   );
 }

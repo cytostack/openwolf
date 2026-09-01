@@ -23,14 +23,13 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     if (this.state.hasError) {
       return (
         <div className="wd-card p-8 flex flex-col items-center justify-center text-center">
-          <h2 className="font-medium mb-1" style={{ color: "var(--text-primary)" }}>This panel failed to load</h2>
-          <p className="text-sm max-w-sm" style={{ color: "var(--text-muted)" }}>
+          <h2 className="font-medium mb-1 text-primary">This panel failed to load</h2>
+          <p className="text-sm max-w-sm text-muted">
             Something went wrong rendering this panel. You can try reloading it.
           </p>
           <button
             onClick={() => this.setState({ hasError: false })}
-            className="mt-4 px-3 py-1.5 text-xs rounded-lg transition-colors cursor-pointer active:translate-y-[1px]"
-            style={{ background: "var(--bg-surface-hover)", border: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}
+            className="mt-4 px-3 py-1.5 text-xs rounded-lg transition-colors cursor-pointer active:translate-y-[1px] wd-chip-secondary"
           >
             Retry
           </button>

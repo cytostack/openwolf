@@ -36,22 +36,10 @@ export function DotBar({ data, rows = 7, unit = "" }: DotBarProps) {
               {Array.from({ length: rows }).map((_, r) => (
                 <span
                   key={r}
-                  className="rounded-full"
-                  style={{
-                    width: 6,
-                    height: 6,
-                    background:
-                      r < filled
-                        ? d.highlight
-                          ? "var(--series-red)"
-                          : hover === i
-                            ? "var(--series-1)"
-                            : "var(--series-2)"
-                        : "var(--dot-off)",
-                  }}
+                  className={`rounded-full wd-dotseries ${r < filled ? (d.highlight ? "wd-dotseries-red" : hover === i ? "wd-dotseries-1" : "wd-dotseries-2") : "wd-dotseries-off"}`}
                 />
               ))}
-              <span className="wd-label mt-2" style={{ color: hover === i ? "var(--text-primary)" : "var(--text-faint)", fontSize: "0.55rem" }}>
+              <span className={`wd-label mt-2 ${hover === i ? "text-primary" : "text-faint"}`} style={{ fontSize: "0.55rem" }}>
                 {d.label}
               </span>
             </div>
@@ -59,10 +47,8 @@ export function DotBar({ data, rows = 7, unit = "" }: DotBarProps) {
         })}
       </div>
       {hover !== null && data[hover] && (
-        <div
-          className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded-md font-mono text-xs pointer-events-none whitespace-nowrap"
-          style={{ background: "var(--chart-tooltip-bg)", border: "1px solid var(--chart-tooltip-border)", color: "var(--text-primary)" }}
-        >
+        <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded-md font-mono text-xs pointer-events-none whitespace-nowrap wd-tooltip"
+>
           {data[hover].label}: {data[hover].value.toLocaleString()}{unit ? ` ${unit}` : ""}
         </div>
       )}

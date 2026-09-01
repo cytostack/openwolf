@@ -18,7 +18,7 @@ const AISuggestions = lazy(() => import("./components/panels/AISuggestions.js").
 function Skeleton() {
   return (
     <div className="space-y-4 animate-pulse">
-      <div className="h-8 rounded-full w-48" style={{ background: "var(--bg-surface)" }} />
+      <div className="h-8 rounded-full w-48 bg-surface"/>
       <div className="h-40 wd-card" />
       <div className="grid grid-cols-3 gap-4">
         <div className="h-24 wd-card" />
@@ -44,10 +44,10 @@ export default function App() {
 
   if (data.loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen" style={{ background: "var(--bg-base)" }}>
+      <div className="flex items-center justify-center min-h-screen bg-base">
         <div className="text-center">
-          <div className="dot-display text-3xl mb-3" style={{ color: "var(--text-primary)" }}>OPENWOLF</div>
-          <p className="wd-label" style={{ color: "var(--text-muted)" }}>loading…</p>
+          <div className="dot-display text-3xl mb-3 text-primary">OPENWOLF</div>
+          <p className="wd-label text-muted">loading…</p>
         </div>
       </div>
     );
@@ -55,13 +55,13 @@ export default function App() {
 
   if (data.authError) {
     return (
-      <div className="flex items-center justify-center min-h-screen px-6" style={{ background: "var(--bg-base)" }}>
+      <div className="flex items-center justify-center min-h-screen px-6 bg-base">
         <div className="wd-card p-8 max-w-lg text-center">
-          <div className="dot-display text-3xl mb-3" style={{ color: "var(--accent)" }}>401</div>
-          <p className="mb-3" style={{ color: "var(--text-primary)" }}>Dashboard token rejected.</p>
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+          <div className="dot-display text-3xl mb-3 text-accent">401</div>
+          <p className="mb-3 text-primary">Dashboard token rejected.</p>
+          <p className="text-sm text-muted">
             The server on this port belongs to a different project or an older session.
-            Close this tab and relaunch with <span className="font-mono" style={{ color: "var(--text-secondary)" }}>openwolf dashboard</span> from
+            Close this tab and relaunch with <span className="font-mono text-secondary">openwolf dashboard</span> from
             your project to open the correct URL with a matching token.
           </p>
         </div>
@@ -70,7 +70,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen" style={{ background: "var(--bg-base)" }}>
+    <div className="min-h-screen bg-base">
       <TopNav
         activePanel={activePanel}
         onNavigate={setActivePanel}
