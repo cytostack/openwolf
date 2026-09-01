@@ -186,6 +186,26 @@ function craft() {
   return s;
 }
 
+// ─── dimension 7: token hygiene (20) ─────────────────────────────────────
+function tokenHygiene() {
+  let s = 0;
+  const add = (full, ok, note) => { if (ok) s += full; else detail.push(`   token-hygiene: ${note}`); };
+
+  // Theme tokens should be registered via Tailwind @theme (CSS-first), not
+  // hand-rolled inline everywhere.
+  add(5, hasGlobal("@theme"), "globals.css has no Tailwind @theme token registration");
+  // Inline var(--) styles in components: fewer is better (extract .wd-* classes).
+  const inlineVar = count("style=\\{\\{[^}]*var\\(--");
+  const inlineScore = inlineVar === 0 ? 8 : inlineVar <= 50 ? 5 : inlineVar <= 100 ? 2 : 0;
+  s += inlineScore;
+  if (inlineScore < 8) detail.push(`   token-hygiene: inline var(--) style ×${inlineVar} (extract .wd-* classes)`);
+  // Every data table needs a reachable title (caption or aria-label).
+  add(4, has("<caption") || count("aria-label=\"[^\"]*[Tt]able") > 0, "no table caption / aria-label (WdTable)");
+  // No bare inline color besides themed vars (inherits color-line).
+  add(3, count("style=\\{\\{[^}]*\"#[0-9a-fA-F]{6}") === 0, "bare hex in inline style");
+  return s;
+}
+
 const dims = [
   { id: "accessibility", name: "Accessibility", max: 25, score: accessibility() },
   { id: "color-line", name: "Color Line", max: 20, score: colorLine() },
@@ -193,6 +213,7 @@ const dims = [
   { id: "component-dry", name: "Component DRY", max: 15, score: componentDry() },
   { id: "state", name: "State Coverage", max: 10, score: stateCoverage() },
   { id: "craft", name: "Craft", max: 10, score: craft() },
+  { id: "token-hygiene", name: "Token Hygiene", max: 20, score: tokenHygiene() },
 ];
 
 const total = dims.reduce((a, d) => a + d.score, 0);
