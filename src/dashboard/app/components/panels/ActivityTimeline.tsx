@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import type { WolfData } from "../../hooks/useWolfData.js";
+import { SearchInput } from "../shared/SearchInput.js";
 
 export function ActivityTimeline({ data }: { data: WolfData }) {
   const { memory } = data;
@@ -42,10 +43,7 @@ export function ActivityTimeline({ data }: { data: WolfData }) {
             >{f === "all" ? "All" : f === "today" ? "Today" : "This Week"}</button>
           ))}
         </div>
-        <input type="text" placeholder="Search actions..." value={search} onChange={(e) => setSearch(e.target.value)}
-          className="rounded-lg px-3 py-1.5 text-sm flex-1 min-w-[200px] focus:outline-none"
-          style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-        />
+        <SearchInput value={search} onChange={setSearch} placeholder="Search actions..." ariaLabel="Search actions" />
         <button onClick={() => setGrouped(!grouped)}
           className="px-3 py-1.5 text-xs rounded-lg"
           style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-muted)" }}

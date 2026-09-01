@@ -69,7 +69,7 @@ export function CronStatus({ data }: { data: WolfData }) {
                     style={{
                       background: "var(--bg-surface-hover)",
                       border: "1px solid var(--border-subtle)",
-                      color: runningTasks[task.id] === "error" ? "var(--danger, #e5484d)" : "var(--text-secondary)",
+                      color: runningTasks[task.id] === "error" ? "var(--danger)" : "var(--text-secondary)",
                       opacity: runningTasks[task.id] === "running" ? 0.6 : 1,
                     }}
                   >{runningTasks[task.id] === "running" ? "Running…" : runningTasks[task.id] === "ok" ? "✓ Queued" : runningTasks[task.id] === "error" ? "✗ Failed" : "Run Now"}</button>
@@ -95,7 +95,7 @@ export function CronStatus({ data }: { data: WolfData }) {
           ) : (
             <div className="space-y-3 mt-3">
               {cronState.dead_letter_queue.map((dl: any, i: number) => (
-                <div key={i} className="rounded-lg p-4" style={{ background: "var(--danger-subtle)", border: "1px solid rgba(220, 38, 38, 0.2)" }}>
+                <div key={i} className="rounded-lg p-4" style={{ background: "var(--danger-subtle)", border: "1px solid color-mix(in srgb, var(--danger) 20%, transparent)" }}>
                   <div className="flex items-start justify-between">
                     <div>
                       <p className="text-sm font-medium" style={{ color: "var(--danger)" }}>{dl.task_id}</p>

@@ -156,3 +156,26 @@ code, pre, .font-mono {
 .text-secondary { color: var(--text-secondary); }
 .text-muted { color: var(--text-muted); }
 .text-faint { color: var(--text-faint); }
+
+/* Accordion / collapse card header hover (replaces per-frame onMouseEnter) */
+.wd-collapse-head { background: transparent; }
+.wd-collapse-head:hover { background: var(--bg-surface-hover); }
+
+/* Data-table row hover (replaces per-frame onMouseEnter) */
+.wd-row { transition: background-color 0.15s; }
+.wd-row:hover { background: var(--bg-surface-hover); }
+
+/* Accessibility: visible keyboard focus */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Accessibility: honor reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .rec-pulse, .pulse-green { animation: none; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -30,8 +30,8 @@ export function TopNav({ activePanel, onNavigate, daemonStatus, projectName, age
       <div className="max-w-7xl mx-auto px-5">
         <div className="flex items-center justify-between h-14">
           {/* Wordmark */}
-          <button onClick={() => onNavigate("overview")} className="flex items-center gap-2.5 cursor-pointer" style={{ background: "none", border: "none", padding: 0 }}>
-            <span className="rounded-full" style={{ width: 10, height: 10, background: "var(--accent)" }} />
+          <button onClick={() => onNavigate("overview")} aria-label="OpenWolf overview" className="flex items-center gap-2.5 cursor-pointer" style={{ background: "none", border: "none", padding: 0 }}>
+            <span aria-hidden="true" className="rounded-full" style={{ width: 10, height: 10, background: "var(--accent)" }} />
             <span className="dot-display text-lg" style={{ color: "var(--text-primary)" }}>OPENWOLF</span>
           </button>
 
@@ -43,7 +43,8 @@ export function TopNav({ activePanel, onNavigate, daemonStatus, projectName, age
             {agents.length > 0 && (
               <div className="hidden lg:flex items-center gap-1" title={`Wired agents: ${agents.join(", ")}`}>
                 {agents.map((a) => (
-                  <span key={a} className="wd-label flex items-center justify-center rounded-full"
+                  <span key={a} title={a} aria-label={`Wired agent: ${a}`}
+                    className="wd-label flex items-center justify-center rounded-full"
                     style={{ width: 22, height: 22, border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: "0.55rem" }}>
                     {a.slice(0, 2).toUpperCase()}
                   </span>

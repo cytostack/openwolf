@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from "react";
 import { TokenBadge } from "../shared/TokenBadge.js";
 import type { WolfData } from "../../hooks/useWolfData.js";
+import { SearchInput } from "../shared/SearchInput.js";
+import { EmptyState } from "../shared/EmptyState.js";
 
 interface TreeNode {
   name: string;
@@ -119,10 +121,7 @@ export function AnatomyBrowser({ data }: { data: WolfData }) {
   return (
     <div>
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        <input type="text" placeholder="Search files..." value={search} onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 min-w-[200px] rounded-lg px-3 py-2 text-sm focus:outline-none"
-          style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-        />
+        <SearchInput value={search} onChange={setSearch} placeholder="Search files..." ariaLabel="Search files" />
         <button onClick={() => setSortBySize(!sortBySize)}
           className="px-3 py-2 text-xs rounded-lg"
           style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
@@ -137,10 +136,8 @@ export function AnatomyBrowser({ data }: { data: WolfData }) {
 
       <div className="rounded-xl p-4" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
         {anatomy.entries.length === 0 ? (
-          <div className="text-center py-12" style={{ color: "var(--text-muted)" }}>
-            <p className="text-2xl mb-2">📂</p>
-            <p>No anatomy data. Run <code style={{ color: "var(--text-secondary)" }}>openwolf scan</code> to index your project.</p>
-          </div>
+          <EmptyState icon="◇" title="No anatomy data"
+            description="Run openwolf scan to index your project." />
         ) : (
           <DirNode node={tree} search={search} />
         )}

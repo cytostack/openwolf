@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import type { WolfData } from "../../hooks/useWolfData.js";
+import { SearchInput } from "../shared/SearchInput.js";
+import { EmptyState } from "../shared/EmptyState.js";
 
 export function BugLog({ data }: { data: WolfData }) {
   const { buglog } = data;
@@ -17,13 +19,8 @@ export function BugLog({ data }: { data: WolfData }) {
 
   if (buglog.bugs.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="text-4xl mb-3">🐛</div>
-        <h3 className="font-medium mb-1" style={{ color: "var(--text-secondary)" }}>No bugs logged yet</h3>
-        <p className="text-sm max-w-sm" style={{ color: "var(--text-muted)" }}>
-          When you encounter and fix bugs, they'll appear here for future reference.
-        </p>
-      </div>
+      <EmptyState icon="◆" title="No bugs logged yet"
+        description="When you encounter and fix bugs, they'll appear here for future reference." />
     );
   }
 
@@ -37,10 +34,7 @@ export function BugLog({ data }: { data: WolfData }) {
   return (
     <div>
       <div className="flex flex-wrap items-center gap-4 mb-4">
-        <input type="text" placeholder="Search bugs..." value={search} onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 min-w-[200px] rounded-lg px-3 py-2 text-sm focus:outline-none"
-          style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-        />
+        <SearchInput value={search} onChange={setSearch} placeholder="Search bugs..." ariaLabel="Search bugs" />
         <span className="text-sm" style={{ color: "var(--text-faint)" }}>{buglog.bugs.length} bugs logged</span>
       </div>
 

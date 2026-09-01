@@ -1,11 +1,30 @@
 import React from "react";
 
-export function EmptyState({ icon, title, description }: { icon: string; title: string; description: string }) {
+export function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+}: {
+  icon: string;
+  title: string;
+  description: string;
+  action?: { label: string; onClick: () => void };
+}) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
-      <div className="text-4xl mb-3">{icon}</div>
+      <div aria-hidden="true" className="text-4xl mb-3" style={{ color: "var(--text-faint)" }}>{icon}</div>
       <h3 className="font-medium mb-1" style={{ color: "var(--text-secondary)" }}>{title}</h3>
       <p className="text-sm max-w-sm" style={{ color: "var(--text-muted)" }}>{description}</p>
+      {action && (
+        <button
+          onClick={action.onClick}
+          className="mt-4 px-3 py-1.5 text-xs rounded-lg transition-colors cursor-pointer active:translate-y-[1px]"
+          style={{ background: "var(--bg-surface-hover)", border: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}
+        >
+          {action.label}
+        </button>
+      )}
     </div>
   );
 }

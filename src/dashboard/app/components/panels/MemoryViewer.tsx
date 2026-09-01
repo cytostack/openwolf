@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import type { WolfData } from "../../hooks/useWolfData.js";
+import { SearchInput } from "../shared/SearchInput.js";
+import { CollapseCard } from "../shared/CollapseCard.js";
 
 export function MemoryViewer({ data }: { data: WolfData }) {
   const { memory } = data;
@@ -18,10 +20,7 @@ export function MemoryViewer({ data }: { data: WolfData }) {
   return (
     <div>
       <div className="flex items-center gap-3 mb-4">
-        <input type="text" placeholder="Search memory..." value={search} onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 rounded-lg px-3 py-2 text-sm focus:outline-none"
-          style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-        />
+        <SearchInput value={search} onChange={setSearch} placeholder="Search memory..." ariaLabel="Search memory" />
       </div>
 
       {filtered.length === 0 ? (
@@ -35,48 +34,43 @@ export function MemoryViewer({ data }: { data: WolfData }) {
               return sum + n;
             }, 0);
             return (
-              <div key={i} className="rounded-xl overflow-hidden" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
-                <button onClick={() => setExpandedIdx(isExpanded ? -1 : i)}
-                  className="w-full flex items-center justify-between px-5 py-3 transition-colors"
-                  onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-surface-hover)")}
-                  onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm" style={{ color: "var(--text-faint)" }}>{isExpanded ? "▼" : "▶"}</span>
-                    <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{session.date} {session.time}</span>
-                    <span className="text-xs" style={{ color: "var(--text-faint)" }}>{session.entries.length} actions</span>
-                  </div>
-                  {totalTokens > 0 && <span className="text-xs font-mono" style={{ color: "var(--text-faint)" }}>~{totalTokens} tok</span>}
-                </button>
-                {isExpanded && session.entries.length > 0 && (
-                  <div style={{ borderTop: "1px solid var(--border)" }}>
-                    <table className="w-full">
-                      <thead>
-                        <tr className="text-xs uppercase" style={{ color: "var(--text-faint)" }}>
-                          <th className="text-left px-4 py-2 w-16">Time</th>
-                          <th className="text-left px-4 py-2">Action</th>
-                          <th className="text-left px-4 py-2 hidden md:table-cell">Files</th>
-                          <th className="text-left px-4 py-2 hidden md:table-cell">Outcome</th>
-                          <th className="text-right px-4 py-2 w-20">Tokens</th>
+              <CollapseCard key={i} expanded={isExpanded} onToggle={() => setExpandedIdx(isExpanded ? -1 : i)}
+                header={
+                  <>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm" style={{ color: "var(--text-faint)" }}>{isExpanded ? "▼" : "▶"}</span>
+                      <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{session.date} {session.time}</span>
+                      <span className="text-xs" style={{ color: "var(--text-faint)" }}>{session.entries.length} actions</span>
+                    </div>
+                    {totalTokens > 0 && <span className="text-xs font-mono" style={{ color: "var(--text-faint)" }}>~{totalTokens} tok</span>}
+                  </>
+                }
+              >
+                {session.entries.length > 0 && (
+                  <table className="w-full">
+                    <thead>
+                      <tr className="text-xs uppercase" style={{ color: "var(--text-faint)" }}>
+                        <th className="text-left px-4 py-2 w-16">Time</th>
+                        <th className="text-left px-4 py-2">Action</th>
+                        <th className="text-left px-4 py-2 hidden md:table-cell">Files</th>
+                        <th className="text-left px-4 py-2 hidden md:table-cell">Outcome</th>
+                        <th className="text-right px-4 py-2 w-20">Tokens</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {session.entries.map((entry, j) => (
+                        <tr key={j} className="wd-row" style={{ borderBottom: "1px solid var(--border)" }}>
+                          <td className="px-4 py-2 text-xs font-mono" style={{ color: "var(--text-faint)" }}>{entry.time}</td>
+                          <td className="px-4 py-2 text-sm" style={{ color: "var(--text-secondary)" }}>{entry.action}</td>
+                          <td className="px-4 py-2 text-sm hidden md:table-cell" style={{ color: "var(--text-muted)" }}>{entry.files}</td>
+                          <td className="px-4 py-2 text-sm hidden md:table-cell" style={{ color: "var(--text-muted)" }}>{entry.outcome}</td>
+                          <td className="px-4 py-2 text-xs font-mono text-right" style={{ color: "var(--text-faint)" }}>{entry.tokens}</td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {session.entries.map((entry, j) => (
-                          <tr key={j} style={{ borderBottom: "1px solid var(--border)" }}
-                            onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-surface-hover)")}
-                            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-                            <td className="px-4 py-2 text-xs font-mono" style={{ color: "var(--text-faint)" }}>{entry.time}</td>
-                            <td className="px-4 py-2 text-sm" style={{ color: "var(--text-secondary)" }}>{entry.action}</td>
-                            <td className="px-4 py-2 text-sm hidden md:table-cell" style={{ color: "var(--text-muted)" }}>{entry.files}</td>
-                            <td className="px-4 py-2 text-sm hidden md:table-cell" style={{ color: "var(--text-muted)" }}>{entry.outcome}</td>
-                            <td className="px-4 py-2 text-xs font-mono text-right" style={{ color: "var(--text-faint)" }}>{entry.tokens}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      ))}
+                    </tbody>
+                  </table>
                 )}
-              </div>
+              </CollapseCard>
             );
           })}
         </div>

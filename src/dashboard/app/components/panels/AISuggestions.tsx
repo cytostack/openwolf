@@ -3,10 +3,10 @@ import { relativeTime } from "../../lib/utils.js";
 import type { WolfData } from "../../hooks/useWolfData.js";
 
 const sections = [
-  { key: "achievements", title: "Achievements", icon: "🏆", color: "#059669" },
+  { key: "achievements", title: "Achievements", icon: "◆", color: "var(--ok)" },
   { key: "improvements", title: "Improvements", icon: "◆", color: "var(--text-secondary)" },
-  { key: "next_tasks", title: "Next Tasks", icon: "📋", color: "#d97706" },
-  { key: "risks", title: "Risks & Tech Debt", icon: "🛡", color: "#dc2626" },
+  { key: "next_tasks", title: "Next Tasks", icon: "▸", color: "var(--warning)" },
+  { key: "risks", title: "Risks & Tech Debt", icon: "▴", color: "var(--danger)" },
 ] as const;
 
 export function AISuggestions({ data }: { data: WolfData }) {
@@ -15,7 +15,7 @@ export function AISuggestions({ data }: { data: WolfData }) {
   if (!suggestions) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="text-4xl mb-3">✦</div>
+        <div className="text-4xl mb-3" style={{ color: "var(--text-faint)" }}>◆</div>
         <h3 className="font-medium mb-1" style={{ color: "var(--text-secondary)" }}>AI suggestions generate weekly</h3>
         <p className="text-sm max-w-sm" style={{ color: "var(--text-muted)" }}>
           Run <code style={{ color: "var(--text-secondary)" }}>openwolf cron run project-suggestions</code> to generate now.
@@ -40,7 +40,7 @@ export function AISuggestions({ data }: { data: WolfData }) {
         {sections.map(({ key, title, icon, color }) => {
           const items = suggestions[key] || [];
           return (
-            <div key={key} className="rounded-xl p-5" style={{ background: `${color}08`, border: `1px solid ${color}33` }}>
+            <div key={key} className="rounded-xl p-5" style={{ background: `color-mix(in srgb, ${color} 8%, transparent)`, border: `1px solid color-mix(in srgb, ${color} 25%, transparent)` }}>
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-lg">{icon}</span>
                 <h3 className="font-medium" style={{ color }}>{title}</h3>
