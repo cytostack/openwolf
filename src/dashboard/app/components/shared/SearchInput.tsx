@@ -1,8 +1,8 @@
 import React from "react";
 
 /**
- * Theme-aware search input. No `focus:outline-none` — the global
- * :focus-visible ring in globals.css provides keyboard focus.
+ * Theme-aware search input. Keeps the native focus ring — the global
+ * :focus-visible outline in globals.css provides keyboard focus.
  * `type="search"` gives a native clear affordance; aria-label makes it
  * reachable to screen readers (placeholder is not a label).
  */
