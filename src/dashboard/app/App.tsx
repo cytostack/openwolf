@@ -3,6 +3,7 @@ import { TopNav } from "./components/layout/TopNav.js";
 import { Layout } from "./components/layout/Layout.js";
 import { useWolfData } from "./hooks/useWolfData.js";
 import { useTheme } from "./hooks/useTheme.js";
+import { ErrorBoundary } from "./components/shared/ErrorBoundary.js";
 
 const ProjectOverview = lazy(() => import("./components/panels/ProjectOverview.js").then(m => ({ default: m.ProjectOverview })));
 const ActivityTimeline = lazy(() => import("./components/panels/ActivityTimeline.js").then(m => ({ default: m.ActivityTimeline })));
@@ -81,15 +82,15 @@ export default function App() {
       />
       <Layout>
         <Suspense fallback={<Skeleton />}>
-          {activePanel === "overview" && <ProjectOverview data={data} />}
-          {activePanel === "activity" && <ActivityTimeline data={data} />}
-          {activePanel === "tokens" && <TokenUsage data={data} />}
-          {activePanel === "cron" && <CronStatus data={data} />}
-          {activePanel === "cerebrum" && <CerebrumViewer data={data} />}
-          {activePanel === "memory" && <MemoryViewer data={data} />}
-          {activePanel === "anatomy" && <AnatomyBrowser data={data} />}
-          {activePanel === "bugs" && <BugLog data={data} />}
-          {activePanel === "suggestions" && <AISuggestions data={data} />}
+          {activePanel === "overview" && <ErrorBoundary key="overview"><ProjectOverview data={data} /></ErrorBoundary>}
+          {activePanel === "activity" && <ErrorBoundary key="activity"><ActivityTimeline data={data} /></ErrorBoundary>}
+          {activePanel === "tokens" && <ErrorBoundary key="tokens"><TokenUsage data={data} /></ErrorBoundary>}
+          {activePanel === "cron" && <ErrorBoundary key="cron"><CronStatus data={data} /></ErrorBoundary>}
+          {activePanel === "cerebrum" && <ErrorBoundary key="cerebrum"><CerebrumViewer data={data} /></ErrorBoundary>}
+          {activePanel === "memory" && <ErrorBoundary key="memory"><MemoryViewer data={data} /></ErrorBoundary>}
+          {activePanel === "anatomy" && <ErrorBoundary key="anatomy"><AnatomyBrowser data={data} /></ErrorBoundary>}
+          {activePanel === "bugs" && <ErrorBoundary key="bugs"><BugLog data={data} /></ErrorBoundary>}
+          {activePanel === "suggestions" && <ErrorBoundary key="suggestions"><AISuggestions data={data} /></ErrorBoundary>}
         </Suspense>
       </Layout>
     </div>
