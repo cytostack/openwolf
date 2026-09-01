@@ -46,12 +46,22 @@ function readAll(dir) {
 }
 
 const files = readAll(DIR);
-const allCode = Object.values(files).join("\n");
-const globals = files[path.join(DIR, "styles", "globals.css")] || "";
-const components = Object.values(files).filter((p) => {
-  const k = Object.keys(files).find((k) => files[k] === p);
-  return /components\//.test(k);
-});
+// Strip comments so the scorer only counts real code, not the literal strings
+// that a comment happens to mention (e.g. a comment saying "no focus:outline-none"
+// once falsely tripped the a11y focus check).
+function stripComments(code) {
+  return code
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/[^\n]*/g, "");
+}
+const allCode = stripComments(Object.values(files).join("\n"));
+const globals = stripComments(files[path.join(DIR, "styles", "globals.css")] || "");
+const components = Object.values(files)
+  .filter((p) => {
+    const k = Object.keys(files).find((k) => files[k] === p);
+    return /components\//.test(k);
+  })
+  .map(stripComments);
 
 function count(re) {
   const m = allCode.match(new RegExp(re, "g"));
