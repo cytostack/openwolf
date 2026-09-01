@@ -189,6 +189,12 @@ The old "3+ edits = trauma" heuristic was retired — it produced only false
 positives (51 in one dogfood period), so valence now comes from explicit
 signals, not edit counts.
 
+Recurrence is measured by `recordRecurrence()`: a fix-shaped edit matching a
+past penalty for the same path. Test-failure penalties carry
+`files_involved: []`, so only user corrections (which tag a path) can seed a
+recurrence. `scripts/dogfood-recurrence.mjs` drives the real hooks through the
+err → fix → re-offend loop and asserts a non-zero `recurrence_rate`.
+
 ### Recall
 
 Query past events by location or context:
@@ -299,6 +305,15 @@ to see the trend. Coverage is a function-name lower bound — indirect coverage
 through the `Hippocampus` class is undercounted, so use `--coverage` for exact
 line numbers.
 
+A dogfood harness drives the real hooks end-to-end to manufacture the
+err → fix → re-offend cycle and assert the first clean non-zero
+`recurrence_rate` (verified at 0.667):
+
+```bash
+node scripts/dogfood-recurrence.mjs              # isolated temp project
+node scripts/dogfood-recurrence.mjs --rounds 5   # more re-offend cycles
+```
+
 ## Security
 
 - Dashboard binds to 127.0.0.1 and requires a per-project token
@@ -346,7 +361,10 @@ openwolf status            Health, stats, file integrity
 openwolf scan              Rebuild the project index
 openwolf scan --check      Verify the index matches the filesystem (CI-friendly)
 openwolf recall <path>     Recall events from hippocampus memory
+openwolf claim             Manage current-knowledge claims
+openwolf spec              Spec-driven development (SDD) state
 openwolf report            Token report: estimated vs measured
+openwolf doctor            Health check: drift + hook completeness
 openwolf dashboard         Open the web dashboard
 openwolf daemon start      Start the background daemon
 openwolf daemon stop       Stop the daemon

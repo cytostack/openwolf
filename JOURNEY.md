@@ -217,6 +217,17 @@
 
 **教训**：① P0-58 证伪：先写复现用例证明「并发丢事件」不存在，避免在没病的锁上瞎改——critic 的「读改写覆盖丢事件」是推测，被测试证伪；② 核实 critic 的承重结论，不全盘接受也不全盘否定——critic 的 evict 分析有误（evict 移除最早 non-trauma 不回退 max），但 consolidation 回退真实；③ 「先 plan 后 code」的代价：上一个 P0-5 跳过了 plan，性能回退/契约变化在实现后才暴露，被迫回滚重做。
 
+## 第 19 节 · P0 全部完成 + dogfood harness（2026-09-01）
+
+| 我 | 你 |
+|----|-----|
+| 「go non stop finish all」 | 12 条剩余 P0 全部 TDD 完成（41/61/60/39/16/1/19/79/92/29/30/53），每条红→绿→mutation→提交；中途发现并修 4 个真 bug（extractDocblock 星号误判、walkDir off-by-递归、writeJSON 缺 fsync、opencode session id fallback 不全） |
+| 「recurrence_rate what dog food to run?」 | 查证：dogfood 其实在跑（AgentHarness101 有 87 事件 + 2 penalty），rate=0/2 因为「复发」还没发生；发现所有事件 session_id="unknown"（CLAUDE_SESSION_ID 没传） |
+| （贴另一个 agent 报告）「check if it is ok met our success」 | 核实：脚本在 VibeGames 不在 openwolf 仓库；实测复现 rate=0.667；揭示真根因——post-test penalty 写 `files_involved:[]`（无路径），recordRecurrence 需要同路径匹配，所以测试失败 penalty 永远无法复发 |
+| 「sure, the push to remote」 | 收编 dogfood-recurrence.mjs 到 openwolf/scripts/，两个 learnings 写进 cerebrum，提交 `d057698` + push origin/main（含之前所有 P0/godot 适配 commit） |
+
+**教训**：① 复发归因的真相：不是「负信号稀疏」，是「post-test penalty 天生无路径、匹配不上 fix edit」——机制缺陷比数据稀疏更准确，dogfood harness 把「感觉没数据」钉成了「机制上缺路径」的可证伪事实；② 核实另一个 agent 的报告：脚本在别的项目（VibeGames）不在本仓库，不盲信「完成」声称，实测复现才算数。
+
 ## 这个项目如何教 vibe coding with AI
 
 ### 人的工作（决定 / 纠正 / 叫停）
