@@ -55,9 +55,7 @@ export function BugLog({ data }: { data: WolfData }) {
           return (
             <div key={bug.id} className="rounded-xl overflow-hidden" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
               <button onClick={() => setExpandedId(isExpanded ? null : bug.id)}
-                className="w-full flex items-start gap-3 px-5 py-3 transition-colors text-left"
-                onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-surface-hover)")}
-                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                className="wd-collapse-head w-full flex items-start gap-3 px-5 py-3 transition-colors text-left"
               >
                 <span className="text-sm mt-0.5" style={{ color: "var(--text-faint)" }}>{isExpanded ? "▼" : "▶"}</span>
                 <div className="flex-1 min-w-0">

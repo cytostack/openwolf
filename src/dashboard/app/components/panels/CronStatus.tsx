@@ -52,9 +52,7 @@ export function CronStatus({ data }: { data: WolfData }) {
           </thead>
           <tbody>
             {cronManifest.tasks.map((task: any) => (
-              <tr key={task.id} className="transition-colors" style={{ borderBottom: "1px solid var(--border)" }}
-                onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-surface-hover)")}
-                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+              <tr key={task.id} className="wd-row transition-colors" style={{ borderBottom: "1px solid var(--border)" }}>
                 <td className="px-4 py-3"><StatusBadge status={task.enabled ? getTaskStatus(task.id) : "disabled"} /></td>
                 <td className="px-4 py-3">
                   <p className="text-sm" style={{ color: "var(--text-primary)" }}>{task.name}</p>

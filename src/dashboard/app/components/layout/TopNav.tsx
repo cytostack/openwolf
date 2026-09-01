@@ -71,15 +71,13 @@ export function TopNav({ activePanel, onNavigate, daemonStatus, projectName, age
               <button
                 key={item.id}
                 onClick={() => onNavigate(item.id)}
-                className="wd-label px-3 py-1.5 rounded-full whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5"
+                className="wd-label wd-nav px-3 py-1.5 rounded-full whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5"
+                data-active={active}
                 style={{
                   border: "1px solid transparent",
                   background: active ? "var(--bg-surface)" : "transparent",
                   borderColor: active ? "var(--border)" : "transparent",
-                  color: active ? "var(--text-primary)" : "var(--text-muted)",
                 }}
-                onMouseEnter={(e) => { if (!active) e.currentTarget.style.color = "var(--text-secondary)"; }}
-                onMouseLeave={(e) => { if (!active) e.currentTarget.style.color = "var(--text-muted)"; }}
               >
                 {active && <span className="rounded-full" style={{ width: 5, height: 5, background: "var(--accent)" }} />}
                 {item.label}

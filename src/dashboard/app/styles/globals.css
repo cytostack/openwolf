@@ -160,6 +160,14 @@ code, pre, .font-mono {
 /* Accordion / collapse card header hover (replaces per-frame onMouseEnter) */
 .wd-collapse-head { background: transparent; }
 .wd-collapse-head:hover { background: var(--bg-surface-hover); }
+.wd-danger-head { background: transparent; }
+.wd-danger-head:hover { background: color-mix(in srgb, var(--danger) 8%, transparent); }
+
+/* TopNav item — color hover via CSS (was a per-frame onMouseEnter style write) */
+.wd-nav { color: var(--text-muted); }
+.wd-nav:hover { color: var(--text-secondary); }
+.wd-nav[data-active="true"] { color: var(--text-primary); }
+.wd-nav[data-active="true"]:hover { color: var(--text-primary); }
 
 /* Data-table row hover (replaces per-frame onMouseEnter) */
 .wd-row { transition: background-color 0.15s; }

@@ -161,7 +161,9 @@ function craft() {
   let s = 0;
   const add = (full, ok, note) => { if (ok) s += full; else detail.push(`   craft: ${note}`); };
 
-  const hoverJS = count("onMouseEnter");
+  // only per-frame style writes (onMouseEnter ... currentTarget.style), not
+  // React setState or a mention in a comment
+  const hoverJS = count("onMouseEnter[\\s\\S]*?currentTarget\\.style");
   add(4, hoverJS === 0, `per-frame onMouseEnter hover ×${hoverJS} (use CSS .wd-row:hover)`);
   add(3, count("variant=\"outline\"") === 0, "dead variant='outline' in StatTile");
   add(3, has("<h1") || has("<h2"), "no semantic h1/h2 headings");

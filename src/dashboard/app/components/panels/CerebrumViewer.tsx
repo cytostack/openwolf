@@ -23,9 +23,8 @@ export function CerebrumViewer({ data }: { data: WolfData }) {
 
       {/* Do-Not-Repeat — prominent */}
       <div className="rounded-xl mb-4 overflow-hidden" style={{ background: "var(--danger-subtle)", border: "1px solid color-mix(in srgb, var(--danger) 20%, transparent)" }}>
-        <button onClick={() => toggle("doNotRepeat")} className="w-full flex items-center justify-between px-5 py-3 transition-colors"
-          onMouseEnter={e => (e.currentTarget.style.background = "color-mix(in srgb, var(--danger) 8%, transparent)")}
-          onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+        <button onClick={() => toggle("doNotRepeat")} className="wd-danger-head w-full flex items-center justify-between px-5 py-3 transition-colors"
+        >
           <div className="flex items-center gap-2">
             <span style={{ color: "var(--danger)" }}>⊘</span>
             <h3 className="font-medium" style={{ color: "var(--danger)" }}>Do-Not-Repeat</h3>
@@ -48,9 +47,7 @@ export function CerebrumViewer({ data }: { data: WolfData }) {
 
       {/* User Preferences */}
       <div className="rounded-xl mb-4 overflow-hidden" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
-        <button onClick={() => toggle("preferences")} className="w-full flex items-center justify-between px-5 py-3 transition-colors"
-          onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-surface-hover)")}
-          onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+        <button onClick={() => toggle("preferences")} className="wd-collapse-head w-full flex items-center justify-between px-5 py-3 transition-colors">
           <div className="flex items-center gap-2">
             <span style={{ color: "var(--text-muted)" }}>◈</span>
             <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>User Preferences</h3>
@@ -73,9 +70,7 @@ export function CerebrumViewer({ data }: { data: WolfData }) {
 
       {/* Key Learnings */}
       <div className="rounded-xl mb-4 overflow-hidden" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
-        <button onClick={() => toggle("learnings")} className="w-full flex items-center justify-between px-5 py-3 transition-colors"
-          onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-surface-hover)")}
-          onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+        <button onClick={() => toggle("learnings")} className="wd-collapse-head w-full flex items-center justify-between px-5 py-3 transition-colors">
           <div className="flex items-center gap-2">
             <span style={{ color: "var(--accent)" }}>◎</span>
             <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>Key Learnings</h3>
@@ -95,9 +90,7 @@ export function CerebrumViewer({ data }: { data: WolfData }) {
 
       {/* Decision Log */}
       <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
-        <button onClick={() => toggle("decisions")} className="w-full flex items-center justify-between px-5 py-3 transition-colors"
-          onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-surface-hover)")}
-          onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+        <button onClick={() => toggle("decisions")} className="wd-collapse-head w-full flex items-center justify-between px-5 py-3 transition-colors">
           <div className="flex items-center gap-2">
             <span style={{ color: "var(--text-muted)" }}>⚖</span>
             <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>Decision Log</h3>
