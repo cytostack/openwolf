@@ -97,7 +97,7 @@ export function ProjectOverview({ data }: { data: WolfData }) {
         <div className="wd-card p-5 flex flex-col justify-between gap-3 min-h-[132px]">
           <div className="flex items-start justify-between">
             <span className="wd-label text-muted">measured · transcripts</span>
-            {measured && <span className="rounded-full wd-dot" style={{ width: 6, height: 6 }} />}
+            {measured && <span className="rounded-full wd-dot" />}
           </div>
           {measured ? (
             <div className="space-y-1.5 font-mono text-sm text-secondary">
@@ -119,11 +119,10 @@ export function ProjectOverview({ data }: { data: WolfData }) {
           <div className="flex flex-wrap gap-2">
             {config.agents.map((a) => (
               <span key={a} className="flex flex-col items-center gap-1.5">
-                <span className="dot-display wd-avatar text-primary flex items-center justify-center rounded-full text-sm"
-                  style={{ width: 44, height: 44 }}>
+                <span className="dot-display wd-avatar wd-avatar-md text-primary flex items-center justify-center rounded-full text-sm">
                   {a.slice(0, 2).toUpperCase()}
                 </span>
-                <span className="wd-label text-faint" style={{ fontSize: "0.55rem" }}>{a}</span>
+                <span className="wd-label wd-label-2xs text-faint">{a}</span>
               </span>
             ))}
           </div>

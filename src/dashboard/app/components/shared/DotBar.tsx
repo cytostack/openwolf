@@ -39,7 +39,7 @@ export function DotBar({ data, rows = 7, unit = "" }: DotBarProps) {
                   className={`rounded-full wd-dotseries ${r < filled ? (d.highlight ? "wd-dotseries-red" : hover === i ? "wd-dotseries-1" : "wd-dotseries-2") : "wd-dotseries-off"}`}
                 />
               ))}
-              <span className={`wd-label mt-2 ${hover === i ? "text-primary" : "text-faint"}`} style={{ fontSize: "0.55rem" }}>
+              <span className={`wd-label wd-label-2xs mt-2 ${hover === i ? "text-primary" : "text-faint"}`}>
                 {d.label}
               </span>
             </div>

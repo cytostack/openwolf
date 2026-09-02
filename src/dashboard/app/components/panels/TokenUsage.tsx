@@ -3,7 +3,7 @@ import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Responsive
 import { formatTokens } from "../../lib/utils.js";
 import { StatTile } from "../shared/StatTile.js";
 import { WdTable } from "../shared/WdTable.js";
-import type { WolfData, LedgerSession } from "../../hooks/useWolfData.js";
+import type { WolfData, LedgerSession, WasteFlag } from "../../hooks/useWolfData.js";
 
 function fmt(n: number | undefined): string {
   return (n ?? 0).toLocaleString("en-US");
@@ -145,10 +145,10 @@ export function TokenUsage({ data }: { data: WolfData }) {
         <div className="wd-card p-5">
           <span className="wd-label text-muted">waste alerts</span>
           <div className="space-y-3 mt-3">
-            {tokenLedger.waste_flags.map((flag: any, i: number) => (
+            {tokenLedger.waste_flags.map((flag: WasteFlag, i: number) => (
               <div key={i} className="rounded-xl p-4 wd-danger-box">
                 <div className="flex items-start gap-2.5">
-                  <span className="rounded-full mt-1.5 wd-dot" style={{ width: 6, height: 6 }} />
+                  <span className="rounded-full mt-1.5 wd-dot" />
                   <div>
                     <p className="text-sm font-medium text-primary">{flag.pattern}</p>
                     <p className="text-sm mt-1 text-muted">{flag.description}</p>

@@ -30,8 +30,8 @@ export function TopNav({ activePanel, onNavigate, daemonStatus, projectName, age
       <div className="max-w-7xl mx-auto px-5">
         <div className="flex items-center justify-between h-14">
           {/* Wordmark */}
-          <button onClick={() => onNavigate("overview")} aria-label="OpenWolf overview" className="flex items-center gap-2.5 cursor-pointer" style={{ background: "none", border: "none", padding: 0 }}>
-            <span aria-hidden="true" className="rounded-full wd-dot" style={{ width: 10, height: 10 }} />
+          <button onClick={() => onNavigate("overview")} aria-label="OpenWolf overview" className="flex items-center gap-2.5 cursor-pointer wd-btn-reset">
+            <span aria-hidden="true" className="rounded-full wd-dot wd-dot-10" />
             <span className="dot-display text-lg text-primary">OPENWOLF</span>
           </button>
 
@@ -44,8 +44,7 @@ export function TopNav({ activePanel, onNavigate, daemonStatus, projectName, age
               <div className="hidden lg:flex items-center gap-1" title={`Wired agents: ${agents.join(", ")}`}>
                 {agents.map((a) => (
                   <span key={a} title={a} aria-label={`Wired agent: ${a}`}
-                    className="wd-label wd-avatar text-secondary flex items-center justify-center rounded-full"
-                    style={{ width: 22, height: 22, fontSize: "0.55rem" }}>
+                    className="wd-label wd-avatar wd-avatar-sm text-secondary flex items-center justify-center rounded-full">
                     {a.slice(0, 2).toUpperCase()}
                   </span>
                 ))}
@@ -73,7 +72,7 @@ export function TopNav({ activePanel, onNavigate, daemonStatus, projectName, age
                 className="wd-label wd-nav px-3 py-1.5 rounded-full whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5"
                 data-active={active}
               >
-                {active && <span className="rounded-full wd-dot" style={{ width: 5, height: 5 }} />}
+                {active && <span className="rounded-full wd-dot wd-dot-5" />}
                 {item.label}
               </button>
             );

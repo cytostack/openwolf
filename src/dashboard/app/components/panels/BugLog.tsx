@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import type { WolfData } from "../../hooks/useWolfData.js";
+import type { WolfData, BugEntry } from "../../hooks/useWolfData.js";
 import { SearchInput } from "../shared/SearchInput.js";
 import { EmptyState } from "../shared/EmptyState.js";
 import { CollapseCard } from "../shared/CollapseCard.js";
@@ -10,7 +10,7 @@ export function BugLog({ data }: { data: WolfData }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const filtered = search
-    ? buglog.bugs.filter((b: any) =>
+    ? buglog.bugs.filter((b: BugEntry) =>
         b.error_message.toLowerCase().includes(search.toLowerCase()) ||
         b.root_cause.toLowerCase().includes(search.toLowerCase()) ||
         b.fix.toLowerCase().includes(search.toLowerCase()) ||
@@ -25,7 +25,7 @@ export function BugLog({ data }: { data: WolfData }) {
     );
   }
 
-  const allTags = buglog.bugs.flatMap((b: any) => b.tags);
+  const allTags = buglog.bugs.flatMap((b: BugEntry) => b.tags);
   const tagCounts = new Map<string, number>();
   for (const tag of allTags) {
     tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
@@ -50,7 +50,7 @@ export function BugLog({ data }: { data: WolfData }) {
       )}
 
       <div className="space-y-3">
-        {filtered.map((bug: any) => {
+        {filtered.map((bug: BugEntry) => {
           const isExpanded = expandedId === bug.id;
           return (
             <CollapseCard

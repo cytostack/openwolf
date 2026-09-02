@@ -213,6 +213,46 @@ code, pre, .font-mono {
 .wd-seg-active { background-color: var(--bg-surface-hover); color: var(--text-primary); }
 .wd-btn-status { background-color: var(--bg-surface-hover); border: 1px solid var(--border-subtle); }
 
+/* Engineering-rigor utilities: inline numeric styles extracted to classes */
+
+/* Button reset (was inline background/border/padding) */
+.wd-btn-reset { background: none; border: none; padding: 0; }
+
+/* Sized accent dots (was inline width/height) */
+.wd-dot { width: 6px; height: 6px; }
+.wd-dot-5 { width: 5px; height: 5px; }
+.wd-dot-8 { width: 8px; height: 8px; }
+.wd-dot-10 { width: 10px; height: 10px; }
+
+/* Sized avatars (was inline width/height + font) */
+.wd-avatar-sm { width: 22px; height: 22px; font-size: 0.55rem; }
+.wd-avatar-md { width: 44px; height: 44px; }
+
+/* Micro-label sizes smaller than .wd-label (0.65rem) */
+.wd-label-2xs { font-size: 0.55rem; }
+.wd-label-xs { font-size: 0.6rem; }
+
+/* Muted label color (was inline color for inverted vs default tiles) */
+.wd-label-muted { color: var(--text-muted); }
+.wd-label-inverted { color: color-mix(in srgb, var(--invert-text) 55%, transparent); }
+
+/* Status dot (was inline width/height + tone background/border) */
+.wd-status-dot { width: 6px; height: 6px; border-radius: 9999px; flex-shrink: 0; }
+.wd-status-dot-ok { background-color: var(--ok); }
+.wd-status-dot-warn { background-color: transparent; border: 1.5px solid var(--accent); }
+.wd-status-dot-bad { background-color: var(--accent); }
+.wd-status-dot-off { background-color: var(--text-faint); }
+
+/* Running button dim (was inline opacity) */
+.wd-btn-running { opacity: 0.6; }
+
+/* Insight-section tinted cards (was inline color-mix background/border) */
+.wd-insight-ok { background: color-mix(in srgb, var(--ok) 8%, transparent); border: 1px solid color-mix(in srgb, var(--ok) 25%, transparent); }
+.wd-insight-secondary { background: color-mix(in srgb, var(--text-secondary) 8%, transparent); border: 1px solid color-mix(in srgb, var(--text-secondary) 25%, transparent); }
+.wd-insight-warning { background: color-mix(in srgb, var(--warning) 8%, transparent); border: 1px solid color-mix(in srgb, var(--warning) 25%, transparent); }
+.wd-insight-danger { background: color-mix(in srgb, var(--danger) 8%, transparent); border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent); }
+.text-ok { color: var(--ok); }
+
 /* State-driven bullet dot backgrounds (replaces ternary inline styles) */
 .wd-bullet { width: 6px; height: 6px; border-radius: 9999px; flex-shrink: 0; }
 .wd-bullet-ink { background-color: var(--text-primary); }

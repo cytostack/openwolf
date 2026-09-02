@@ -3,10 +3,10 @@ import { relativeTime } from "../../lib/utils.js";
 import type { WolfData } from "../../hooks/useWolfData.js";
 
 const sections = [
-  { key: "achievements", title: "Achievements", icon: "◆", color: "var(--ok)" },
-  { key: "improvements", title: "Improvements", icon: "◆", color: "var(--text-secondary)" },
-  { key: "next_tasks", title: "Next Tasks", icon: "▸", color: "var(--warning)" },
-  { key: "risks", title: "Risks & Tech Debt", icon: "▴", color: "var(--danger)" },
+  { key: "achievements", title: "Achievements", icon: "◆", cardClass: "wd-insight-ok", titleClass: "text-ok" },
+  { key: "improvements", title: "Improvements", icon: "◆", cardClass: "wd-insight-secondary", titleClass: "text-secondary" },
+  { key: "next_tasks", title: "Next Tasks", icon: "▸", cardClass: "wd-insight-warning", titleClass: "text-warning" },
+  { key: "risks", title: "Risks & Tech Debt", icon: "▴", cardClass: "wd-insight-danger", titleClass: "text-danger" },
 ] as const;
 
 export function AISuggestions({ data }: { data: WolfData }) {
@@ -36,13 +36,13 @@ export function AISuggestions({ data }: { data: WolfData }) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {sections.map(({ key, title, icon, color }) => {
+        {sections.map(({ key, title, icon, cardClass, titleClass }) => {
           const items = suggestions[key] || [];
           return (
-            <div key={key} className="rounded-xl p-5" style={{ background: `color-mix(in srgb, ${color} 8%, transparent)`, border: `1px solid color-mix(in srgb, ${color} 25%, transparent)` }}>
+            <div key={key} className={`rounded-xl p-5 ${cardClass}`}>
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-lg">{icon}</span>
-                <h3 className="font-medium" style={{ color }}>{title}</h3>
+                <h3 className={`font-medium ${titleClass}`}>{title}</h3>
               </div>
               {items.length === 0 ? (
                 <p className="text-sm text-muted">None reported.</p>

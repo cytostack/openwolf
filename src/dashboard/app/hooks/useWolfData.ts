@@ -44,7 +44,54 @@ interface TokenLedger {
     real_api_calls?: number;
   };
   sessions: LedgerSession[];
-  waste_flags: any[];
+  waste_flags: WasteFlag[];
+}
+
+export interface WasteFlag {
+  pattern: string;
+  description: string;
+  suggestion: string;
+}
+
+export interface CronExecution {
+  task_id: string;
+  status: string;
+  timestamp: string;
+  duration_ms?: number;
+}
+
+export interface DeadLetter {
+  task_id: string;
+  error: string;
+  timestamp: string;
+  attempts: number;
+}
+
+export interface CronTask {
+  id: string;
+  enabled: boolean;
+  name: string;
+  description: string;
+  schedule: string;
+}
+
+export interface BugEntry {
+  id: string;
+  error_message: string;
+  root_cause: string;
+  fix: string;
+  tags: string[];
+  file: string;
+  timestamp?: string;
+  occurrences: number;
+}
+
+export interface Suggestions {
+  generated_at?: string;
+  achievements?: string[];
+  improvements?: string[];
+  next_tasks?: string[];
+  risks?: string[];
 }
 
 export interface WolfConfig {
@@ -61,16 +108,16 @@ export interface ScanState {
 interface CronState {
   engine_status: string;
   last_heartbeat: string | null;
-  execution_log: any[];
-  dead_letter_queue: any[];
+  execution_log: CronExecution[];
+  dead_letter_queue: DeadLetter[];
 }
 
 interface BugLog {
-  bugs: any[];
+  bugs: BugEntry[];
 }
 
 interface CronManifest {
-  tasks: any[];
+  tasks: CronTask[];
 }
 
 interface Health {
@@ -92,7 +139,7 @@ export interface WolfData {
   cronState: CronState;
   cronManifest: CronManifest;
   buglog: BugLog;
-  suggestions: any;
+  suggestions: Suggestions | null;
   health: Health;
   identity: { name: string; role: string };
   project: ProjectMeta;
@@ -113,7 +160,7 @@ export function useWolfData(): WolfData {
   const [cronState, setCronState] = useState<CronState>({ engine_status: "unknown", last_heartbeat: null, execution_log: [], dead_letter_queue: [] });
   const [cronManifest, setCronManifest] = useState<CronManifest>({ tasks: [] });
   const [buglog, setBuglog] = useState<BugLog>({ bugs: [] });
-  const [suggestions, setSuggestions] = useState<any>(null);
+  const [suggestions, setSuggestions] = useState<Suggestions | null>(null);
   const [health, setHealth] = useState<Health>({ status: "unknown", uptime_seconds: 0 });
   const [identity, setIdentity] = useState({ name: "Wolf", role: "AI development assistant" });
   const [project, setProject] = useState<ProjectMeta>({ name: "", description: "", root: "" });
@@ -127,7 +174,9 @@ export function useWolfData(): WolfData {
     if (files["anatomy-index.json"]) {
       try {
         const store = JSON.parse(files["anatomy-index.json"]);
-        const entries = Object.entries(store.files ?? {}).map(([relPath, e]: [string, any]) => {
+        const entries = Object.entries(
+          (store.files ?? {}) as Record<string, { description?: string; tokens?: number; symbols?: AnatomyEntry["symbols"] }>
+        ).map(([relPath, e]) => {
           const slash = relPath.lastIndexOf("/");
           return {
             file: slash === -1 ? relPath : relPath.slice(slash + 1),

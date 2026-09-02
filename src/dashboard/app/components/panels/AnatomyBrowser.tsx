@@ -72,12 +72,12 @@ function DirNode({ node, search, depth = 0 }: { node: TreeNode; search: string; 
               {f.symbols && f.symbols.length > 0 && (
                 <div className="pl-6 pt-0.5 flex flex-wrap gap-x-3">
                   {f.symbols.slice(0, 8).map((s) => (
-                    <span key={`${s.name}-${s.startLine}`} className="wd-label text-faint" style={{ fontSize: "0.6rem" }}>
+                    <span key={`${s.name}-${s.startLine}`} className="wd-label wd-label-xs text-faint">
                       {s.kind} {s.name} L{s.startLine}-{s.endLine}
                     </span>
                   ))}
                   {f.symbols.length > 8 && (
-                    <span className="wd-label text-faint" style={{ fontSize: "0.6rem" }}>+{f.symbols.length - 8} more</span>
+                    <span className="wd-label wd-label-xs text-faint">+{f.symbols.length - 8} more</span>
                   )}
                 </div>
               )}

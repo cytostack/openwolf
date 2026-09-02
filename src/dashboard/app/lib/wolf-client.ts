@@ -1,4 +1,11 @@
-type MessageHandler = (msg: any) => void;
+export type WolfMessage =
+  | { type: "file_changed"; file: string; content: string }
+  | { type: "full_state"; files: Record<string, string> }
+  | { type: "health"; status: string; uptime: number }
+  | { type: "retry_dead_letter"; task_id: string }
+  | { type: "trigger_task"; task_id: string };
+
+type MessageHandler = (msg: WolfMessage) => void;
 
 export function getDashboardToken(): string {
   const params = new URLSearchParams(location.search);

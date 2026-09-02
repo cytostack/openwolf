@@ -18,17 +18,16 @@ export function StatusBadge({ status, className }: { status?: string | null; cla
   // this undefined, and a crash here white-screens the whole dashboard.
   const label = typeof status === "string" && status.trim() ? status : "unknown";
   const tone = toneOf[label.toLowerCase()] ?? "off";
-  const dotStyle: React.CSSProperties =
-    tone === "ok" ? { background: "var(--ok)" }
-    : tone === "warn" ? { background: "transparent", border: "1.5px solid var(--accent)" }
-    : tone === "bad" ? { background: "var(--accent)" }
-    : { background: "var(--text-faint)" };
+  const dotClass =
+    tone === "ok" ? "wd-status-dot-ok"
+    : tone === "warn" ? "wd-status-dot-warn"
+    : tone === "bad" ? "wd-status-dot-bad"
+    : "wd-status-dot-off";
   return (
     <span
       className={cn("inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full wd-label wd-badge", tone === "bad" ? "text-accent" : "text-secondary", className)}
     >
-      <span className={cn("rounded-full", tone === "ok" && label.toLowerCase() === "running" ? "rec-pulse" : "")}
-        style={{ width: 6, height: 6, ...dotStyle }} />
+      <span className={cn("wd-status-dot", dotClass, tone === "ok" && label.toLowerCase() === "running" ? "rec-pulse" : "")} />
       {label}
     </span>
   );

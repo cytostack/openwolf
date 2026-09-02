@@ -4,7 +4,7 @@ import { CollapseCard } from "../shared/CollapseCard.js";
 import { WdTable } from "../shared/WdTable.js";
 import { relativeTime, formatSchedule } from "../../lib/utils.js";
 import { dashboardFetch } from "../../lib/wolf-client.js";
-import type { WolfData } from "../../hooks/useWolfData.js";
+import type { WolfData, CronExecution, DeadLetter, CronTask } from "../../hooks/useWolfData.js";
 
 export function CronStatus({ data }: { data: WolfData }) {
   const { cronManifest, cronState, client } = data;
@@ -13,13 +13,13 @@ export function CronStatus({ data }: { data: WolfData }) {
   const [runningTasks, setRunningTasks] = useState<Record<string, "running" | "ok" | "error">>({});
 
   const getTaskStatus = (taskId: string): string => {
-    if (cronState.dead_letter_queue.some((d: any) => d.task_id === taskId)) return "failed";
-    const last = cronState.execution_log.filter((e: any) => e.task_id === taskId).sort((a: any, b: any) => b.timestamp.localeCompare(a.timestamp))[0];
+    if (cronState.dead_letter_queue.some((d: DeadLetter) => d.task_id === taskId)) return "failed";
+    const last = cronState.execution_log.filter((e: CronExecution) => e.task_id === taskId).sort((a: CronExecution, b: CronExecution) => b.timestamp.localeCompare(a.timestamp))[0];
     return last?.status || "ok";
   };
 
   const getLastRun = (taskId: string): string => {
-    const last = cronState.execution_log.filter((e: any) => e.task_id === taskId).sort((a: any, b: any) => b.timestamp.localeCompare(a.timestamp))[0];
+    const last = cronState.execution_log.filter((e: CronExecution) => e.task_id === taskId).sort((a: CronExecution, b: CronExecution) => b.timestamp.localeCompare(a.timestamp))[0];
     return last ? relativeTime(last.timestamp) : "never";
   };
 
@@ -66,13 +66,12 @@ export function CronStatus({ data }: { data: WolfData }) {
                 <button
                   onClick={() => triggerTask(row.id)}
                   disabled={runningTasks[row.id] === "running"}
-                  className={`px-3 py-1 text-xs rounded-md transition-colors wd-btn-status ${runningTasks[row.id] === "error" ? "text-danger" : "text-secondary"}`}
-                  style={{ opacity: runningTasks[row.id] === "running" ? 0.6 : 1 }}
+                  className={`px-3 py-1 text-xs rounded-md transition-colors wd-btn-status ${runningTasks[row.id] === "error" ? "text-danger" : "text-secondary"} ${runningTasks[row.id] === "running" ? "wd-btn-running" : ""}`}
                 >{runningTasks[row.id] === "running" ? "Running…" : runningTasks[row.id] === "ok" ? "Queued" : runningTasks[row.id] === "error" ? "Failed" : "Run Now"}</button>
               ),
             },
           ]}
-          rows={cronManifest.tasks.map((task: any) => ({
+          rows={cronManifest.tasks.map((task: CronTask) => ({
             id: task.id,
             status: task.enabled ? getTaskStatus(task.id) : "disabled",
             name: task.name,
@@ -102,7 +101,7 @@ export function CronStatus({ data }: { data: WolfData }) {
             </div>
           ) : (
             <div className="px-5 pb-4 pt-3 space-y-3">
-              {cronState.dead_letter_queue.map((dl: any, i: number) => (
+              {cronState.dead_letter_queue.map((dl: DeadLetter, i: number) => (
                 <div key={i} className="rounded-lg p-4 wd-danger-box-mix">
                   <div className="flex items-start justify-between">
                     <div>
@@ -136,7 +135,7 @@ export function CronStatus({ data }: { data: WolfData }) {
           <p className="px-5 py-4 text-sm text-center text-muted">No executions yet.</p>
         ) : (
           <div className="px-5 py-3">
-            {cronState.execution_log.slice(-30).reverse().map((entry: any, i: number) => (
+            {cronState.execution_log.slice(-30).reverse().map((entry: CronExecution, i: number) => (
               <div key={i} className="flex items-center gap-4 py-2 wd-divide">
                 <span className="text-xs font-mono text-faint">{entry.timestamp?.slice(11, 16)}</span>
                 <span className="text-sm flex-1 text-secondary">{entry.task_id}</span>
