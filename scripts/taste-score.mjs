@@ -202,7 +202,32 @@ function tokenHygiene() {
   // Every data table needs a reachable title (caption or aria-label).
   add(4, has("<caption") || count("aria-label=\"[^\"]*[Tt]able") > 0, "no table caption / aria-label (WdTable)");
   // No bare inline color besides themed vars (inherits color-line).
-  add(3, count("style=\\{\\{[^}]*\"#[0-9a-fA-F]{6}") === 0, "bare hex in inline style");
+  const el = count("style=\\{\\{[^}]*\"#[0-9a-fA-F]{6}") === 0;
+  add(4, el, "bare hex in inline style");
+  return s;
+}
+
+// ─── dimension 8: engineering rigor (20) ─────────────────────────────────
+function engineeringRigor() {
+  let s = 0;
+  const add = (full, ok, note) => { if (ok) s += full; else detail.push(`   engineering: ${note}`); };
+
+  // inline style (any, incl. width/height numbers) is a smell — prefer classes.
+  const inlineAny = count("style=\\{\\{");
+  const inlineScore = inlineAny === 0 ? 8 : inlineAny <= 10 ? 5 : inlineAny <= 30 ? 2 : 0;
+  s += inlineScore;
+  if (inlineScore < 8) detail.push(`   engineering: inline style ×${inlineAny} (prefer classes)`);
+  // any-typed props/state degrade type safety.
+  const anyCount = count(": any\\b|as any\\b|any\\[\\]");
+  const anyScore = anyCount === 0 ? 8 : anyCount <= 5 ? 5 : anyCount <= 15 ? 2 : 0;
+  s += anyScore;
+  if (anyScore < 8) detail.push(`   engineering: any ×${anyCount} (type the records)`);
+  // component file size ceiling — keep components focused.
+  const big = Object.keys(files).filter((k) => /components\\/.test(k) && k.endsWith(".tsx")).filter((k) => {
+    const lines = files[k].split("\n").length;
+    return lines > 250;
+  }).length;
+  add(4, big === 0, `component files >250 lines ×${big} (split)`);
   return s;
 }
 
@@ -213,7 +238,8 @@ const dims = [
   { id: "component-dry", name: "Component DRY", max: 15, score: componentDry() },
   { id: "state", name: "State Coverage", max: 10, score: stateCoverage() },
   { id: "craft", name: "Craft", max: 10, score: craft() },
-  { id: "token-hygiene", name: "Token Hygiene", max: 20, score: tokenHygiene() },
+  { id: "token-hygiene", name: "Token Hygiene", max: 20, score: Math.min(tokenHygiene(), 20) },
+  { id: "engineering", name: "Engineering Rigor", max: 20, score: Math.min(engineeringRigor(), 20) },
 ];
 
 const total = dims.reduce((a, d) => a + d.score, 0);
