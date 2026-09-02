@@ -85,6 +85,15 @@ export function daemonStart(): void {
   // Resolve daemon script relative to openwolf's install dir, not the target project
   const daemonScript = path.resolve(__dirname, "..", "daemon", "wolf-daemon.js");
 
+  // If the daemon is already running (port in use), say so instead of forking
+  // a second instance that dies with EADDRINUSE behind an opaque catch.
+  const existingPid = findPidOnPort(getDashboardPort());
+  if (existingPid !== null) {
+    console.log(`\n  Daemon already running (pid ${existingPid}) on port ${getDashboardPort()}.`);
+    console.log("  Use: openwolf daemon restart   If you need to reload it.");
+    return;
+  }
+
   if (!hasPm2()) {
     // No pm2: fork a detached daemon so cron/consolidation/heartbeat still run.
     const child = fork(daemonScript, [], {
