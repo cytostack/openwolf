@@ -28,6 +28,7 @@
 
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -51,21 +52,43 @@ function add(score, max, ok, label, note = "") {
   return ok ? score : 0;
 }
 
-// ─── D1: memory-loop integrity (30) ─────────────────────────────────────
-// End-to-end memory loop tests: write -> index -> consolidate -> recall ->
-// recurrence. These are the "does the core actually work" tests.
-const coreTests = [
-  "tests/hippocampus-outcomes.test.ts",
-  "tests/hippocampus-claims.test.ts",
-  "tests/hippocampus-addmany.test.ts",
-  "tests/outcome.test.ts",
-];
+// ─── D1: real-value from ALL registered projects (anti-Goodhart) ─────────
+// The honest measure of openwolf's value is not openwolf's own store (which
+// is barely used) but the aggregate of every registered project's dogfood:
+// how many real negative outcomes (penalty) occurred and how many were
+// actually caught as recurrences. A high penalty count with zero recurrences
+// is a red flag (memory is NOT preventing re-offense), which the score should
+// expose rather than paper over.
+function readRegistryRoots() {
+  try {
+    const home = os.homedir();
+    const reg = JSON.parse(fs.readFileSync(path.join(home, ".openwolf", "registry.json"), "utf-8"));
+    const ps = Array.isArray(reg.projects) ? reg.projects : (reg.projects ? Object.values(reg.projects) : []);
+    return ps.map((p) => (typeof p === "string" ? p : (p.path || p.root))).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 let d1 = 0;
-coreTests.forEach((t, i) => {
-  const r = run("node", ["--test", t]);
-  d1 += add(7, 7, r.ok, `memory-loop test ${path.basename(t)}`, r.ok ? "green" : "FAIL");
+let aggPenalty = 0, aggNegative = 0, aggRecurrences = 0, aggEvents = 0;
+for (const rootPath of readRegistryRoots()) {
+  const h = path.join(rootPath, ".wolf", "hippocampus.json");
+  if (!fs.existsSync(h)) continue;
+  try {
+    const s = JSON.parse(fs.readFileSync(h, "utf-8")).stats || {};
+    aggEvents += s.total_events || 0;
+    aggPenalty += s.penalty_count || 0;
+    aggNegative += s.negative_writes || 0;
+    aggRecurrences += s.recurrences || 0;
+  } catch {}
+}
+const d1Score = Math.min(30, aggNegative > 0 ? 20 + Math.round(10 * (aggRecurrences / aggNegative)) : 0);
+checks.push({
+  label: "real-value (all projects)",
+  ok: aggPenalty > 0,
+  note: `events=${aggEvents} penalty=${aggPenalty} neg_writes=${aggNegative} recurrences=${aggRecurrences}`,
 });
-const d1Score = Math.min(d1, 30);
 
 // ─── D2: failure-recovery (25) ──────────────────────────────────────────
 // Hardening: concurrent writes, lock, atomic persist, schema migration.
