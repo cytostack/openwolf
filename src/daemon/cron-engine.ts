@@ -247,6 +247,10 @@ export class CronEngine {
         this.generateTokenReport();
         break;
 
+      case "run_command":
+        this.runCommand(action.params as { program?: string; args?: string[]; env?: Record<string, string> });
+        break;
+
       case "ai_task":
         await this.runAiTask(action.params as { prompt: string; context_files: string[] });
         break;
@@ -337,6 +341,31 @@ export class CronEngine {
     writeJSON(ledgerPath, ledger);
   }
 
+  private runCommand(params: { program?: string; args?: string[]; env?: Record<string, string>; timeout_ms?: number }): void {
+    const program = params.program ?? "python3";
+    const args = params.args ?? [];
+    const env = { ...process.env, ...(params.env ?? {}) };
+    const proc = spawnSync(program, args, {
+      encoding: "utf-8",
+      cwd: this.projectRoot,
+      env,
+      timeout: params.timeout_ms ?? 120000,
+      windowsHide: true,
+      // Windows .cmd/.bat shims (claude.cmd, python3) must go through cmd.exe
+      shell: process.platform === "win32",
+    });
+    if (proc.error) {
+      throw proc.error;
+    }
+    if (proc.status !== 0) {
+      const stderr = proc.stderr?.trim();
+      const stdout = proc.stdout?.trim();
+      throw new Error(`exit code ${proc.status}: ${stderr || stdout || "unknown"}`);
+    }
+    const out = (proc.stdout || "").trim();
+    this.logger.info(`Command ${program} succeeded${out ? `: ${out.slice(0, 120)}` : ""}`);
+  }
+
   private hasClaude(): boolean {
     try {
       execFileSync(process.platform === "win32" ? "where" : "which", ["claude"], { stdio: "ignore" });
@@ -383,6 +412,8 @@ export class CronEngine {
         env,
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
+        // Windows .cmd shim (claude.cmd) must go through cmd.exe
+        shell: process.platform === "win32",
       });
 
       if (proc.error) {
