@@ -248,12 +248,18 @@ async function main(): Promise<void> {
     }
 
     // Recurrence measurement: count a durable recurrence when a fix-shaped edit
-    // matches a past trauma/penalty for the same path.
+    // matches a past trauma/penalty for the SAME path. The documented intent
+    // (see recordRecurrence) is "same mistake, same path", so this recall uses
+    // exact path matching rather than "parent": getParentDirectories of a
+    // root-level file (a path with no directory component — e.g. AGENTS.md,
+    // which is the dominant real penalty target, 99× in VibeGames) is [], so
+    // "parent" could never recall a penalty for a root file — recurrences
+    // stayed at 0 even when a fix edit landed on that very same file.
     try {
       const signature = normalizeErrorSignature(oldStr ?? "", newStr ?? "");
       if (signature) {
         const past = hippocampus.recall({
-          cue: { type: "location", path: relFile, match_mode: "parent" },
+          cue: { type: "location", path: relFile, match_mode: "exact" },
           filters: { valence: ["trauma", "penalty"], min_intensity: 0.5 },
           limit: 3,
         });
