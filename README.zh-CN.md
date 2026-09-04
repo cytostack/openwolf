@@ -58,7 +58,7 @@ cd your-project
 openwolf init
 ```
 
-`init` 会自动检测本机已安装的编程 Agent，并接入同一套 `.wolf/` 大脑。之后照常使用 Agent 即可。
+不传 `--agent` 时，`init` 会接入 Claude Code，并自动检测本机安装的其他编程 Agent。传入 `--agent` 时，只接入明确指定的 Agent。
 
 ## 支持的 Agent
 
@@ -72,11 +72,18 @@ openwolf init
 | **Gemini CLI** | `GEMINI.md` 协议块 | Beta（上下文） |
 
 ```bash
-openwolf init                          # 自动检测已安装 Agent（推荐）
-openwolf init --agent codex opencode   # 只接入指定 Agent
-openwolf init --agent all              # 接入全部受支持 Agent
+openwolf init                          # Claude + 自动检测其他已安装 Agent（推荐）
 openwolf init --agent claude           # 仅 Claude Code
+openwolf init --agent codex            # 仅 Codex
+openwolf init --agent opencode         # 仅 OpenCode
+openwolf init --agent gemini           # 仅 Gemini CLI
+openwolf init --agent cursor           # 仅 Cursor
+openwolf init --agent antigravity      # 仅 Antigravity
+openwolf init --agent codex opencode   # 仅 Codex 和 OpenCode
+openwolf init --agent all              # 全部受支持 Agent
 ```
+
+显式参数会严格生效：例如 `--agent codex` 不会创建 Claude、OpenCode、Gemini、Cursor 或 Antigravity 配置。重新执行 `init` 不会删除项目中原本就存在的其他 Agent 文件。
 
 协议块使用 marker 围栏：不会改动你自己写在 `AGENTS.md` / `GEMINI.md` 中的内容，重复执行 `init` 也不会重复插入。
 

@@ -76,8 +76,23 @@ cd your-project
 openwolf init
 ```
 
-`init` detects the agents installed on your machine and wires each of them.
-Then use your agents as normal.
+Without `--agent`, `init` wires Claude Code plus any other agents detected on
+your machine. Pass `--agent` to wire an exact selection:
+
+```bash
+openwolf init --agent claude            # Claude Code only
+openwolf init --agent codex             # Codex only
+openwolf init --agent opencode          # OpenCode only
+openwolf init --agent gemini            # Gemini CLI only
+openwolf init --agent cursor            # Cursor only
+openwolf init --agent antigravity       # Antigravity only
+openwolf init --agent codex opencode    # exactly Codex and OpenCode
+openwolf init --agent all               # every supported agent
+```
+
+Explicit names are exact: for example, `--agent codex` does not create Claude,
+OpenCode, Gemini, Cursor, or Antigravity configuration. Re-running `init` does
+not delete unrelated agent files that already existed in the project.
 
 ## Supported agents
 

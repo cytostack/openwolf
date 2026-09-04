@@ -58,7 +58,7 @@ cd your-project
 openwolf init
 ```
 
-Готово. `init` автоматически находит установленные кодинг-агенты и подключает их к одному мозгу `.wolf/`. Пользуйтесь агентами как обычно — OpenWolf работает «под капотом».
+Без `--agent` команда `init` подключает Claude Code и автоматически обнаруженные дополнительные агенты. Если указан `--agent`, подключаются только явно перечисленные агенты.
 
 ## Поддерживаемые агенты
 
@@ -74,11 +74,18 @@ openwolf init
 | **Gemini CLI** | Протокольный блок в `GEMINI.md` | Beta (контекст) |
 
 ```bash
-openwolf init                          # автоопределение установленных агентов (рекомендуется)
-openwolf init --agent codex opencode   # подключить только указанные
-openwolf init --agent all              # подключить все поддерживаемые агенты
+openwolf init                          # Claude + автоопределение других агентов (рекомендуется)
 openwolf init --agent claude           # только Claude Code
+openwolf init --agent codex            # только Codex
+openwolf init --agent opencode         # только OpenCode
+openwolf init --agent gemini           # только Gemini CLI
+openwolf init --agent cursor           # только Cursor
+openwolf init --agent antigravity      # только Antigravity
+openwolf init --agent codex opencode   # только Codex и OpenCode
+openwolf init --agent all              # все поддерживаемые агенты
 ```
+
+Явный список применяется строго: например, `--agent codex` не создаёт настройки Claude, OpenCode, Gemini, Cursor или Antigravity. Повторный запуск `init` не удаляет файлы других агентов, которые уже существовали в проекте.
 
 Протокольные блоки огорожены маркерами: ваш собственный текст в `AGENTS.md` или `GEMINI.md` не трогается, повторный `init` ничего не дублирует.
 

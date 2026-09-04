@@ -58,7 +58,7 @@ cd your-project
 openwolf init
 ```
 
-これだけです。`init` はマシン上のコーディングエージェントを自動検出し、同じ `.wolf/` ブレインに接続します。普段どおりエージェントを使えば、OpenWolf が裏で動きます。
+`--agent` を省略すると、`init` は Claude Code と、マシン上で検出したその他のコーディングエージェントを接続します。`--agent` を指定した場合は、明示したエージェントだけを接続します。
 
 ## 対応エージェント
 
@@ -74,11 +74,18 @@ openwolf init
 | **Gemini CLI** | `GEMINI.md` プロトコルブロック | Beta（コンテキスト） |
 
 ```bash
-openwolf init                          # インストール済みエージェントを自動検出（推奨）
-openwolf init --agent codex opencode   # 指定したものだけ接続
-openwolf init --agent all              # 対応するすべての Agent を接続
+openwolf init                          # Claude + その他のインストール済み Agent を自動検出（推奨）
 openwolf init --agent claude           # Claude Code のみ
+openwolf init --agent codex            # Codex のみ
+openwolf init --agent opencode         # OpenCode のみ
+openwolf init --agent gemini           # Gemini CLI のみ
+openwolf init --agent cursor           # Cursor のみ
+openwolf init --agent antigravity      # Antigravity のみ
+openwolf init --agent codex opencode   # Codex と OpenCode のみ
+openwolf init --agent all              # 対応するすべての Agent
 ```
+
+明示した名前は厳密に適用されます。たとえば `--agent codex` では Claude、OpenCode、Gemini、Cursor、Antigravity の設定は作成されません。`init` を再実行しても、プロジェクトに既に存在する他の Agent のファイルは削除されません。
 
 プロトコルブロックはマーカーで囲まれます。`AGENTS.md` や `GEMINI.md` の自作内容は触れず、`init` の再実行で重複もしません。
 
