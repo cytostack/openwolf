@@ -6,7 +6,10 @@ if (major < 20) {
   process.exit(1);
 }
 
-import { createProgram } from "../src/cli/index.js";
+// Dynamic import so the version guard actually runs first: a static import is
+// hoisted and evaluates the whole CLI dependency graph before the check,
+// crashing old Node with a cryptic syntax error instead of the message above.
+const { createProgram } = await import("../src/cli/index.js");
 
 const program = createProgram();
 program.parse(process.argv);

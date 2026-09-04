@@ -2,12 +2,13 @@ import { defineConfig } from "vitepress";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
+  base: "/openwolf/",
   title: "OpenWolf",
   description:
-    "Open-source middleware for Claude Code. Project intelligence, persistent memory, and token tracking through invisible hooks. 65% average token reduction.",
+    "openwolf keeps one project memory across Claude Code, Codex and OpenCode, and measures what each session actually cost. Local, open source, no API calls.",
   head: [
-    ["link", { rel: "icon", type: "image/svg+xml", href: "/wolf.svg" }],
-    ["link", { rel: "canonical", href: "https://openwolf.com" }],
+    ["link", { rel: "icon", type: "image/svg+xml", href: "/openwolf/wolf.svg" }],
+    ["link", { rel: "canonical", href: "https://nottyjay.github.io/openwolf/" }],
     [
       "link",
       {
@@ -32,13 +33,13 @@ export default defineConfig({
     ],
     // Open Graph
     ["meta", { property: "og:type", content: "website" }],
-    ["meta", { property: "og:url", content: "https://openwolf.com" }],
+    ["meta", { property: "og:url", content: "https://nottyjay.github.io/openwolf/" }],
     ["meta", { property: "og:site_name", content: "OpenWolf" }],
     [
       "meta",
       {
         property: "og:title",
-        content: "OpenWolf -- A Second Brain for Claude Code",
+        content: "OpenWolf: portable project memory and measured token usage for coding agents",
       },
     ],
     [
@@ -46,7 +47,7 @@ export default defineConfig({
       {
         property: "og:description",
         content:
-          "Open-source hooks that give Claude Code project intelligence, token tracking, and mistake prevention. 2M+ tokens saved across real projects.",
+          "openwolf keeps one project memory across Claude Code, Codex and OpenCode, and measures what each session actually cost. Local, open source, no API calls.",
       },
     ],
     // Twitter Card
@@ -55,7 +56,7 @@ export default defineConfig({
       "meta",
       {
         name: "twitter:title",
-        content: "OpenWolf -- A Second Brain for Claude Code",
+        content: "OpenWolf: portable project memory and measured token usage for coding agents",
       },
     ],
     [
@@ -63,17 +64,17 @@ export default defineConfig({
       {
         name: "twitter:description",
         content:
-          "Open-source hooks that give Claude Code project intelligence, token tracking, and mistake prevention. 2M+ tokens saved across real projects.",
+          "openwolf keeps one project memory across Claude Code, Codex and OpenCode, and measures what each session actually cost. Local, open source, no API calls.",
       },
     ],
     // Additional SEO
-    ["meta", { name: "author", content: "Dr. Farhan Palathinkal, Cytostack" }],
+    ["meta", { name: "author", content: "Cytostack (original) / alptech (fork)" }],
     [
       "meta",
       {
         name: "keywords",
         content:
-          "claude code, token tracking, context management, ai middleware, claude code hooks, token optimization, open source, developer tools",
+          "project memory, agent memory, context engineering, claude code, codex, opencode, cursor, gemini cli, antigravity, token usage, token tracking, context management, open source, developer tools",
       },
     ],
   ],
@@ -108,7 +109,6 @@ export default defineConfig({
       {
         text: "Features",
         items: [
-          { text: "Design QC", link: "/designqc" },
           { text: "Reframe", link: "/reframe" },
         ],
       },
@@ -123,11 +123,11 @@ export default defineConfig({
       },
     ],
     socialLinks: [
-      { icon: "github", link: "https://github.com/cytostack/openwolf" },
+      { icon: "github", link: "https://github.com/nottyjay/openwolf" },
     ],
     footer: {
-      message: 'AGPL-3.0 · Made by <a href="https://github.com/cytostack" target="_blank">Cytostack</a>',
-      copyright: 'Copyright 2026 Cytostack Pvt Ltd',
+      message: 'AGPL-3.0 · Original by <a href="https://github.com/cytostack" target="_blank">Cytostack</a> · Fork maintained by <a href="https://github.com/nottyjay" target="_blank">alptech</a>',
+      copyright: 'Copyright 2026 Cytostack Pvt Ltd / alptech',
     },
     search: {
       provider: "local",

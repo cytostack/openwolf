@@ -1,7 +1,7 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { getWolfDir, writeJSON, readJSON, normalizePath, readMarkdown, estimateTokens } from "./fs.js"
-import { parseAnatomy } from "./anatomy.js"
+import { getWolfDir, writeJSON, readJSON, normalizePath, estimateTokens, sessionFilePath } from "./fs.js"
+import { lookupEntry } from "./anatomy.js"
 import type { PartialSessionState } from "./types.js"
 
 export function handlePostRead(directory: string, sessionId: string, filePath: string, content: string): void {
@@ -9,7 +9,7 @@ export function handlePostRead(directory: string, sessionId: string, filePath: s
   if (!fs.existsSync(wolfDir)) return
 
   const hooksDir = path.join(wolfDir, "hooks")
-  const sessionFile = path.join(hooksDir, "_session.json")
+  const sessionFile = sessionFilePath(hooksDir, sessionId)
   const normalizedFile = normalizePath(filePath)
 
   const projectDir = normalizePath(directory)
@@ -25,19 +25,10 @@ export function handlePostRead(directory: string, sessionId: string, filePath: s
 
   let tokens = content ? estimateTokens(content, type as "code" | "prose" | "mixed") : 0
 
+  // Fallback: if the tool output had no content, use the anatomy token estimate
   if (tokens === 0) {
-    const anatomyContent = readMarkdown(path.join(wolfDir, "anatomy.md"))
-    const sections = parseAnatomy(anatomyContent)
-    for (const [, entries] of sections) {
-      for (const entry of entries) {
-        const entryRelPath = normalizePath(path.join(entry.file))
-        if (normalizedFile.endsWith(entryRelPath) || normalizedFile.endsWith("/" + entryRelPath)) {
-          tokens = entry.tokens
-          break
-        }
-      }
-      if (tokens > 0) break
-    }
+    const entry = lookupEntry(wolfDir, projectDir, normalizedFile)
+    if (entry) tokens = entry.tokens
   }
 
   const session = readJSON<PartialSessionState>(sessionFile, { files_read: {} })

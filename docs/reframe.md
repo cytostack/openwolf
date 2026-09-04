@@ -1,30 +1,28 @@
 # Reframe
 
-Curated knowledge base of 12 modern UI frameworks with battle-tested prompts for Claude. Reframe is not a CLI command -- it is a reference file that Claude reads and uses to guide framework selection and migration.
+Curated knowledge base of 13 modern UI frameworks with battle-tested prompts. Reframe ships as the `/reframe` skill, installed for every wired agent during `openwolf init`. Every prompt enforces an anti-generic design mandate so the result does not look AI-generated.
 
 ## Overview
 
-When you ask Claude to change, pick, or migrate your UI framework, Claude reads `.wolf/reframe-frameworks.md` (installed during `openwolf init`). The file contains decision criteria, framework profiles, and framework-specific prompts that Claude adapts to your project using `anatomy.md`.
-
-No CLI invocation needed. Just talk to Claude about your UI framework and Reframe activates automatically.
+Run `/reframe migrate`, `/reframe audit`, or `/reframe fix`, or simply ask your agent to change, pick, or migrate your UI framework. The skill carries the decision criteria, framework profiles, and framework-specific prompts, which your agent adapts to your project using the anatomy index.
 
 ---
 
 ## How It Works
 
-1. `.wolf/reframe-frameworks.md` is created during `openwolf init`
-2. When you mention changing or picking a UI framework, Claude reads the file
-3. Claude asks **5 decision questions** to understand your priorities and constraints
-4. Claude recommends a framework based on your answers
-5. Claude uses the framework-specific prompt -- adapted to your project via `anatomy.md` -- to execute the installation and migration
+1. The `/reframe` skill is installed during `openwolf init` for Claude Code, Codex, and OpenCode
+2. When you invoke it or mention changing a UI framework, your agent loads the knowledge base
+3. Your agent asks **5 decision questions** to understand your priorities and constraints
+4. Your agent recommends a framework based on your answers
+5. Your agent uses the framework-specific prompt, adapted to your project via the anatomy index, to execute the installation and migration
 
-The framework-specific prompts handle dependency installation, configuration, component patterns, and common migration steps. Claude tailors them to your actual project structure.
+The framework-specific prompts handle dependency installation, configuration, component patterns, and common migration steps. Your agent tailors them to your actual project structure.
 
 ---
 
 ## Supported Frameworks
 
-Reframe includes profiles and prompts for 12 frameworks:
+Reframe includes profiles and prompts for 13 frameworks:
 
 | Framework | Description |
 |-----------|-------------|
@@ -33,13 +31,14 @@ Reframe includes profiles and prompts for 12 frameworks:
 | **Magic UI** | Polished SaaS aesthetic. Linear/Vercel-inspired design language. |
 | **DaisyUI** | Tailwind plugin. Fastest setup, works with any JavaScript framework. |
 | **HeroUI** | React Aria foundation. Polished components with strong accessibility. |
-| **Chakra UI** | CSS-in-JS. Robust theming system, excellent developer experience. |
+| **Chakra UI** | CSS-in-JS. Deep theming system, excellent developer experience. |
 | **Flowbite** | Tailwind plugin. Business and enterprise look out of the box. |
 | **Preline UI** | Tailwind plugin. Speed-focused with pre-built page sections. |
 | **Park UI** | Ark UI headless + Tailwind. Works across React, Vue, and Solid. |
 | **Origin UI** | 400+ free shadcn-based components. Drop-in library for shadcn projects. |
 | **Headless UI** | Zero styling, full design control. Unstyled accessible primitives. |
 | **Cult UI** | AI-forward aesthetic. Full-stack patterns for modern AI applications. |
+| **Astryx** | Meta's design system. 160+ themeable components, StyleX-authored, agent-ready docs. |
 
 ---
 
@@ -61,39 +60,39 @@ Use this priority table to narrow the choice before reading full profiles:
 | Already using shadcn, need more components | Origin UI |
 | Full design control, no opinions | Headless UI |
 | AI-native product aesthetic | Cult UI |
+| Full design system + theming, agent-friendly docs | Astryx |
 
 ---
 
 ## Example Conversation
 
 ```
-You: I want to switch my UI framework
-Claude: [reads reframe-frameworks.md]
-        What framework does your project currently use?
-You: React with plain Tailwind, no component library
-Claude: What's your priority -- animations, speed, control, or accessibility?
-You: Stunning animations for a landing page
-Claude: I'd recommend Aceternity UI or Magic UI.
-        Aceternity gives cinematic scroll effects with Framer Motion.
-        Magic UI gives a polished SaaS look inspired by Linear and Vercel.
-        Which direction fits better?
-You: Let's go with Aceternity
-Claude: [uses Aceternity prompt adapted to your project]
-        [installs dependencies]
-        [refactors components with animation patterns]
+You:   /reframe migrate
+Agent: [reads reframe-frameworks.md]
+       What framework does your project currently use?
+You:   React with plain Tailwind, no component library
+Agent: What's your priority: animations, speed, control, or accessibility?
+You:   Stunning animations for a landing page
+Agent: I'd recommend Aceternity UI or Magic UI.
+       Aceternity gives cinematic scroll effects with Framer Motion.
+       Magic UI gives a polished SaaS look inspired by Linear and Vercel.
+       Which direction fits better?
+You:   Let's go with Aceternity
+Agent: [uses Aceternity prompt, de-genericized per the design mandate]
+       [installs dependencies]
+       [refactors components with animation patterns]
 ```
 
-Claude handles the entire migration: installing packages, updating configs, converting components, and verifying the build still passes.
+Your agent handles the entire migration: installing packages, updating configs, converting components, and verifying the build still passes.
 
 ---
 
-## Works with Design QC
+## Audit and fix modes
 
-Reframe pairs naturally with [Design QC](/designqc) in a full visual feedback loop:
-
-1. **Evaluate** -- run `openwolf designqc` and ask Claude to review the current design
-2. **Decide** -- discuss framework options with Claude (Reframe activates)
-3. **Migrate** -- Claude installs the chosen framework and rebuilds components
-4. **Verify** -- run `openwolf designqc` again and ask Claude to compare before/after
-
-This loop keeps design decisions grounded in actual visual output rather than guesswork.
+Beyond migration, `/reframe audit <target>` scans existing UI against the
+anti-generic design mandate (purple gradient heroes, glassmorphism everywhere,
+template feature grids, stock palettes, and other AI tells) and reports what to
+change. `/reframe fix <target>` applies those fixes toward a distinctive result,
+preserving your framework and component APIs. Distinctiveness is an acceptance
+criterion: if the design could be swapped onto any other product without anyone
+noticing, it fails.

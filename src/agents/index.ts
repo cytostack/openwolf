@@ -66,7 +66,8 @@ export function resolveAgents(names: string[]): AgentAdapter[] {
   const result: AgentAdapter[] = [];
   for (const raw of names) {
     const name = raw.toLowerCase().trim();
-    if (name === "claude" || seen.has(name)) continue; // claude is always installed
+    // Claude uses the native path in init.ts rather than an adapter.
+    if (name === "claude" || seen.has(name)) continue;
     const adapter = name === "all" ? null : ADAPTERS[name];
     if (name === "all") {
       for (const a of Object.values(ADAPTERS)) {

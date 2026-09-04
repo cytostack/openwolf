@@ -1,15 +1,36 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
+import { fileURLToPath } from "node:url";
 
 // Prefer the harness-provided project dir so hooks work even if CWD changes
 // during a session. Each supported agent exposes its own env var; hooks are
 // provider-agnostic (Workstream C) so all are checked.
+//
+// None of those vars are guaranteed. Claude Code in particular does not put
+// CLAUDE_PROJECT_DIR in the hook process's environment on any platform: it
+// delivers project context through the stdin JSON payload instead. So before
+// falling back to CWD, derive the root from this script's own location. A hook
+// always runs as <project>/.wolf/hooks/<name>.js, which makes the project root
+// two directories up, verified by the .wolf/ directory being there.
+function projectDirFromScriptLocation(): string | null {
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    if (path.basename(here) !== "hooks") return null;
+    const root = path.resolve(here, "..", "..");
+    if (path.basename(path.dirname(here)) !== ".wolf") return null;
+    return fs.existsSync(path.join(root, ".wolf")) ? root : null;
+  } catch {
+    return null;
+  }
+}
+
 export function getProjectDir(): string {
   return (
     process.env.CLAUDE_PROJECT_DIR ||
     process.env.CODEX_PROJECT_ROOT ||
     process.env.OPENWOLF_PROJECT_ROOT ||
+    projectDirFromScriptLocation() ||
     process.cwd()
   );
 }
@@ -20,8 +41,12 @@ export function getWolfDir(): string {
 
 /** Which agent harness invoked this hook — used for per-agent ledger attribution. */
 export function detectAgent(): string {
-  if (process.env.CLAUDE_PROJECT_DIR) return "claude";
-  if (process.env.CODEX_PROJECT_ROOT) return "codex";
+  // CLAUDECODE is set in every Claude Code hook process; CLAUDE_PROJECT_DIR is
+  // not set at all, so checking it alone attributed real Claude sessions to
+  // "default" and lost their per-agent ledger rows.
+  if (process.env.CLAUDECODE || process.env.CLAUDE_CODE_ENTRYPOINT || process.env.CLAUDE_PROJECT_DIR) return "claude";
+  if (process.env.CODEX_PROJECT_ROOT || process.env.CODEX_SANDBOX) return "codex";
+  if (process.env.OPENCODE || process.env.OPENCODE_PROJECT_ROOT) return "opencode";
   return "default";
 }
 
@@ -36,12 +61,117 @@ export function ensureWolfDir(): void {
   }
 }
 
+// ─── Hook health (2.2): heartbeat + crash recording ──────────────────────────
+// The PostToolUse write hook crashed on 100% of 440 invocations for 3 weeks
+// with nothing noticing, because every hook swallowed its own errors
+// (main().catch(() => exit(0))). Every hook now runs through hookMain(), which
+// records a per-hook heartbeat (last success / last error / consecutive
+// failures) that session-start, update, and the dashboard can check.
+
+export const HEARTBEAT_FILE = "_heartbeat.json";
+
+interface HeartbeatEntry {
+  last_ok?: string;
+  last_error?: string;
+  last_error_message?: string;
+  consecutive_failures: number;
+}
+
+export function recordHeartbeat(hookName: string, error?: unknown): void {
+  try {
+    const file = path.join(getWolfDir(), "hooks", HEARTBEAT_FILE);
+    const beats = readJSON<Record<string, HeartbeatEntry>>(file, {});
+    const entry = beats[hookName] ?? { consecutive_failures: 0 };
+    if (error === undefined) {
+      entry.last_ok = new Date().toISOString();
+      entry.consecutive_failures = 0;
+    } else {
+      entry.last_error = new Date().toISOString();
+      entry.last_error_message = String(error instanceof Error ? error.stack ?? error.message : error).slice(0, 500);
+      entry.consecutive_failures = (entry.consecutive_failures ?? 0) + 1;
+    }
+    beats[hookName] = entry;
+    writeJSON(file, beats);
+  } catch {}
+}
+
+/**
+ * Standard hook entry point: runs the hook, records a heartbeat either way,
+ * always exits 0 (hooks must never block the agent). `--selfcheck` exits
+ * immediately after module load: reaching this code at all proves every static
+ * import resolved, which is exactly the failure class that went undetected.
+ */
+export function hookMain(hookName: string, fn: () => void | Promise<void>): void {
+  if (process.argv.includes("--selfcheck")) {
+    process.stdout.write(`ok ${hookName}`);
+    process.exit(0);
+  }
+  Promise.resolve()
+    .then(fn)
+    .then(() => {
+      recordHeartbeat(hookName);
+      process.exit(0);
+    })
+    .catch((err) => {
+      recordHeartbeat(hookName, err);
+      process.exit(0);
+    });
+}
+
+// ─── Session-keyed state (2.2) ───────────────────────────────────────────────
+// _session.json used to be one per-PROJECT file, so concurrent Claude sessions
+// cross-contaminated each other's read tracking (one of the two causes of the
+// ledger's ~20x duplicate-warning inflation). State is now keyed by the
+// harness-provided session_id when present.
+
+/** Resolve the session state file for this hook invocation. */
+export function getSessionFilePath(hookInput: { session_id?: string } | undefined): string {
+  const hooksDir = path.join(getWolfDir(), "hooks");
+  const id = hookInput?.session_id;
+  if (typeof id === "string" && /^[\w.-]{4,128}$/.test(id)) {
+    return path.join(hooksDir, "sessions", `${id}.json`);
+  }
+  // Legacy fallback for agents that pass no session id.
+  return path.join(hooksDir, "_session.json");
+}
+
+/** Delete session state files older than maxAgeDays (called from session-start). */
+export function gcSessionFiles(maxAgeDays = 7): void {
+  try {
+    const dir = path.join(getWolfDir(), "hooks", "sessions");
+    const cutoff = Date.now() - maxAgeDays * 24 * 3600 * 1000;
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.endsWith(".json")) continue;
+      try {
+        if (fs.statSync(path.join(dir, f)).mtimeMs < cutoff) fs.unlinkSync(path.join(dir, f));
+      } catch {}
+    }
+  } catch {}
+}
+
 export function readJSON<T = unknown>(filePath: string, fallback: T): T {
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf-8")) as T;
   } catch {
     return fallback;
   }
+}
+
+/**
+ * Reads .wolf/buglog.json in any shape a project might have on disk and always
+ * returns { version, bugs }. A hand-written log is often a bare array of
+ * entries; that shape used to reach `bugLog.bugs.length` and throw, which is
+ * how pre-write racked up 465 consecutive failures on one project before
+ * anyone noticed (the hook heartbeat was the only witness).
+ */
+export function readBugLogFile(wolfDir: string): { version: number; bugs: any[] } {
+  const raw = readJSON<unknown>(path.join(wolfDir, "buglog.json"), null);
+  if (Array.isArray(raw)) return { version: 1, bugs: raw };
+  if (raw && typeof raw === "object") {
+    const bugs = (raw as { bugs?: unknown }).bugs;
+    if (Array.isArray(bugs)) return { ...(raw as object), version: 1, bugs } as { version: number; bugs: any[] };
+  }
+  return { version: 1, bugs: [] };
 }
 
 export function writeJSON(filePath: string, data: unknown): void {
@@ -578,7 +708,156 @@ export function normalizePath(p: string): string {
 }
 
 /**
- * Count non-mechanical semantic entries written to memory.md today.
+ * Lexical containment check shared by every hook that records a path into
+ * project-scoped state.
+ *
+ * Issue #80, reported with PR #99 by @davdittrich.
+ *
+ * `startsWith(projectDir)` is not a path boundary. `/w/project-private/x.ts`
+ * has `/w/project` as a string prefix, so sibling directories (and anything
+ * reachable through `..`) used to land in this project's session state and
+ * token metrics even though the user never put them in OpenWolf scope.
+ *
+ * Returns the project-relative path (forward-slashed, "" for the root itself)
+ * or null when `target` is outside `root`. Purely lexical, by design: it
+ * resolves no symlinks and touches no filesystem, so it cannot block a hook
+ * or behave differently depending on what happens to exist on disk.
+ */
+export function relativeIfInside(root: string, target: string): string | null {
+  if (!root || !target) return null;
+  let rel: string;
+  try {
+    const absRoot = path.resolve(root);
+    const absTarget = path.isAbsolute(target) ? path.resolve(target) : path.resolve(absRoot, target);
+    rel = path.relative(absRoot, absTarget);
+  } catch {
+    return null;
+  }
+  if (rel === "") return "";
+  if (path.isAbsolute(rel)) return null; // different win32 drive
+  if (rel === ".." || rel.startsWith(".." + path.sep)) return null;
+  return normalizePath(rel);
+}
+
+/** True when `target` lies inside `root`. See relativeIfInside(). */
+export function isInsideDir(root: string, target: string): boolean {
+  return relativeIfInside(root, target) !== null;
+}
+
+/** realpath, tolerating a path whose leaf does not exist yet. */
+function realpathOrSelf(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch {}
+  const dir = path.dirname(p);
+  if (dir === p) return p;
+  return path.join(realpathOrSelf(dir), path.basename(p));
+}
+
+/**
+ * Project containment for hook paths: lexical first, symlink-aware only when
+ * that fails.
+ *
+ * The lexical answer is right almost always and costs nothing. But a project
+ * reached through a symlink (`/tmp` -> `/private/tmp` on macOS, a mounted or
+ * linked work directory) can have a root resolved one way and a tool-supplied
+ * file path the other, which would make real project files look external and
+ * silently stop tracking them. Pay for realpath only on that miss.
+ */
+export function projectRelativePath(root: string, target: string): string | null {
+  const direct = relativeIfInside(root, target);
+  if (direct !== null) return direct;
+  if (!root || !target) return null;
+  const real = relativeIfInside(realpathOrSelf(root), realpathOrSelf(path.resolve(root, target)));
+  return real;
+}
+
+// ─── Hook JSON output (the only channel the model sees) ─────────────────────
+// Claude Code treats hook stdout as ONE JSON object; two concatenated objects
+// are invalid JSON and the whole output is silently dropped. stderr from a
+// hook that exits 0 goes to the debug log only — the model NEVER sees it, so
+// every nudge meant for the model must go through hookSpecificOutput.
+// Callers must accumulate all messages for a run and call this exactly once.
+//
+// permissionDecision "allow" is deliberately not accepted: it bypasses the
+// user's permission system (auto-approves gated tool calls). To pass through
+// with context attached, omit the decision entirely.
+
+export interface HookJSONFields {
+  additionalContext?: string;
+  permissionDecision?: "deny" | "ask";
+  permissionDecisionReason?: string;
+  /** PostToolUse only: replaces the tool's result before Claude sees it.
+   * For built-in tools the value must match the tool's output schema exactly
+   * or the harness silently ignores it — mirror the received tool_response
+   * object and modify only the fields you mean to change. */
+  updatedToolOutput?: unknown;
+}
+
+export function emitHookJSON(hookEventName: string, fields: HookJSONFields): void {
+  const out: Record<string, unknown> = { hookEventName };
+  if (fields.additionalContext) out.additionalContext = fields.additionalContext;
+  if (fields.updatedToolOutput !== undefined) out.updatedToolOutput = fields.updatedToolOutput;
+  if (fields.permissionDecision) {
+    out.permissionDecision = fields.permissionDecision;
+    out.permissionDecisionReason = fields.permissionDecisionReason ?? "";
+  }
+  if (Object.keys(out).length === 1) return;
+  process.stdout.write(JSON.stringify({ hookSpecificOutput: out }));
+}
+
+// ─── Injection accounting (J1: cost-of-injection) ───────────────────────────
+// Every token OpenWolf injects into the model's context (digests, hints,
+// warnings, reminders) is a cost the savings claim must be weighed against.
+// Hooks record what they emit; the ledger folds it into the session totals.
+
+export interface InjectionTracking {
+  injected_tokens_estimated?: number;
+  injected_by_source?: Record<string, number>;
+  [key: string]: unknown;
+}
+
+/** Record an injected text against the in-memory session (caller persists). */
+export function recordInjection(session: InjectionTracking, source: string, text: string): void {
+  if (!text) return;
+  const tokens = estimateTokens(text, "prose");
+  session.injected_tokens_estimated = (session.injected_tokens_estimated ?? 0) + tokens;
+  const bySource = session.injected_by_source ?? {};
+  bySource[source] = (bySource[source] ?? 0) + tokens;
+  session.injected_by_source = bySource;
+}
+
+/**
+ * Same, for hooks that do not otherwise hold the session file open.
+ *
+ * `mutate` is injected rather than imported: this module is deliberately free
+ * of relative imports (the test suite loads it directly under Node's type
+ * stripping, which does not map ./x.js to x.ts), and the lock lives in
+ * anatomy-lock.ts. Callers pass mutateJSON so the accumulating token counters
+ * are updated in one serialized transaction (#83).
+ */
+export function recordInjectionToSessionFile(
+  sessionFile: string,
+  source: string,
+  text: string,
+  mutate?: <T>(file: string, fallback: T, budgetMs: number, fn: (current: T) => void) => T | null,
+): void {
+  if (!text) return;
+  try {
+    if (mutate) {
+      mutate<InjectionTracking>(sessionFile, {}, 2000, (session) => {
+        recordInjection(session, source, text);
+      });
+      return;
+    }
+    const session = readJSON<InjectionTracking>(sessionFile, {});
+    recordInjection(session, source, text);
+    writeJSON(sessionFile, session);
+  } catch {}
+}
+
+/**
+ * Count non-mechanical semantic entries written to memory.md this session.
  * Mechanical entries (auto-generated file ops, session-end lines) don't count.
  * Used by the stop hook to detect whether Claude wrote a meaningful summary.
  */
@@ -586,12 +865,20 @@ export function countSemanticEntries(wolfDir: string): number {
   const memoryPath = path.join(wolfDir, "memory.md");
   try {
     const content = fs.readFileSync(memoryPath, "utf-8");
-    const mechanical = /^\|\s*[\d:]+\s*\|\s*(Created|Edited|Multi-edited|Session end:|designqc:)/;
-    const today = new Date().toISOString().slice(0, 10);
-    const todayPrefix = `| ${today}`;
+    const mechanical = /^\|\s*[\d\-: ]+\|\s*(Created|Edited|Multi-edited|Session end:)/;
+    const tableHeader = /^\|\s*Time\s*\|/i;
+    const tableSeparator = /^\|[\s\-|]+\|?\s*$/;
+    const lines = content.split("\n");
+    let start = -1;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (lines[i].startsWith("## Session: ")) { start = i; break; }
+    }
     let count = 0;
-    for (const line of content.split("\n")) {
-      if (line.startsWith(todayPrefix) && !mechanical.test(line)) count++;
+    for (let i = start + 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line.startsWith("|")) continue;
+      if (tableHeader.test(line) || tableSeparator.test(line) || mechanical.test(line)) continue;
+      count++;
     }
     return count;
   } catch {
@@ -604,12 +891,16 @@ export function countSemanticEntries(wolfDir: string): number {
 // harness's actual per-message API usage. Summing it gives *measured* session
 // tokens — the verifiable numbers the estimated ledger can be checked against.
 
-export interface RealUsage {
+export interface ModelUsageTotals {
   input_tokens: number;
   output_tokens: number;
   cache_read_input_tokens: number;
   cache_creation_input_tokens: number;
   api_calls: number;
+}
+
+export interface RealUsage extends ModelUsageTotals {
+  per_model?: Record<string, ModelUsageTotals>;
 }
 
 export function readTranscriptUsage(transcriptPath: string): RealUsage | null {
@@ -620,8 +911,9 @@ export function readTranscriptUsage(transcriptPath: string): RealUsage | null {
     return null;
   }
   // One usage block per API call; streaming can emit several transcript lines
-  // for one message id — keep the last usage seen per id.
-  const byId = new Map<string, { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }>();
+  // for one message id, and a resumed session can replay a message under a new
+  // request — dedupe on message id + request id, keeping the last usage seen.
+  const byId = new Map<string, { model?: string; input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }>();
   let anon = 0;
   for (const line of raw.split("\n")) {
     if (!line.trim()) continue;
@@ -629,17 +921,27 @@ export function readTranscriptUsage(transcriptPath: string): RealUsage | null {
       const entry = JSON.parse(line);
       const usage = entry?.message?.usage;
       if (usage && typeof usage === "object" && typeof usage.output_tokens === "number") {
-        byId.set(entry.message.id ?? `anon-${anon++}`, usage);
+        const key = `${entry.message.id ?? `anon-${anon++}`}:${entry.requestId ?? ""}`;
+        byId.set(key, { ...usage, model: entry.message.model });
       }
     } catch {}
   }
   if (byId.size === 0) return null;
   const total: RealUsage = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, api_calls: byId.size };
+  const perModel: Record<string, ModelUsageTotals> = {};
   for (const u of byId.values()) {
     total.input_tokens += u.input_tokens ?? 0;
     total.output_tokens += u.output_tokens ?? 0;
     total.cache_read_input_tokens += u.cache_read_input_tokens ?? 0;
     total.cache_creation_input_tokens += u.cache_creation_input_tokens ?? 0;
+    const model = u.model ?? "unknown";
+    const m = perModel[model] ?? (perModel[model] = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, api_calls: 0 });
+    m.input_tokens += u.input_tokens ?? 0;
+    m.output_tokens += u.output_tokens ?? 0;
+    m.cache_read_input_tokens += u.cache_read_input_tokens ?? 0;
+    m.cache_creation_input_tokens += u.cache_creation_input_tokens ?? 0;
+    m.api_calls++;
   }
+  if (Object.keys(perModel).length > 0) total.per_model = perModel;
   return total;
 }

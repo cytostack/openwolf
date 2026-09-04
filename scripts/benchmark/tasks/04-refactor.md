@@ -1,0 +1,1 @@
+Find the single most duplicated piece of logic in this codebase (a pattern repeated in three or more places) and refactor it into one shared helper. Keep behavior identical, update all call sites, and run the tests.

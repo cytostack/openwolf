@@ -3,8 +3,10 @@ import * as path from "node:path";
 import { findProjectRoot } from "../scanner/project-root.js";
 import { readJSON, writeJSON } from "../utils/fs-safe.js";
 import { getDashboardToken } from "../utils/dashboard-auth.js";
+import { mutateJSON, CLI_LOCK_BUDGET_MS } from "../hooks/anatomy-lock.js";
 import { Logger } from "../utils/logger.js";
-import { CronEngine } from "../daemon/cron-engine.js";
+import { CronEngine, CronTaskNotFoundError } from "../daemon/cron-engine.js";
+import { hasPm2 } from "./daemon-cmd.js";
 
 interface CronTask {
   id: string;
@@ -21,8 +23,40 @@ interface CronManifest {
 
 interface CronState {
   engine_status: string;
+  last_heartbeat?: string | null;
   execution_log: Array<{ task_id: string; status: string; timestamp: string }>;
   dead_letter_queue: Array<{ task_id: string; error: string; timestamp: string }>;
+}
+
+function heartbeatStaleMs(wolfDir: string): number {
+  // The daemon writes a heartbeat every heartbeat_interval_minutes (default
+  // 30). The old fixed 10-minute threshold was SHORTER than that interval, so
+  // a perfectly healthy daemon read as "stale" two-thirds of the time. Allow
+  // two intervals plus slack.
+  const cfg = readJSON<{ openwolf?: { cron?: { heartbeat_interval_minutes?: number } } }>(
+    path.join(wolfDir, "config.json"), {}
+  );
+  const intervalMin = cfg.openwolf?.cron?.heartbeat_interval_minutes ?? 30;
+  return (intervalMin * 2 + 5) * 60 * 1000;
+}
+
+function schedulerUnavailableReason(state: CronState, wolfDir: string): string | null {
+  // A fresh heartbeat is direct evidence the daemon runs (it can be
+  // fork-spawned by `openwolf dashboard` without pm2), so check it before
+  // complaining about pm2.
+  if (state.last_heartbeat) {
+    const elapsed = Date.now() - new Date(state.last_heartbeat).getTime();
+    if (!Number.isNaN(elapsed) && elapsed <= heartbeatStaleMs(wolfDir)) {
+      return null;
+    }
+    return hasPm2()
+      ? "daemon heartbeat stale (openwolf daemon start)"
+      : "daemon heartbeat stale; pm2 not installed for persistence (pnpm add -g pm2)";
+  }
+  if (!hasPm2()) {
+    return "pm2 not installed (pnpm add -g pm2)";
+  }
+  return "daemon not running (openwolf daemon start)";
 }
 
 export function cronList(): void {
@@ -48,13 +82,19 @@ export function cronList(): void {
   console.log("Cron Tasks");
   console.log("==========\n");
 
+  const unavailable = schedulerUnavailableReason(state, wolfDir);
+  if (unavailable) {
+    console.log(`  ⚠ Scheduler unavailable: ${unavailable}. Tasks will not fire until this is resolved.\n`);
+  }
+
   if (manifest.tasks.length === 0) {
     console.log("  No tasks configured.");
     return;
   }
 
   for (const task of manifest.tasks) {
-    const status = task.enabled ? "enabled" : "disabled";
+    let status = task.enabled ? "enabled" : "disabled";
+    if (task.enabled && unavailable) status = "enabled (scheduler unavailable)";
     const lastRun = state.execution_log
       .filter((e) => e.task_id === task.id)
       .sort((a, b) => b.timestamp.localeCompare(a.timestamp))[0];
@@ -93,10 +133,16 @@ export async function cronRun(id: string): Promise<void> {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     });
-    const body = await res.json() as { status?: string; error?: string };
+    const body = await res.json() as { status?: string; error?: string; known_tasks?: string[] };
     if (res.ok) {
       console.log(`Task ${id} triggered via daemon.`);
       return;
+    }
+    // 404 is a definitive answer about the task, not a daemon problem. Running
+    // it directly would only reach the same not-found (#87).
+    if (res.status === 404) {
+      console.error(`Task ${id} not found. Known tasks: ${body.known_tasks?.join(", ") || "none"}`);
+      process.exit(1);
     }
     console.log(`Daemon returned error: ${body.error ?? res.statusText}`);
     console.log("Falling back to direct execution...");
@@ -111,9 +157,41 @@ export async function cronRun(id: string): Promise<void> {
     await engine.runTask(id);
     console.log(`Task ${id} executed successfully.`);
   } catch (err) {
+    if (err instanceof CronTaskNotFoundError) {
+      console.error(`Task ${id} not found. Known tasks: ${err.knownTaskIds.join(", ") || "none"}`);
+      process.exit(1);
+    }
     console.error(`Task ${id} failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
+}
+
+export function cronSetEnabled(id: string, enabled: boolean): void {
+  const projectRoot = findProjectRoot();
+  const wolfDir = path.join(projectRoot, ".wolf");
+
+  if (!fs.existsSync(wolfDir)) {
+    console.log("OpenWolf not initialized. Run: openwolf init");
+    return;
+  }
+
+  const manifestPath = path.join(wolfDir, "cron-manifest.json");
+  const manifest = readJSON<CronManifest>(manifestPath, { version: 1, tasks: [] });
+  const task = manifest.tasks.find((t) => t.id === id);
+  if (!task) {
+    const known = manifest.tasks.map((t) => t.id).join(", ") || "none";
+    console.log(`Task ${id} not found. Known tasks: ${known}`);
+    return;
+  }
+
+  if (task.enabled === enabled) {
+    console.log(`Task ${id} is already ${enabled ? "enabled" : "disabled"}.`);
+    return;
+  }
+
+  task.enabled = enabled;
+  writeJSON(manifestPath, manifest);
+  console.log(`Task ${id} ${enabled ? "enabled" : "disabled"}.`);
 }
 
 export function cronRetry(id: string): void {
@@ -125,20 +203,32 @@ export function cronRetry(id: string): void {
     return;
   }
 
+  // Through the same lock the daemon uses. This path wrote cron-state.json
+  // unlocked, so a retry issued while the engine was writing could drop the
+  // engine's execution-log entry, or be dropped by it (#86).
   const statePath = path.join(wolfDir, "cron-state.json");
-  const state = readJSON<CronState>(statePath, {
-    engine_status: "unknown",
-    execution_log: [],
-    dead_letter_queue: [],
-  });
+  let found = false;
+  const written = mutateJSON<CronState>(
+    statePath,
+    { engine_status: "unknown", execution_log: [], dead_letter_queue: [] },
+    CLI_LOCK_BUDGET_MS,
+    (state) => {
+      if (!Array.isArray(state.dead_letter_queue)) state.dead_letter_queue = [];
+      const idx = state.dead_letter_queue.findIndex((d) => d.task_id === id);
+      if (idx === -1) return;
+      state.dead_letter_queue.splice(idx, 1);
+      found = true;
+    },
+  );
 
-  const idx = state.dead_letter_queue.findIndex((d) => d.task_id === id);
-  if (idx === -1) {
+  if (written === null) {
+    console.error("cron-state.json is locked by the daemon. Try again in a moment.");
+    process.exitCode = 1;
+    return;
+  }
+  if (!found) {
     console.log(`Task ${id} not found in dead letter queue.`);
     return;
   }
-
-  state.dead_letter_queue.splice(idx, 1);
-  writeJSON(statePath, state);
   console.log(`Removed ${id} from dead letter queue. It will retry on next schedule.`);
 }

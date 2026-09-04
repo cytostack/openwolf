@@ -2,12 +2,15 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { execFileSync } from "node:child_process";
 import { extractDescription, capDescription } from "./description-extractor.js";
+import { DEFAULT_EXCLUDE_PATTERNS, isVirtualenvDir, loadGitignore, isGitIgnored } from "./exclusions.js";
 import {
   newStore, renderStore, renderToFile, saveStore, loadStoreReconciled, sha256,
   type AnatomyStoreData, type StoreFileEntry,
 } from "../hooks/anatomy-store.js";
 import { withAnatomyLock, CLI_LOCK_BUDGET_MS } from "../hooks/anatomy-lock.js";
 import { extractSymbols, symbolsSupported, SYMBOL_MIN_TOKENS } from "../hooks/symbol-extractor.js";
+import { analyzeFileTS, tsSymbolsSupported } from "../anatomy/ts-symbol-extractor.js";
+import { computeImportance, extractEdges } from "../anatomy/importance.js";
 import { readJSON, writeJSON, writeText } from "../utils/fs-safe.js";
 import { normalizePath } from "../utils/paths.js";
 
@@ -18,6 +21,8 @@ interface WolfConfig {
       max_description_length: number;
       max_files: number;
       exclude_patterns: string[];
+      /** Honour the project's root .gitignore during the walk. Default true. */
+      respect_gitignore?: boolean;
     };
     token_audit: {
       chars_per_token_code: number;
@@ -45,6 +50,34 @@ const CODE_EXTENSIONS = new Set([
 ]);
 
 const PROSE_EXTENSIONS = new Set([".md", ".txt", ".rst", ".adoc"]);
+
+// 2.4 index hygiene: generated/derived files no agent should be steered
+// toward. Empirical audit: a project's anatomy indexed package-lock.json
+// (~92k tok), .DS_Store, and a phpunit cache — ~105k tokens of noise in one
+// index. Built in (not config) so existing installs are fixed without an
+// array-merge migration; users can still index nothing here worth indexing.
+const NOISE_BASENAMES = new Set([
+  "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "composer.lock",
+  "cargo.lock", "gemfile.lock", "poetry.lock", "uv.lock", "bun.lockb", "bun.lock",
+  ".ds_store", "thumbs.db", ".phpunit.result.cache", ".eslintcache", ".tsbuildinfo",
+]);
+const NOISE_SUFFIXES = [".min.js", ".min.css", ".map", ".cache", ".tsbuildinfo", ".pyc", ".snap"];
+const NOISE_DIRS = new Set([
+  "coverage", ".nyc_output", "__snapshots__", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+  // Agent config surfaces: steering the model toward its own harness config
+  // via the index is noise (audit: .claude/*.md topped a project's importance
+  // ranking), and the agent already knows these files natively.
+  ".claude", ".codex", ".opencode", ".gemini", ".cursor", ".agents",
+]);
+
+function isNoiseFile(relPath: string): boolean {
+  const parts = relPath.split("/");
+  const basename = parts[parts.length - 1].toLowerCase();
+  if (NOISE_BASENAMES.has(basename)) return true;
+  if (NOISE_SUFFIXES.some((s) => basename.endsWith(s))) return true;
+  if (parts.some((p) => NOISE_DIRS.has(p.toLowerCase()))) return true;
+  return false;
+}
 
 function estimateTokens(text: string, filePath: string): number {
   const ext = path.extname(filePath).toLowerCase();
@@ -83,6 +116,9 @@ function shouldExclude(
   // Always exclude sensitive files regardless of config
   if (isSensitiveFile(basename)) return true;
 
+  // Always exclude generated/derived noise (lockfiles, caches, minified).
+  if (isNoiseFile(relPath)) return true;
+
   for (const pattern of excludePatterns) {
     // Simple glob: check if any path segment matches
     if (pattern.startsWith("*.")) {
@@ -100,7 +136,9 @@ function walkDir(
   rootDir: string,
   excludePatterns: string[],
   maxFiles: number,
-  files: Record<string, StoreFileEntry>
+  files: Record<string, StoreFileEntry>,
+  contents?: Record<string, string>,
+  gitignore: ReturnType<typeof loadGitignore> = []
 ): void {
   let totalFiles = Object.keys(files).length;
   if (totalFiles >= maxFiles) return;
@@ -119,9 +157,15 @@ function walkDir(
     const relPath = normalizePath(path.relative(rootDir, fullPath));
 
     if (shouldExclude(relPath, excludePatterns)) continue;
+    // The project's own .gitignore is the list its author already wrote of
+    // what is not source (#93). Cheaper than any name list and always in sync.
+    if (gitignore.length > 0 && isGitIgnored(gitignore, relPath, item.isDirectory())) continue;
 
     if (item.isDirectory()) {
-      walkDir(fullPath, rootDir, excludePatterns, maxFiles, files);
+      // Virtualenvs under any name, including `env/`, which is too plausible a
+      // source directory to put in the default exclusion list.
+      if (isVirtualenvDir(fullPath)) continue;
+      walkDir(fullPath, rootDir, excludePatterns, maxFiles, files, contents, gitignore);
     } else if (item.isFile()) {
       const ext = path.extname(item.name).toLowerCase();
       if (BINARY_EXTENSIONS.has(ext)) continue;
@@ -143,7 +187,8 @@ function walkDir(
         continue;
       }
 
-      const desc = capDescription(extractDescription(fullPath));
+      // The file was read in full six lines up; do not open it again (#92).
+      const desc = capDescription(extractDescription(fullPath, content));
       const tokens = estimateTokens(content, fullPath);
       const symbols =
         tokens >= SYMBOL_MIN_TOKENS && symbolsSupported(ext)
@@ -159,7 +204,9 @@ function walkDir(
         updatedAt: new Date().toISOString(),
         source: "scan",
         symbols: symbols && symbols.length > 0 ? symbols : undefined,
+        symbolSource: symbols && symbols.length > 0 ? "regex" : undefined,
       };
+      if (contents) contents[relPath] = content;
 
       totalFiles++;
       if (totalFiles >= maxFiles) return;
@@ -171,7 +218,7 @@ function walkDir(
 /**
  * Scan the project and return the anatomy content and file count WITHOUT writing to disk.
  */
-export function buildAnatomy(wolfDir: string, projectRoot: string): { content: string; fileCount: number; store: AnatomyStoreData } {
+export async function buildAnatomy(wolfDir: string, projectRoot: string): Promise<{ content: string; fileCount: number; store: AnatomyStoreData }> {
   const configPath = path.join(wolfDir, "config.json");
   const config = readJSON<WolfConfig>(configPath, {
     version: 1,
@@ -179,53 +226,117 @@ export function buildAnatomy(wolfDir: string, projectRoot: string): { content: s
       anatomy: {
         max_description_length: 100,
         max_files: 500,
-        exclude_patterns: ["node_modules", ".git", "dist", "build", ".wolf"],
+        exclude_patterns: [...DEFAULT_EXCLUDE_PATTERNS],
       },
       token_audit: { chars_per_token_code: 3.5, chars_per_token_prose: 4.0 },
     },
   });
 
   const store = newStore();
+  const contents: Record<string, string> = {};
+  const gitignore = config.openwolf.anatomy.respect_gitignore === false ? [] : loadGitignore(projectRoot);
   walkDir(
     projectRoot,
     projectRoot,
     config.openwolf.anatomy.exclude_patterns,
     config.openwolf.anatomy.max_files,
-    store.files
+    store.files,
+    contents,
+    gitignore
   );
+
+  // J2: upgrade regex symbols to exact tree-sitter results where a grammar is
+  // available, and emit a signature skeleton for large files. Failure of the
+  // wasm runtime leaves the regex symbols in place — never a hard error.
+  for (const [relPath, entry] of Object.entries(store.files)) {
+    const ext = path.extname(relPath).toLowerCase();
+    if (entry.tokens < SYMBOL_MIN_TOKENS || !tsSymbolsSupported(ext)) continue;
+    try {
+      const analysis = await analyzeFileTS(contents[relPath] ?? "", ext);
+      if (analysis && analysis.symbols.length > 0) {
+        entry.symbols = analysis.symbols;
+        entry.symbolSource = "ts";
+        if (entry.tokens >= 2000 && analysis.skeleton) entry.skeleton = analysis.skeleton;
+      }
+    } catch {}
+  }
+
+  // J2: PageRank importance over the import graph (0..1, max = 1).
+  // 2.5: the resolved edges are also persisted per entry so `openwolf map`
+  // can run personalized PageRank straight from the index, no file reads.
+  try {
+    const edges = extractEdges(contents);
+    for (const [relPath, targets] of edges) {
+      if (store.files[relPath]) store.files[relPath].imports = targets;
+    }
+    const importance = computeImportance(contents);
+    for (const [relPath, score] of Object.entries(importance)) {
+      if (store.files[relPath]) store.files[relPath].importance = score;
+    }
+  } catch {}
 
   return { content: renderStore(store), fileCount: Object.keys(store.files).length, store };
 }
 
-export function scanProject(wolfDir: string, projectRoot: string): number {
-  const { fileCount, store: fresh } = buildAnatomy(wolfDir, projectRoot);
-
-  const result = withAnatomyLock(wolfDir, CLI_LOCK_BUDGET_MS, () => {
-    // Absorb md-side edits, then full-replace: the fresh disk walk defines
-    // the file set (this is the only code path allowed to delete entries).
-    const existing = loadStoreReconciled(wolfDir, projectRoot);
-    for (const [relPath, entry] of Object.entries(fresh.files)) {
-      const prev = existing.files[relPath];
-      if (prev && ((prev.hash && prev.hash === entry.hash) || prev.source === "md-import")) {
-        // Content unchanged or human-edited: keep the curated description.
-        if (prev.description) entry.description = prev.description;
-        if (prev.hash === entry.hash && prev.symbols) entry.symbols = prev.symbols;
+/**
+ * Merge a fresh disk walk into the reconciled store WITHOUT writing anything:
+ * the fresh file set wins (only code path allowed to delete entries), but
+ * curated descriptions, symbols, preamble, and raw lines survive. Shared by
+ * scanProject (which writes under the lock) and `scan --check` (which must
+ * compare against exactly what a scan would write).
+ */
+export function buildMergedStore(
+  wolfDir: string,
+  projectRoot: string,
+  fresh: AnatomyStoreData
+): AnatomyStoreData {
+  const existing = loadStoreReconciled(wolfDir, projectRoot);
+  for (const [relPath, entry] of Object.entries(fresh.files)) {
+    const prev = existing.files[relPath];
+    if (prev && ((prev.hash && prev.hash === entry.hash) || prev.source === "md-import")) {
+      // Content unchanged or human-edited: keep the curated description.
+      if (prev.description) entry.description = prev.description;
+      // Symbols: never downgrade quality. A fresh tree-sitter result wins;
+      // otherwise keep whatever the store already has for unchanged content
+      // (which may itself be tree-sitter from an earlier scan).
+      if (prev.hash === entry.hash && prev.symbols && entry.symbolSource !== "ts") {
+        entry.symbols = prev.symbols;
+        entry.symbolSource = prev.symbolSource;
+        if (prev.skeleton && !entry.skeleton) entry.skeleton = prev.skeleton;
       }
     }
-    existing.files = fresh.files;
+  }
+  existing.files = fresh.files;
+  return existing;
+}
+
+export async function scanProject(wolfDir: string, projectRoot: string): Promise<number> {
+  const { fileCount, store: fresh } = await buildAnatomy(wolfDir, projectRoot);
+
+  const result = withAnatomyLock(wolfDir, CLI_LOCK_BUDGET_MS, () => {
+    const existing = buildMergedStore(wolfDir, projectRoot, fresh);
     existing.meta.lastScanned = new Date().toISOString();
     renderToFile(wolfDir, existing);
     saveStore(wolfDir, existing);
     return true;
   });
   if (result === null) {
-    // Lock contention: fall back to writing the render directly (rare; the
-    // next locked writer reconciles via the md import path).
-    writeText(path.join(wolfDir, "anatomy.md"), renderStore(fresh));
+    // Lock contention: skip the write entirely. The old fallback wrote the
+    // fresh render straight to anatomy.md, and the next locked writer's
+    // "md wins" reconcile then permanently overwrote curated descriptions.
+    //
+    // Freshness state is NOT advanced here. Issue #85, PR #101 by @davdittrich. _scan-state.json is what tells the
+    // hooks "anatomy matches this commit"; writing it after a skipped write
+    // claimed the index was current when nothing had been indexed, which
+    // suppressed the very rescan that would have fixed it (#85). Staying stale
+    // is correct: the next trigger rescans and converges.
+    console.warn("  ! anatomy is being updated by another process; scan results not written (re-run to converge)");
+    return fileCount;
   }
 
   // Record scan state so hooks can detect staleness (git switches, editor
-  // edits outside an agent) without rescanning — Workstream F2b.
+  // edits outside an agent) without rescanning — Workstream F2b. Only reached
+  // when the locked anatomy write above actually committed.
   try {
     let gitHead: string | null = null;
     try {

@@ -55,7 +55,7 @@ tokens, per-agent usage, context health, and session handoff.
 ## Upgrading
 
 ```bash
-npm install -g openwolf@2
+npm install -g @alptech/openwolf
 openwolf update          # every registered project: backup, migrate, rewire
 ```
 

@@ -11,7 +11,6 @@ const NAV_ITEMS = [
   { id: "memory", label: "Memory" },
   { id: "anatomy", label: "Anatomy" },
   { id: "bugs", label: "Bugs" },
-  { id: "suggestions", label: "Insights" },
 ];
 
 interface TopNavProps {

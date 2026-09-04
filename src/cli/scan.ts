@@ -1,7 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { findProjectRoot } from "../scanner/project-root.js";
-import { scanProject, buildAnatomy } from "../scanner/anatomy-scanner.js";
+import { scanProject, buildAnatomy, buildMergedStore } from "../scanner/anatomy-scanner.js";
+import { renderStore } from "../hooks/anatomy-store.js";
 
 export async function scanCommand(options: { check?: boolean }): Promise<void> {
   const projectRoot = findProjectRoot();
@@ -13,7 +14,12 @@ export async function scanCommand(options: { check?: boolean }): Promise<void> {
   }
 
   if (options.check) {
-    const { content: newContent } = buildAnatomy(wolfDir, projectRoot);
+    // Compare against what `openwolf scan` would actually write: the fresh
+    // walk MERGED with curated descriptions/preamble via the reconciled store.
+    // Comparing the raw fresh render made --check a permanent false positive
+    // (extractor descriptions and zeroed counters never matched disk).
+    const { store: fresh } = await buildAnatomy(wolfDir, projectRoot);
+    const newContent = renderStore(buildMergedStore(wolfDir, projectRoot, fresh));
 
     const anatomyPath = path.join(wolfDir, "anatomy.md");
     let existingContent = "";
@@ -23,11 +29,14 @@ export async function scanCommand(options: { check?: boolean }): Promise<void> {
       // File doesn't exist — anatomy is out of date
     }
 
-    // Strip the timestamp line before comparing, since it changes every scan
-    const stripTimestamp = (s: string): string =>
-      s.replace(/^> Auto-maintained by OpenWolf\. Last scanned: .+$/m, "");
+    // Strip the volatile header lines before comparing: the scan timestamp
+    // changes every run, and hit/miss counters change on every tracked read.
+    const stripVolatile = (s: string): string =>
+      s
+        .replace(/^> Auto-maintained by OpenWolf\. Last scanned: .+$/m, "")
+        .replace(/^> Files:\s*\d+ tracked \| Anatomy hits: \d+ \| Misses: \d+$/m, "");
 
-    if (stripTimestamp(existingContent) === stripTimestamp(newContent)) {
+    if (stripVolatile(existingContent) === stripVolatile(newContent)) {
       console.log("Anatomy is up to date");
       return;
     } else {
@@ -38,7 +47,7 @@ export async function scanCommand(options: { check?: boolean }): Promise<void> {
 
   console.log("Scanning project...");
   const startTime = Date.now();
-  const fileCount = scanProject(wolfDir, projectRoot);
+  const fileCount = await scanProject(wolfDir, projectRoot);
   const elapsed = Date.now() - startTime;
   console.log(`  ✓ Anatomy scan complete: ${fileCount} files indexed in ${elapsed}ms`);
 }

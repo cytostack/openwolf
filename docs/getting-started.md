@@ -2,169 +2,126 @@
 
 ## Prerequisites
 
-- **Node.js 20+** -- [download](https://nodejs.org). Required even if you installed Claude Code via the native installer, because OpenWolf's hooks run as Node.js scripts.
-- **Claude Code** -- OpenWolf is middleware for Claude Code. Any installation method works: native installer, npm, Homebrew, or WinGet. The Claude Code desktop app is also supported.
+- **Node.js 20+** ([download](https://nodejs.org)). OpenWolf's hooks run as
+  Node.js scripts. Bug-log full-text search uses Node's built-in SQLite on
+  22.5+ and falls back to a simpler matcher below that.
+- **At least one supported coding agent.** Claude Code, Codex, and OpenCode
+  get full lifecycle hooks; Cursor, Gemini CLI, and Antigravity get
+  context-level integration. `openwolf init` auto-detects what you have.
 
-## Install OpenWolf
-
-```bash
-npm install -g openwolf
-```
-
-Verify the installation:
+## Install
 
 ```bash
+npm install -g @alptech/openwolf
 openwolf --version
 ```
 
 ## Initialize a project
-
-Navigate to any project and run:
 
 ```bash
 cd your-project
 openwolf init
 ```
 
-You'll see:
-
 ```
-  ✓ OpenWolf initialized
-  ✓ .wolf/ created with 11 files
-  ✓ Claude Code hooks registered (6 hooks)
-  ✓ CLAUDE.md updated
-  ✓ .claude/rules/openwolf.md created
-  ✓ Anatomy scan: 47 files indexed
-  ✓ Daemon: start manually with: openwolf daemon start
+  ██████ ██████ ██████ ██   ██ ██     ██ ██████ ██     ██████
+  ██  ██ ██  ██ ██     ███  ██ ██     ██ ██  ██ ██     ██
+  ██  ██ ██████ █████  ██ █ ██ ██  █  ██ ██  ██ ██     █████
+  ██  ██ ██     ██     ██  ███ ██ ███ ██ ██  ██ ██     ██
+  ██████ ██     ██████ ██   ██  ███ ███  ██████ ██████ ██
 
-  You're ready. Just use 'claude' as normal. OpenWolf is watching.
+  v1.1.1  ·  one project memory across your coding agents
+  ~/your-project
+
+  ✓ Agents detected: codex, gemini (wiring all; --agent claude to skip)
+  ✓ Codex hooks registered (.codex/hooks.json)
+  ✓ Skills installed: /security-audit, /reframe, /handoff (claude, codex)
+  ✓ Claude skills installed: openwolf (.claude/skills/)
+
+  ✓ created   .wolf/ · 10 files            memory every agent shares
+  ✓ hooks     12 registered                fire on their own, invisibly
+  ✓ index     47 files                     query with openwolf find <name>
+  ✓ rules     CLAUDE.md + .claude/rules    protocol every session reads
+  ✓ agents    claude, codex, gemini
+  ✓ daemon    running (pm2)                openwolf dashboard for live view
+
+  Next
+    Work as before. Whichever agent you start, OpenWolf runs underneath.
+    openwolf dashboard       measured token usage, hook health, bug memory
+    openwolf find <name>     locate a symbol without reading whole files
+    openwolf report          what was governed, saved, and attributed
+
+  Everything stays on this machine. No API calls, no telemetry.
 ```
 
-That's it. No configuration needed. Just use `claude` as you normally would.
+No configuration needed. To wire specific agents instead of auto-detecting,
+pass `--agent codex opencode`, `--agent all`, or `--agent claude`.
 
-## Verify it's working
+## Verify it works
 
 ```bash
 openwolf status
 ```
 
-```
-OpenWolf Status
-===============
+Confirms the core files, the hook scripts (24 on disk, 12 of them registered
+as lifecycle hooks), and the agent registrations.
+After your first session, `openwolf report` shows measured usage from the
+transcripts.
 
-  ✓ All 11 core files present
-  ✓ All 7 hook scripts present
-  ✓ Claude Code hooks registered (6 matchers)
+## What happens during a session
 
-Token Stats:
-  Sessions: 0
-  Total reads: 0
-  Total writes: 0
-  Tokens tracked: ~0
-  Estimated savings: ~0 tokens
+1. **Session start**: OpenWolf self-tests its own install, then injects a
+   ~400-token index of your project state: what each `.wolf` file holds, the
+   top Do-Not-Repeat rules, and the current handoff.
+2. **Before reads**: duplicate reads get a factual note; large files get
+   their symbol map so the agent reads a slice instead of the whole file.
+3. **Before writes**: the edit is checked against your Do-Not-Repeat list,
+   and relevant past bug fixes are surfaced from the bug log.
+4. **After Bash**: oversized output (grep floods, git show, file re-prints)
+   is condensed before it enters context. The full output stays at
+   `.wolf/cache/bash/` with a pointer. Test failures are never touched.
+5. **Every 25 tool batches**: the top rules are re-surfaced in one short
+   note, countering within-session instruction decay.
+6. **On compaction**: in-flight state, your rules, and the path-scoped
+   instructions the platform drops are re-injected.
+7. **On stop**: the ledger records measured usage per model and verifies
+   from the transcript which hooks fired and which context was delivered.
 
-Anatomy: 47 files tracked
+You interact with none of this.
 
-Daemon: initialized
-```
-
-## What happens next?
-
-Every time you run `claude` in this project:
-
-1. **Session starts** -- OpenWolf creates a session tracker and logs the start to `memory.md`
-2. **Before file reads** -- the hook checks if the file was already read (warns you) and shows the anatomy description
-3. **Before writes** -- the hook scans your `cerebrum.md` Do-Not-Repeat list and warns if you're about to repeat a known mistake
-4. **After reads** -- token usage is estimated and tracked
-5. **After writes** -- `anatomy.md` is updated with the new/changed file, `memory.md` gets a log entry
-6. **On stop** -- session totals are written to the token ledger
-
-You don't interact with any of this. It's invisible.
-
-## View the dashboard
-
-The simplest way to get going. This auto-starts the daemon and opens the dashboard:
+## The dashboard
 
 ```bash
 openwolf dashboard
 ```
 
-Opens `http://localhost:18791` with real-time token usage, project anatomy, cron status, cerebrum state, and more.
+Starts the daemon if needed and opens a token-authenticated local dashboard.
+The hero number is tokens verifiably kept out of context, measured at the
+rewrite point. Around it: measured vs estimated usage, cache-rebuild
+attribution, hook health, per-agent breakdown, the anatomy browser, and cron
+control. Each project gets its own port automatically.
 
-## Optional: Persistent daemon with PM2
+For a daemon that survives terminal closures, install
+[PM2](https://pm2.keymetrics.io/) and run `openwolf daemon start`. PM2 is
+optional; `openwolf dashboard` works without it.
 
-For production use, you can run the daemon via [PM2](https://pm2.keymetrics.io/) for auto-restart and boot persistence:
+## Navigating large repos
 
-```bash
-npm install -g pm2
-```
-
-```bash
-openwolf daemon start
-```
-
-::: tip Windows
-Run `pm2-windows-startup` for boot persistence after installing PM2.
-:::
-
-::: info PM2 is optional
-`openwolf dashboard` starts the daemon automatically without PM2. PM2 is only needed if you want the daemon to survive terminal closures and auto-start on boot.
-:::
-
-## AI-powered tasks
-
-OpenWolf includes two weekly AI tasks that use your **Claude subscription** (not API credits):
-
-- **Cerebrum reflection** -- reviews and cleans up `cerebrum.md` (Sundays 3am)
-- **AI suggestions** -- analyzes your project and generates improvement suggestions (Mondays 4am)
-
-These run automatically via the daemon's cron scheduler. You can also trigger them manually:
+Two commands answer questions the agent would otherwise grep for:
 
 ```bash
-openwolf cron run cerebrum-reflection
-openwolf cron run project-suggestions
+openwolf find validateToken        # ranked shortlist, under 1k tokens
+openwolf find --file src/auth.ts   # one file: description, size, symbols
+openwolf map --focus auth          # budgeted overview of the important files
 ```
 
-::: warning ANTHROPIC_API_KEY conflict
-If you have `ANTHROPIC_API_KEY` set in your environment, OpenWolf automatically strips it when running AI tasks so that `claude -p` uses your subscription credentials from `~/.claude/.credentials.json` instead. This prevents "Credit balance is too low" errors when your API key has no credits but your subscription is active.
-:::
+`map` ranks files by personalized PageRank over the import graph, seeded by
+what your sessions have touched and your focus terms.
 
-## Design QC
+## Team usage
 
-Design QC captures full-page sectioned screenshots of your running app so Claude can evaluate the design. It requires `puppeteer-core` and a Chrome/Chromium installation:
-
-```bash
-npm install -g puppeteer-core
-```
-
-Then run:
-
-```bash
-openwolf designqc
-```
-
-OpenWolf will auto-detect (or start) your dev server, detect routes from your project structure, and capture screenshots at desktop (1440px) and mobile (375px) viewports. Screenshots are saved to `.wolf/designqc-captures/`.
-
-After capture, tell Claude:
-
-> Read the screenshots in `.wolf/designqc-captures/` and evaluate the design.
-
-Claude reads the images directly and provides inline feedback. No external design tools or services needed.
-
-::: tip Options
-Use `--url http://localhost:3000` to specify a dev server URL manually. Use `--desktop-only` to skip mobile captures. Use `--routes /,/about,/pricing` to capture specific routes.
-:::
-
-## Reframe
-
-Need help choosing a UI component framework? Just ask Claude:
-
-> Help me pick a UI framework for this project.
-
-OpenWolf ships a knowledge file (`.wolf/reframe-frameworks.md`) that Claude reads automatically. It covers 12 frameworks -- shadcn/ui, Aceternity UI, Magic UI, DaisyUI, HeroUI, Chakra UI, Flowbite, Preline UI, Park UI, Origin UI, Headless UI, and Cult UI -- with a decision tree, comparison matrix, and ready-made migration prompts.
-
-There is no CLI command for reframe. It works through Claude's normal conversation flow.
-
-::: tip Windows path separators
-If you see path errors on Windows, ensure you're using a recent Node.js 20+ release. OpenWolf normalizes paths internally, but some edge cases require Node 20.10+.
-:::
+`.wolf/` ships with a `.gitignore` that commits the state worth sharing
+(cerebrum, STATUS, bug log, the index) and ignores machine-local runtime
+(ledgers, caches, hook state). Commit `.wolf/` and your conventions, known
+fixes, and project map reach every teammate and every agent through normal
+code review.

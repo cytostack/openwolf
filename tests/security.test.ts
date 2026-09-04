@@ -59,6 +59,40 @@ describe("dashboard auth", () => {
     assert.strictEqual(validateDashboardToken(wolfDir, null), false);
     assert.strictEqual(validateDashboardToken(wolfDir, ""), false);
   });
+
+  // #79 (davdittrich): getDashboardToken() returned a valid existing token
+  // before applying the 0600 mode it uses for newly generated ones, so a token
+  // file that ever existed at 0644 stayed world-readable forever.
+  test("a pre-existing valid token at 0644 is repaired to 0600 without rotating", async () => {
+    if (process.platform === "win32") return;
+    const { getDashboardToken } = await import("../src/utils/dashboard-auth.ts");
+    const wolfDir = fs.mkdtempSync(path.join(os.tmpdir(), "wolf-sec-perm-"));
+    const tokenPath = path.join(wolfDir, "dashboard-token");
+    const planted = "a".repeat(64);
+    fs.writeFileSync(tokenPath, planted + "\n", "utf-8");
+    fs.chmodSync(tokenPath, 0o644);
+    assert.strictEqual(fs.statSync(tokenPath).mode & 0o777, 0o644, "precondition: token starts readable");
+
+    const returned = getDashboardToken(wolfDir);
+
+    assert.strictEqual(returned, planted, "must not rotate a valid existing token");
+    assert.strictEqual(fs.readFileSync(tokenPath, "utf-8").trim(), planted, "file content must be untouched");
+    assert.strictEqual(fs.statSync(tokenPath).mode & 0o777, 0o600, "permissions must be repaired");
+  });
+
+  test("a malformed token file is replaced at 0600, not left at its old mode", async () => {
+    if (process.platform === "win32") return;
+    const { getDashboardToken } = await import("../src/utils/dashboard-auth.ts");
+    const wolfDir = fs.mkdtempSync(path.join(os.tmpdir(), "wolf-sec-bad-"));
+    const tokenPath = path.join(wolfDir, "dashboard-token");
+    fs.writeFileSync(tokenPath, "not-a-token\n", "utf-8");
+    fs.chmodSync(tokenPath, 0o666);
+
+    const fresh = getDashboardToken(wolfDir);
+
+    assert.match(fresh, /^[a-f0-9]{64}$/);
+    assert.strictEqual(fs.statSync(tokenPath).mode & 0o777, 0o600);
+  });
 });
 
 describe("path traversal", () => {

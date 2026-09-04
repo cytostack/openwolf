@@ -1,6 +1,7 @@
 import React, { useState, Suspense, lazy } from "react";
 import { TopNav } from "./components/layout/TopNav.js";
 import { Layout } from "./components/layout/Layout.js";
+import { ErrorBoundary } from "./components/layout/ErrorBoundary.js";
 import { useWolfData } from "./hooks/useWolfData.js";
 import { useTheme } from "./hooks/useTheme.js";
 
@@ -12,7 +13,6 @@ const CerebrumViewer = lazy(() => import("./components/panels/CerebrumViewer.js"
 const MemoryViewer = lazy(() => import("./components/panels/MemoryViewer.js").then(m => ({ default: m.MemoryViewer })));
 const AnatomyBrowser = lazy(() => import("./components/panels/AnatomyBrowser.js").then(m => ({ default: m.AnatomyBrowser })));
 const BugLog = lazy(() => import("./components/panels/BugLog.js").then(m => ({ default: m.BugLog })));
-const AISuggestions = lazy(() => import("./components/panels/AISuggestions.js").then(m => ({ default: m.AISuggestions })));
 
 function Skeleton() {
   return (
@@ -28,7 +28,7 @@ function Skeleton() {
   );
 }
 
-const PANELS = ["overview", "activity", "tokens", "cron", "cerebrum", "memory", "anatomy", "bugs", "suggestions"];
+const PANELS = ["overview", "activity", "tokens", "cron", "cerebrum", "memory", "anatomy", "bugs"];
 
 export default function App() {
   // Hash-based deep links: /#tokens opens the Tokens panel directly.
@@ -80,6 +80,9 @@ export default function App() {
         onToggleTheme={toggleTheme}
       />
       <Layout>
+        {/* key={activePanel} resets the boundary on navigation, so a crashed
+            panel never poisons the ones you switch to. */}
+        <ErrorBoundary key={activePanel} label={activePanel}>
         <Suspense fallback={<Skeleton />}>
           {activePanel === "overview" && <ProjectOverview data={data} />}
           {activePanel === "activity" && <ActivityTimeline data={data} />}
@@ -89,8 +92,8 @@ export default function App() {
           {activePanel === "memory" && <MemoryViewer data={data} />}
           {activePanel === "anatomy" && <AnatomyBrowser data={data} />}
           {activePanel === "bugs" && <BugLog data={data} />}
-          {activePanel === "suggestions" && <AISuggestions data={data} />}
         </Suspense>
+        </ErrorBoundary>
       </Layout>
     </div>
   );

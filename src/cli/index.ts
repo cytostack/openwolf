@@ -7,6 +7,9 @@ import { statusCommand } from "./status.js";
 import { scanCommand } from "./scan.js";
 import { dashboardCommand } from "./dashboard.js";
 import { reportCommand } from "./report.js";
+import { findCommand } from "./find.js";
+import { mapCommand } from "./map.js";
+import { benchCommand } from "./bench.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,7 +29,9 @@ export function createProgram(): Command {
 
   program
     .name("openwolf")
-    .description("Token-conscious AI brain for Claude Code projects")
+    .description(
+      "One project memory across Claude Code, Codex and OpenCode. Token usage measured, not estimated. Zero API calls."
+    )
     .version(getVersion());
 
   program
@@ -34,7 +39,7 @@ export function createProgram(): Command {
     .description("Initialize .wolf/ in current project")
     .option(
       "--agent <agents...>",
-      "agents to wire up alongside Claude Code: codex, opencode, gemini, cursor, all. Default: auto-detect what's installed; pass 'claude' to wire Claude Code only"
+      "agents to wire up: claude, codex, opencode, gemini, cursor, antigravity, all. Explicit names are exact; default: Claude plus auto-detected agents"
     )
     .action((opts: { agent?: string[] }) => initCommand(opts));
 
@@ -60,17 +65,26 @@ export function createProgram(): Command {
     .action(reportCommand);
 
   program
-    .command("designqc")
-    .description("Capture screenshots of a running app for design evaluation")
-    .option("--url <url>", "Dev server URL. Auto-detects a running server, or starts one, if omitted")
-    .option("--routes <routes...>", "Specific routes to capture instead of auto-detecting")
-    .option("--desktop-only", "Skip the mobile viewport")
-    .option("--quality <number>", "JPEG quality (1-100), default 70")
-    .option("--max-width <number>", "Maximum capture width in pixels")
-    .action(async (opts: { url?: string; routes?: string[]; desktopOnly?: boolean; quality?: string; maxWidth?: string }) => {
-      const { designqcCommand } = await import("./designqc.js");
-      await designqcCommand(opts);
-    });
+    .command("bench")
+    .description("A/B benchmark: same tasks with and without OpenWolf, measured from transcripts")
+    .option("--repo <pathOrUrl>", "Fixture repository to clone per run")
+    .option("--task <filter>", "Only run tasks whose filename contains this")
+    .option("--repeats <n>", "Repeats per task per arm (default 3)")
+    .option("--yes", "Confirm spending real API budget")
+    .action((opts: { repo?: string; task?: string; repeats?: string; yes?: boolean }) => benchCommand(opts));
+
+  program
+    .command("map")
+    .description("Token-budgeted overview of the most important files (personalized PageRank)")
+    .option("--budget <tokens>", "Output token budget (default 1000; 2000 unseeded)")
+    .option("--focus <terms>", "Comma/space separated terms to bias the ranking toward")
+    .action((opts: { budget?: string; focus?: string }) => mapCommand(opts));
+
+  program
+    .command("find <query>")
+    .description("Locate a symbol or file via the anatomy index (ranked, ~1k token cap)")
+    .option("--file", "Show full index detail for one path (description, symbols, ranges)")
+    .action((query: string, opts: { file?: boolean }) => findCommand(query, opts));
 
   const daemon = program
     .command("daemon")
@@ -101,6 +115,14 @@ export function createProgram(): Command {
     });
 
   daemon
+    .command("status")
+    .description("Show whether the daemon is running")
+    .action(async () => {
+      const { daemonStatus } = await import("./daemon-cmd.js");
+      daemonStatus();
+    });
+
+  daemon
     .command("logs")
     .description("Show last 50 lines of daemon log")
     .action(async () => {
@@ -126,6 +148,22 @@ export function createProgram(): Command {
     .action(async (id: string) => {
       const { cronRun } = await import("./cron-cmd.js");
       await cronRun(id);
+    });
+
+  cron
+    .command("enable <id>")
+    .description("Enable a cron task")
+    .action(async (id: string) => {
+      const { cronSetEnabled } = await import("./cron-cmd.js");
+      cronSetEnabled(id, true);
+    });
+
+  cron
+    .command("disable <id>")
+    .description("Disable a cron task")
+    .action(async (id: string) => {
+      const { cronSetEnabled } = await import("./cron-cmd.js");
+      cronSetEnabled(id, false);
     });
 
   cron

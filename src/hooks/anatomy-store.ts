@@ -39,6 +39,15 @@ export interface StoreFileEntry {
   updatedAt: string;
   source: "hook" | "scan" | "md-import";
   symbols?: SymbolEntry[];
+  /** How symbols were derived: exact AST ("ts") or heuristic line regexes. */
+  symbolSource?: "ts" | "regex";
+  /** Signature-only outline for large files (J2), capped ~400 tokens. */
+  skeleton?: string;
+  /** PageRank import-graph importance, 0..1 normalized (J2). */
+  importance?: number;
+  /** Resolved project-internal import targets (2.5): persisted so openwolf
+   * map can run personalized PageRank from the index alone. */
+  imports?: string[];
 }
 
 export interface AnatomyStoreData {
@@ -51,9 +60,22 @@ export interface AnatomyStoreData {
     /** sha256 of the markdown this store last rendered — skew detection key. */
     renderedHash: string;
     storeUpdatedAt: string;
+    /** Merkle-style rollup over (path, content-hash) pairs (2.4): a single
+     * comparison answers "does this index describe this tree" — portable
+     * across machines, unlike mtimes. */
+    rootHash?: string;
   };
   /** Keyed by full normalized relative path, e.g. "src/hooks/shared.ts". */
   files: Record<string, StoreFileEntry>;
+  /** Non-conforming anatomy.md lines preserved verbatim, keyed by section. */
+  rawLines?: Record<string, string[]>;
+  /**
+   * Hand-written content above the first `## ` heading (issue #61). A typed
+   * field rather than a reserved rawLines key: old compiled hooks still
+   * installed in projects ignore an unknown field and round-trip it safely,
+   * whereas a magic "" section key would render as a stray `## ` heading.
+   */
+  preamble?: string[];
 }
 
 export const STORE_FILE = "anatomy-index.json";
@@ -87,9 +109,55 @@ export function loadStore(wolfDir: string): AnatomyStoreData | null {
   }
 }
 
+/** Rollup hash over the index's (path, content-hash) pairs, order-independent. */
+export function computeRootHash(store: AnatomyStoreData): string {
+  const pairs = Object.entries(store.files)
+    .map(([p, e]) => `${p}:${e.hash ?? ""}`)
+    .sort()
+    .join("\n");
+  return crypto.createHash("sha256").update(pairs).digest("hex").slice(0, 16);
+}
+
+export interface StaleCheckResult {
+  stale: boolean;
+  /** Indexed files whose on-disk size/mtime no longer matches (capped). */
+  changed: string[];
+  /** Indexed files that no longer exist (capped). */
+  missing: string[];
+  checked: number;
+}
+
+/**
+ * O(indexed files) stat sweep (2.4): is the index still an accurate map of
+ * the tree it indexed? Detects modifications and deletions without reading a
+ * single file body. (Additions are the full scan's job — this check decides
+ * WHETHER a scan is needed, replacing the blind 6h interval and the deleted
+ * always-on staleness nag.)
+ */
+export function quickStaleCheck(store: AnatomyStoreData, projectRoot: string): StaleCheckResult {
+  const changed: string[] = [];
+  const missing: string[] = [];
+  let checked = 0;
+  for (const [relPath, entry] of Object.entries(store.files)) {
+    checked++;
+    try {
+      const st = fs.statSync(path.join(projectRoot, relPath));
+      const sizeMismatch = entry.size !== undefined && st.size !== entry.size;
+      const mtimeMismatch = entry.mtimeMs !== undefined && Math.abs(st.mtimeMs - entry.mtimeMs) > 1;
+      if (sizeMismatch || (entry.size === undefined && mtimeMismatch)) {
+        if (changed.length < 20) changed.push(relPath);
+      }
+    } catch {
+      if (missing.length < 20) missing.push(relPath);
+    }
+  }
+  return { stale: changed.length > 0 || missing.length > 0, changed, missing, checked };
+}
+
 export function saveStore(wolfDir: string, store: AnatomyStoreData): void {
   store.meta.fileCount = Object.keys(store.files).length;
   store.meta.storeUpdatedAt = new Date().toISOString();
+  store.meta.rootHash = computeRootHash(store);
   const filePath = path.join(wolfDir, STORE_FILE);
   const tmp = filePath + "." + crypto.randomBytes(4).toString("hex") + ".tmp";
   const body = JSON.stringify(store, null, 2);
@@ -104,8 +172,30 @@ export function saveStore(wolfDir: string, store: AnatomyStoreData): void {
 
 // ── Markdown format (canonical — the legacy contract, unchanged) ────────────
 
-export function parseAnatomy(content: string): Map<string, AnatomyEntry[]> {
+// The auto-generated header block: never captured as preamble, or every
+// import→render cycle would duplicate it.
+const AUTO_HEADER = /^(?:# anatomy\.md\s*$|> Auto-maintained by OpenWolf\.|> Files:\s*\d+\s*tracked)/;
+// Legacy symbol sub-bullets (2.0.0–2.0.3 renders): mechanical output, dropped
+// rather than preserved. Any OTHER indented bullet is hand-written and kept.
+const SYMBOL_SUBBULLET = /^ {2}- (?:fn|class|method|section) `[^`]+` L\d+-\d+ \(~\d+ tok\)$/;
+
+/** Strip leading/trailing blank lines so preserved blocks don't grow by two lines per write. */
+function trimBlankEdges(lines: string[]): string[] {
+  let start = 0;
+  let end = lines.length;
+  while (start < end && lines[start].trim() === "") start++;
+  while (end > start && lines[end - 1].trim() === "") end--;
+  return lines.slice(start, end);
+}
+
+export function parseAnatomyWithRaw(content: string): {
+  sections: Map<string, AnatomyEntry[]>;
+  rawLines: Map<string, string[]>;
+  preamble: string[];
+} {
   const sections = new Map<string, AnatomyEntry[]>();
+  const rawLines = new Map<string, string[]>();
+  const preamble: string[] = [];
   let currentSection = "";
   for (const raw of content.split("\n")) {
     const line = raw.replace(/\r$/, "");
@@ -115,7 +205,12 @@ export function parseAnatomy(content: string): Map<string, AnatomyEntry[]> {
       if (!sections.has(currentSection)) sections.set(currentSection, []);
       continue;
     }
-    if (!currentSection) continue;
+    if (!currentSection) {
+      // Above the first section heading: preserve everything hand-written
+      // (issue #61), skipping only our own generated header block.
+      if (!AUTO_HEADER.test(line)) preamble.push(line);
+      continue;
+    }
     const em = line.match(/^- `([^`]+)`(?:\s+—\s+(.+?))?\s*\(~(\d+)\s+tok\)$/);
     if (em) {
       sections.get(currentSection)!.push({
@@ -123,35 +218,23 @@ export function parseAnatomy(content: string): Map<string, AnatomyEntry[]> {
         description: em[2] || "",
         tokens: parseInt(em[3], 10),
       });
+      continue;
     }
+    if (line.trim() === "") continue;
+    if (SYMBOL_SUBBULLET.test(line)) continue;
+    if (!rawLines.has(currentSection)) rawLines.set(currentSection, []);
+    rawLines.get(currentSection)!.push(line);
   }
-  return sections;
+  return { sections, rawLines, preamble: trimBlankEdges(preamble) };
 }
 
-export function serializeAnatomy(
-  sections: Map<string, AnatomyEntry[]>,
-  metadata: { lastScanned: string; fileCount: number; hits: number; misses: number }
-): string {
-  const lines: string[] = [
-    "# anatomy.md",
-    "",
-    `> Auto-maintained by OpenWolf. Last scanned: ${metadata.lastScanned}`,
-    `> Files: ${metadata.fileCount} tracked | Anatomy hits: ${metadata.hits} | Misses: ${metadata.misses}`,
-    "",
-  ];
-  const keys = [...sections.keys()].sort();
-  for (const key of keys) {
-    lines.push(`## ${key}`);
-    lines.push("");
-    const entries = sections.get(key)!.sort((a, b) => a.file.localeCompare(b.file));
-    for (const e of entries) {
-      const desc = e.description ? ` — ${e.description}` : "";
-      lines.push(`- \`${e.file}\`${desc} (~${e.tokens} tok)`);
-    }
-    lines.push("");
-  }
-  return lines.join("\n");
+export function parseAnatomy(content: string): Map<string, AnatomyEntry[]> {
+  return parseAnatomyWithRaw(content).sections;
 }
+
+// serializeAnatomy was removed: it had no callers, could not carry rawLines or
+// preamble, and every writer must go through renderStore so preserved content
+// survives (issue #61).
 
 /** Section key for a relpath: "src/hooks/" or "./" for root files. */
 export function sectionKeyOf(relPath: string): string {
@@ -160,13 +243,11 @@ export function sectionKeyOf(relPath: string): string {
 }
 
 /**
- * Render the store to markdown. For entries without symbols the output is
- * byte-identical to the legacy serializeAnatomy format. Symbols render as
- * two-space-indented sub-bullets, which every legacy parser skips (they match
- * neither the section nor the entry regex):
- *
- *   - `shared.ts` — Shared hook utilities (~3200 tok)
- *     - fn `parseAnatomy` L82-104 (~180 tok)
+ * Render the store to markdown, byte-identical to the legacy serializeAnatomy
+ * format. Symbols deliberately do NOT render: they live in anatomy-index.json
+ * and reach the model through the per-file pre-read hint. Rendering them
+ * roughly 2.4x'd anatomy.md (59% of lines on a mid-size repo), and agents
+ * instructed to consult anatomy.md paid that bill wholesale every session.
  */
 export function renderStore(store: AnatomyStoreData): string {
   const bySection = new Map<string, Array<{ file: string; entry: StoreFileEntry }>>();
@@ -183,17 +264,24 @@ export function renderStore(store: AnatomyStoreData): string {
     `> Files: ${Object.keys(store.files).length} tracked | Anatomy hits: ${store.meta.hits} | Misses: ${store.meta.misses}`,
     "",
   ];
-  const keys = [...bySection.keys()].sort();
+  const preamble = trimBlankEdges(store.preamble ?? []);
+  if (preamble.length > 0) {
+    lines.push(...preamble, "");
+  }
+  const rawBySection = store.rawLines ?? {};
+  const keys = [...new Set([...bySection.keys(), ...Object.keys(rawBySection)])].sort();
   for (const key of keys) {
     lines.push(`## ${key}`);
     lines.push("");
-    const entries = bySection.get(key)!.sort((a, b) => a.file.localeCompare(b.file));
+    const raws = rawBySection[key] ?? [];
+    for (const raw of raws) {
+      lines.push(raw);
+    }
+    const entries = (bySection.get(key) ?? []).sort((a, b) => a.file.localeCompare(b.file));
+    if (raws.length > 0 && entries.length > 0) lines.push("");
     for (const { file, entry } of entries) {
       const desc = entry.description ? ` — ${entry.description}` : "";
       lines.push(`- \`${file}\`${desc} (~${entry.tokens} tok)`);
-      for (const sym of entry.symbols ?? []) {
-        lines.push(`  - ${sym.kind} \`${sym.name}\` L${sym.startLine}-${sym.endLine} (~${sym.tokens} tok)`);
-      }
     }
     lines.push("");
   }
@@ -229,7 +317,26 @@ export function importFromMarkdown(
   mdContent: string,
   projectRoot: string
 ): void {
-  const sections = parseAnatomy(mdContent);
+  // Corruption guard: an empty/unreadable anatomy.md must never wipe the
+  // preserved hand-written content in the store.
+  if (!mdContent.trim()) return;
+
+  // The imported md records when it was actually scanned; keep that instead
+  // of claiming "scanned now" (also makes import -> render a fixed point).
+  const scannedMatch = mdContent.match(/^> Auto-maintained by OpenWolf\. Last scanned: (\S+)$/m);
+  if (scannedMatch) store.meta.lastScanned = scannedMatch[1];
+
+  const { sections, rawLines, preamble } = parseAnatomyWithRaw(mdContent);
+  if (rawLines.size > 0) {
+    store.rawLines = Object.fromEntries(rawLines);
+  } else {
+    delete store.rawLines;
+  }
+  if (preamble.length > 0) {
+    store.preamble = preamble;
+  } else {
+    delete store.preamble;
+  }
   const seen = new Set<string>();
   for (const [sectionKey, entries] of sections) {
     const dir = sectionKey === "./" ? "" : sectionKey;
@@ -271,7 +378,7 @@ export function lookupEntry(
   wolfDir: string,
   projectDir: string,
   normalizedFile: string
-): { file: string; description: string; tokens: number; symbols?: SymbolEntry[]; size?: number; mtimeMs?: number } | null {
+): { file: string; description: string; tokens: number; symbols?: SymbolEntry[]; skeleton?: string; size?: number; mtimeMs?: number } | null {
   const rel = normalizedFile.startsWith(projectDir + "/")
     ? normalizedFile.slice(projectDir.length + 1)
     : normalizedFile.startsWith("/") ? null : normalizedFile;
@@ -283,6 +390,7 @@ export function lookupEntry(
       description: e.description,
       tokens: e.tokens,
       symbols: e.symbols,
+      skeleton: e.skeleton,
       size: e.size,
       mtimeMs: e.mtimeMs,
     });

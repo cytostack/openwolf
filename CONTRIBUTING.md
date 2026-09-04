@@ -31,7 +31,6 @@ Thanks for your interest in contributing to OpenWolf. This guide covers how to g
 src/
 ├── cli/           CLI commands and program setup
 ├── daemon/        Background task scheduler (cron engine)
-├── designqc/      Screenshot capture for design evaluation
 ├── scanner/       Project structure scanner (anatomy.md)
 ├── tracker/       Token tracking and ledger
 ├── hooks/         Claude Code lifecycle hooks
@@ -74,7 +73,7 @@ pnpm docs:dev        # Local docs site
 
 ## Reporting Bugs
 
-Open an issue at [github.com/cytostack/openwolf/issues](https://github.com/cytostack/openwolf/issues) with:
+Open an issue at [github.com/nottyjay/openwolf/issues](https://github.com/nottyjay/openwolf/issues) with:
 
 - Your OS and Node.js version
 - Claude Code version

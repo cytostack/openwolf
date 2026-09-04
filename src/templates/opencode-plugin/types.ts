@@ -2,6 +2,9 @@ export interface FileRead {
   count: number
   tokens: number
   first_read: string
+  /** mtime of the file when it was read — repeat warnings only fire while unchanged (issue #41). */
+  read_mtime?: number
+  anatomy_hit?: boolean
 }
 
 export interface FileWrite {
@@ -20,6 +23,8 @@ export interface SessionState {
   anatomy_hits: number
   anatomy_misses: number
   repeated_reads_warned: number
+  reads_denied?: number
+  denied_tokens_saved?: number
   cerebrum_warnings: number
   stop_count: number
 }

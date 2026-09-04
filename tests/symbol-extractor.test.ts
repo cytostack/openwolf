@@ -78,7 +78,7 @@ describe("symbol extraction per language", () => {
 });
 
 describe("symbol rendering compatibility", () => {
-  test("sub-bullets are invisible to the legacy entry parser", () => {
+  test("symbols stay in the index; the render carries only file entries", () => {
     const store = newStore();
     store.meta.lastScanned = "t";
     store.files["src/big.ts"] = {
@@ -89,9 +89,9 @@ describe("symbol rendering compatibility", () => {
       ],
     };
     const md = renderStore(store);
-    assert.ok(md.includes("  - fn `alpha` L3-6 (~120 tok)"));
+    assert.ok(!md.includes("alpha"), "symbols must not render into anatomy.md");
     const parsed = [...parseAnatomy(md).values()].flat();
-    assert.strictEqual(parsed.length, 1, "legacy parser sees exactly the file entry");
+    assert.strictEqual(parsed.length, 1, "parser sees exactly the file entry");
     assert.strictEqual(parsed[0].file, "big.ts");
     assert.strictEqual(parsed[0].tokens, 900);
   });

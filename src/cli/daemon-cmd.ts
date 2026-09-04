@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { findProjectRoot } from "../scanner/project-root.js";
 import { readJSON } from "../utils/fs-safe.js";
 import { isWindows } from "../utils/platform.js";
+import { lookupDaemonPid, removeDaemonPidFile } from "../utils/daemon-pidfile.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,7 +31,7 @@ function pm2Bin(): string {
   return isWindows() ? "pm2.cmd" : "pm2";
 }
 
-function hasPm2(): boolean {
+export function hasPm2(): boolean {
   try {
     execFileSync(isWindows() ? "where" : "which", ["pm2"], { stdio: "ignore" });
     return true;
@@ -39,24 +40,32 @@ function hasPm2(): boolean {
   }
 }
 
-function findPidOnPort(port: number): number | null {
+function findPidsOnPort(port: number): number[] {
+  const pids = new Set<number>();
   try {
     if (isWindows()) {
       const output = execFileSync("netstat", ["-ano", "-p", "tcp"], { encoding: "utf-8" });
       for (const line of output.split("\n")) {
-        if (line.includes(`:${port}`) && line.includes("LISTENING")) {
-          const parts = line.trim().split(/\s+/);
-          const pid = parseInt(parts[parts.length - 1], 10);
-          if (pid > 0) return pid;
-        }
+        // Match the local-address column only; a bare `:port` substring also
+        // matched the foreign-address column and killed unrelated processes.
+        if (!line.includes("LISTENING")) continue;
+        const parts = line.trim().split(/\s+/);
+        const local = parts[1] ?? "";
+        if (!local.endsWith(`:${port}`)) continue;
+        const pid = parseInt(parts[parts.length - 1], 10);
+        if (pid > 0) pids.add(pid);
       }
     } else {
+      // lsof -ti can return several newline-separated pids; the old parseInt
+      // of the whole output killed only the first and left stale listeners.
       const output = execFileSync("lsof", ["-ti", `:${port}`], { encoding: "utf-8" });
-      const pid = parseInt(output.trim(), 10);
-      if (pid > 0) return pid;
+      for (const part of output.split("\n")) {
+        const pid = parseInt(part.trim(), 10);
+        if (pid > 0) pids.add(pid);
+      }
     }
   } catch {}
-  return null;
+  return [...pids];
 }
 
 function killPid(pid: number): boolean {
@@ -125,17 +134,47 @@ export function daemonStop(): void {
     }
   }
 
-  // Fall back to killing whatever is listening on the dashboard port
+  // Fall back to the daemon this project actually started. Never to "whatever
+  // holds the port": port occupancy is not ownership, and the old fallback
+  // SIGTERMed unrelated local services that happened to sit on 18791.
+  stopOwnDaemon(wolfDir, projectRoot);
+}
+
+/**
+ * Signals only a daemon whose identity is proven by `.wolf/daemon.pid`
+ * (this host, this project root, live pid, still looks like the daemon).
+ * Anything else is reported, never signalled.
+ */
+function stopOwnDaemon(wolfDir: string, projectRoot: string): void {
   const port = getDashboardPort();
-  const pid = findPidOnPort(port);
-  if (pid) {
-    if (killPid(pid)) {
-      console.log(`  ✓ Daemon stopped (PID ${pid} on port ${port})`);
+  const { status, record } = lookupDaemonPid(wolfDir, projectRoot);
+
+  if (status === "owned" && record) {
+    if (killPid(record.pid)) {
+      removeDaemonPidFile(wolfDir);
+      console.log(`  ✓ Daemon stopped (PID ${record.pid}, port ${record.port})`);
     } else {
-      console.error(`  Failed to kill process ${pid} on port ${port}.`);
+      console.error(`  Failed to stop daemon PID ${record.pid}. Stop it manually.`);
     }
+    return;
+  }
+
+  if (status === "stale") {
+    removeDaemonPidFile(wolfDir);
+    console.log("  No daemon running (stale .wolf/daemon.pid cleared).");
+  } else if (status === "foreign" && record) {
+    console.log(`  .wolf/daemon.pid belongs to another project (${record.project_root}). Not touching it.`);
   } else {
-    console.log(`  No daemon running on port ${port}.`);
+    console.log("  No daemon running for this project.");
+  }
+
+  // Diagnose without acting. Whatever holds the port is somebody else's.
+  const others = findPidsOnPort(port);
+  if (others.length > 0) {
+    console.log(
+      `  Note: port ${port} is held by PID ${others.join(", ")}, which OpenWolf did not start. ` +
+        `Left alone. Stop it yourself if it is a leftover daemon.`,
+    );
   }
 }
 
@@ -160,14 +199,39 @@ export function daemonRestart(): void {
     }
   }
 
-  // Fall back: stop then start via dashboard command flow
-  const port = getDashboardPort();
-  const pid = findPidOnPort(port);
-  if (pid) {
-    killPid(pid);
-    console.log(`  Stopped old daemon (PID ${pid}).`);
-  }
+  // Fall back: stop our own daemon, then hand off to the dashboard command.
+  // Same rule as daemonStop: identity before signal, never kill by port.
+  stopOwnDaemon(wolfDir, projectRoot);
   console.log("  Use 'openwolf dashboard' to start a new daemon.");
+}
+
+export function daemonStatus(): void {
+  const projectRoot = findProjectRoot();
+  const wolfDir = path.join(projectRoot, ".wolf");
+
+  if (!fs.existsSync(wolfDir)) {
+    console.log("OpenWolf not initialized. Run: openwolf init");
+    return;
+  }
+
+  if (!hasPm2()) {
+    console.log("  ✗ Daemon cannot run: pm2 not installed. Install with: pnpm add -g pm2");
+    return;
+  }
+
+  const name = getPm2Name();
+  try {
+    const output = execFileSync(pm2Bin(), ["jlist"], { encoding: "utf-8" });
+    const processes = JSON.parse(output) as Array<{ name: string; pm2_env?: { status?: string } }>;
+    const proc = processes.find((p) => p.name === name);
+    if (proc) {
+      const procStatus = proc.pm2_env?.status ?? "unknown";
+      const mark = procStatus === "online" ? "✓" : "✗";
+      console.log(`  ${mark} Daemon ${name}: ${procStatus}`);
+      return;
+    }
+  } catch {}
+  console.log(`  ✗ Daemon not running (${name}). Start with: openwolf daemon start`);
 }
 
 export function daemonLogs(): void {

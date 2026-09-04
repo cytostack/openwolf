@@ -5,12 +5,12 @@
 <h1 align="center">@alptech/openwolf</h1>
 
 <p align="center">
-  <strong>Claude Code のセカンドブレイン。いまやあらゆる AI コーディングアシスタントへ。</strong>
+  <strong>エージェントが変わっても、プロジェクトの記憶は引き継ぐ。</strong>
 </p>
 
 <p align="center">
-  より良いコンテキスト管理、アーキテクチャ索引、トークン活用を、<br />
-  7 つの不可視ライフサイクルフックで提供。ワークフロー変更は不要です。
+  Claude Code、Codex、OpenCode で 1 つのプロジェクト記憶を共有し、<br />
+  実際のセッション記録からトークン使用量を測定。完全ローカル、API 呼び出しなし。
 </p>
 
 <p align="center">
@@ -44,7 +44,7 @@
 
 コーディングエージェントは強力ですが、盲目的に動きます。ファイルを開くまで内容が分からず、50 トークンの設定と 2,000 トークンのモジュールを区別できません。同じセッションで同じファイルを再読し、セッションをまたいで修正を忘れ、コンテキスト圧縮で何もかも失います。
 
-OpenWolf はそれを直すセカンドブレインです：
+OpenWolf は、永続的に共有されるプロジェクト記憶でこれらの問題を解決します：
 
 - **コンテキスト管理。** 現在の目標・既知の失敗・修正済みバグ・プロジェクトマップなど、最も価値の高い状態をトークン予算付きでセッション開始時に注入。PreCompact と圧縮対応の再開により、圧縮後も作業が消えません。
 - **アーキテクチャの足場。** 自己修復する永続インデックスが、各ファイルの説明・トークン見積もり、大きなファイルでは関数/クラスと行範囲を保持。エージェントはコードベースを再発見せずにナビゲートできます。
@@ -68,7 +68,7 @@ openwolf init
 |--------------|----------|------|
 | **Codex CLI** | `.codex/hooks.json` ライフサイクルフック + `AGENTS.md` | 完全（フック + コンテキスト） |
 | **OpenCode** | ネイティブプラグイン + `AGENTS.md` | 完全（フック + コンテキスト） |
-| **Claude Code** | 7 ライフサイクルフック + `CLAUDE.md` | 完全（フック + コンテキスト） |
+| **Claude Code** | 12 ライフサイクルフック + `CLAUDE.md` | 完全（フック + コンテキスト） |
 | **Cursor** | `.cursor/rules/openwolf.mdc`（常時適用） | Beta（コンテキスト） |
 | **Antigravity** | `AGENTS.md` プロトコルブロック | Beta（コンテキスト） |
 | **Gemini CLI** | `GEMINI.md` プロトコルブロック | Beta（コンテキスト） |
@@ -76,7 +76,7 @@ openwolf init
 ```bash
 openwolf init                          # インストール済みエージェントを自動検出（推奨）
 openwolf init --agent codex opencode   # 指定したものだけ接続
-openwolf init --agent all              # 検出可能なすべてを接続
+openwolf init --agent all              # 対応するすべての Agent を接続
 openwolf init --agent claude           # Claude Code のみ
 ```
 
@@ -95,7 +95,7 @@ openwolf init --agent claude           # Claude Code のみ
 | `STATUS.md` | セッション引き継ぎ：短い読込で再開 |
 | `buglog.json` | バグ修正メモリ（検索可能、再発見を防止） |
 | `token-ledger.json` | 見積もりと実測のトークン使用量（セッション/エージェント別） |
-| `hooks/` | 7 ライフサイクルフック（純粋な Node.js、依存ゼロ） |
+| `hooks/` | 12 ライフサイクルフック（純粋な Node.js、依存ゼロ） |
 | `config.json` | 設定（エージェント別コンテキスト予算を含む） |
 | `OPENWOLF.md` | エージェントが従う運用プロトコル |
 
@@ -179,8 +179,9 @@ openwolf report
 
 ## 同梱 Skills
 
-`openwolf init` は設定済みエージェント（Claude Code、Codex、OpenCode）に 2 つのスラッシュコマンドを入れます：
+`openwolf init` は設定済みエージェント（Claude Code、Codex、OpenCode）に 3 つのスラッシュコマンドを入れます：
 
+- **`/handoff`**：Git、アクションログ、未完了項目から `STATUS.md` を再生成
 - **`/security-audit [scope]`**：依存関係、秘密、インジェクション面、認可などの多層監査。重大度付きレポートを `.wolf/buglog.json` に連携
 - **`/reframe [migrate | audit | fix]`**：デザイン脳。13 フレームワークの知識ベースで UI 選定/移行、または反ジェネリックなデザイン監査と修正
 
@@ -201,6 +202,9 @@ openwolf status            健全性、統計、ファイル整合性
 openwolf scan              プロジェクト索引を再構築
 openwolf scan --check      索引がファイルシステムと一致するか検証（CI 向け）
 openwolf report            トークンレポート：見積もり vs 実測
+openwolf bench             OpenWolf 有効/無効の実コストと完了率を比較
+openwolf map               重要度順のトークン予算付きプロジェクト概要
+openwolf find <query>      anatomy 索引からファイルやシンボルを検索
 openwolf dashboard         Web ダッシュボードを開く
 openwolf daemon start      バックグラウンド daemon を開始
 openwolf daemon stop       daemon を停止

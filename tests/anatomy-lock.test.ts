@@ -31,7 +31,9 @@ function writerScript(wolfDir: string, key: string): string {
 
 function runChild(script: string): Promise<number> {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, ["--input-type=module", "-e", script], { stdio: "ignore" });
+    const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], {
+      stdio: "ignore",
+    });
     child.on("exit", (code) => resolve(code ?? 1));
   });
 }

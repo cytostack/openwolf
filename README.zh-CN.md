@@ -5,12 +5,12 @@
 <h1 align="center">@alptech/openwolf</h1>
 
 <p align="center">
-  <strong>Claude Code 的第二大脑。现已支持主流 AI 编程助手。</strong>
+  <strong>你的 Agent 会换，项目记忆不该跟着重置。</strong>
 </p>
 
 <p align="center">
-  更优的上下文管理、架构索引与 Token 利用，<br />
-  通过 7 个不可见生命周期 Hook 自动生效，零工作流改动。
+  在 Claude Code、Codex 和 OpenCode 之间共享项目记忆，<br />
+  从真实会话记录测量 Token 使用；完全本地，无 API 调用。
 </p>
 
 <p align="center">
@@ -44,7 +44,7 @@
 
 编程 Agent 很强，但默认是“盲操作”：不知道文件内容与体量，会在同一次会话里重复读文件，跨会话忘记你的纠正，上下文压缩后又像失忆。
 
-OpenWolf 提供第二大脑：
+OpenWolf 通过持久、共享的项目记忆解决这些问题：
 
 - **上下文管理**：会话开始注入预算受限的高价值摘要；PreCompact + 压缩后重启，避免工作进度被抹掉。
 - **架构脚手架**：可自愈的项目索引，含描述、Token 估算，大文件还有函数/类与行号范围。
@@ -66,7 +66,7 @@ openwolf init
 |-------|----------|------|
 | **Codex CLI** | `.codex/hooks.json` 生命周期 Hook + `AGENTS.md` | 完整（Hook + 上下文） |
 | **OpenCode** | 原生插件 + `AGENTS.md` | 完整（Hook + 上下文） |
-| **Claude Code** | 7 个生命周期 Hook + `CLAUDE.md` | 完整（Hook + 上下文） |
+| **Claude Code** | 12 个生命周期 Hook + `CLAUDE.md` | 完整（Hook + 上下文） |
 | **Cursor** | `.cursor/rules/openwolf.mdc`（始终应用） | Beta（上下文） |
 | **Antigravity** | `AGENTS.md` 协议块 | Beta（上下文） |
 | **Gemini CLI** | `GEMINI.md` 协议块 | Beta（上下文） |
@@ -74,7 +74,7 @@ openwolf init
 ```bash
 openwolf init                          # 自动检测已安装 Agent（推荐）
 openwolf init --agent codex opencode   # 只接入指定 Agent
-openwolf init --agent all              # 接入全部可检测 Agent
+openwolf init --agent all              # 接入全部受支持 Agent
 openwolf init --agent claude           # 仅 Claude Code
 ```
 
@@ -93,7 +93,7 @@ openwolf init --agent claude           # 仅 Claude Code
 | `STATUS.md` | 会话交接：少量阅读即可恢复进度 |
 | `buglog.json` | Bug 修复记忆，可搜索，避免重复踩坑 |
 | `token-ledger.json` | 估算与实测 Token 用量（按会话/Agent） |
-| `hooks/` | 7 个生命周期 Hook（纯 Node.js，零依赖） |
+| `hooks/` | 12 个生命周期 Hook（纯 Node.js，零依赖） |
 | `config.json` | 配置，含各 Agent 上下文预算 |
 | `OPENWOLF.md` | Agent 需遵循的操作协议 |
 
@@ -165,6 +165,7 @@ openwolf report
 
 `openwolf init` 会为已配置 Agent（Claude Code、Codex、OpenCode）安装：
 
+- **`/handoff`**：根据 Git、操作日志与未完成事项重新生成 `STATUS.md`
 - **`/security-audit [scope]`**：依赖、密钥、注入面、鉴权等分层审计，结果写入 `.wolf/buglog.json`
 - **`/reframe [migrate | audit | fix]`**：UI 框架选型/迁移与反“AI 味”设计审计（含 13 个框架知识库）
 
@@ -185,6 +186,9 @@ openwolf status            健康状态、统计、文件完整性
 openwolf scan              重建项目索引
 openwolf scan --check      校验索引是否与文件系统一致（适合 CI）
 openwolf report            Token 报告：估算 vs 实测
+openwolf bench             对照测试启用/禁用 OpenWolf 的真实成本与完成率
+openwolf map               按重要性生成有 Token 预算的项目概览
+openwolf find <query>      从 anatomy 索引定位文件或符号
 openwolf dashboard         打开 Web Dashboard
 openwolf daemon start      启动后台 daemon
 openwolf daemon stop       停止 daemon

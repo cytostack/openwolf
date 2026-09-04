@@ -1,6 +1,6 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { getWolfDir, writeJSON, readJSON, appendMarkdown, timeShort, timestamp, readMarkdown } from "./fs.js"
+import { getWolfDir, writeJSON, readJSON, appendMarkdown, timeShort, timestamp, readMarkdown, sessionFilePath, gcSessionFiles } from "./fs.js"
 import type { SessionState } from "./types.js"
 
 const sessions = new Map<string, SessionState>()
@@ -33,7 +33,9 @@ export function handleSessionStart(directory: string, sessionId: string): void {
     }
   } catch {}
 
-  const sessionFile = path.join(hooksDir, "_session.json")
+  gcSessionFiles(hooksDir)
+
+  const sessionFile = sessionFilePath(hooksDir, sessionId)
   const state: SessionState = {
     session_id: sessionId,
     started: timestamp(),
@@ -78,11 +80,20 @@ export function handleSessionStart(directory: string, sessionId: string): void {
     }
   } catch {}
 
+  // Count the new session in the lifetime totals. readJSON deep-merges the
+  // fallback, so a pre-2.0 ledger without `lifetime` still gets the default;
+  // the guard below covers a ledger where `lifetime` is not an object at all.
   const ledgerPath = path.join(wolfDir, "token-ledger.json")
   const ledger = readJSON<Record<string, unknown>>(ledgerPath, { version: 1, lifetime: { total_sessions: 0 } }) as {
     version: number
     lifetime: { total_sessions: number }
     [key: string]: unknown
+  }
+  if (!ledger.lifetime || typeof ledger.lifetime !== "object") {
+    ledger.lifetime = { total_sessions: 0 }
+  }
+  if (typeof ledger.lifetime.total_sessions !== "number" || !isFinite(ledger.lifetime.total_sessions)) {
+    ledger.lifetime.total_sessions = 0
   }
   ledger.lifetime.total_sessions++
   writeJSON(ledgerPath, ledger)

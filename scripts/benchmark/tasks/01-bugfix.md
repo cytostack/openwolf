@@ -1,0 +1,1 @@
+Find the function that handles user input validation in this codebase. There is an edge case where empty or whitespace-only input is accepted when it should be rejected. Locate it, fix it, and run any existing tests to confirm nothing broke. If no such bug exists, pick the most likely input-validation weakness you can find, fix it, and explain the change.

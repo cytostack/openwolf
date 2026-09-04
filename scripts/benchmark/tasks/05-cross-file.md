@@ -1,0 +1,1 @@
+Trace one user-facing operation end to end across the codebase (for example: a request arriving, a command being executed, or a file being processed). List every file and function it passes through in order, then add a concise comment at the top of the two most central functions describing their role in the flow.

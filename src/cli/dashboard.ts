@@ -4,7 +4,7 @@ import * as net from "node:net";
 import { fileURLToPath } from "node:url";
 import { fork } from "node:child_process";
 import { findProjectRoot } from "../scanner/project-root.js";
-import { readJSON } from "../utils/fs-safe.js";
+import { readJSON, writeJSON } from "../utils/fs-safe.js";
 import { getDashboardToken } from "../utils/dashboard-auth.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -104,17 +104,37 @@ export async function dashboardCommand(): Promise<void> {
       // Our own daemon is already serving this project. Reuse it.
     } else {
       // The port is held by another project's daemon (or an unrelated server).
-      // Start this project's dashboard on the next free port instead of
-      // opening a URL against a server that will reject our token with 401.
+      // Scan forward, but REUSE an open port if it is our own daemon from a
+      // previous fallback launch — the old scan only looked for a closed
+      // port, so every invocation forked one more orphaned daemon.
       servePort = configuredPort + 1;
-      while (await isPortOpen(servePort) && servePort < configuredPort + 50) servePort++;
-      console.log(`  Port ${configuredPort} is in use by another server. Starting this project's dashboard on port ${servePort}...`);
-      spawnDaemon(servePort);
-      if (!(await waitForOurDaemon(servePort))) {
-        console.log(`  Server didn't start in time. Try: OPENWOLF_DASHBOARD_PORT=${servePort} node "${daemonScript}"`);
-        return;
+      let reused = false;
+      while (servePort < configuredPort + 50) {
+        if (!(await isPortOpen(servePort))) break;
+        if (await isOurDaemon(servePort)) { reused = true; break; }
+        servePort++;
       }
-      console.log(`  ✓ Dashboard server running on port ${servePort}`);
+      if (reused) {
+        console.log(`  ✓ Reusing this project's dashboard already running on port ${servePort}`);
+      } else {
+        console.log(`  Port ${configuredPort} is in use by another server. Starting this project's dashboard on port ${servePort}...`);
+        spawnDaemon(servePort);
+        if (!(await waitForOurDaemon(servePort))) {
+          console.log(`  Server didn't start in time. Try: OPENWOLF_DASHBOARD_PORT=${servePort} node "${daemonScript}"`);
+          return;
+        }
+        console.log(`  ✓ Dashboard server running on port ${servePort}`);
+      }
+      // Persist the port this project actually serves on so daemon stop /
+      // cron run (which read config.json) target the right server.
+      try {
+        const cfgPath = path.join(wolfDir, "config.json");
+        const cfg = readJSON<{ openwolf?: { dashboard?: { port?: number } } }>(cfgPath, {});
+        if (cfg.openwolf?.dashboard && cfg.openwolf.dashboard.port !== servePort) {
+          cfg.openwolf.dashboard.port = servePort;
+          writeJSON(cfgPath, cfg);
+        }
+      } catch {}
     }
   } else {
     console.log("  Daemon not running. Starting dashboard server...");

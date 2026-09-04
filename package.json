@@ -1,10 +1,14 @@
 {
   "name": "@alptech/openwolf",
-  "version": "1.1.0",
-  "description": "The second brain for Claude Code, now for every AI coding assistant: context management, architecture scaffolding, and smarter token utilization through lifecycle hooks.",
+  "version": "1.1.1",
+  "description": "One project memory across Claude Code, Codex and OpenCode. Token usage measured, not estimated. Zero API calls.",
   "type": "module",
   "bin": {
-    "openwolf": "./dist/bin/openwolf.js"
+    "openwolf": "dist/bin/openwolf.js"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
     "prebuild": "node -e \"const fs=require('fs');if(fs.existsSync('dist'))fs.rmSync('dist',{recursive:true})\"",
@@ -15,7 +19,8 @@
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "prepublishOnly": "pnpm build",
-    "test": "node --experimental-strip-types --test tests/*.test.ts"
+    "pretest": "pnpm build",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "chalk": "^5.3.0",
@@ -24,15 +29,15 @@
     "express": "^5.2.1",
     "node-cron": "^4.2.1",
     "open": "^10.0.0",
-    "ws": "^8.18.0"
-  },
-  "optionalDependencies": {
-    "puppeteer-core": "^24.42.0"
+    "tree-sitter-wasms": "^0.1.13",
+    "web-tree-sitter": "^0.24.7",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
+    "@types/node-cron": "^3.0.11",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/ws": "^8.5.12",
@@ -41,6 +46,7 @@
     "react-dom": "^19.0.0",
     "recharts": "^2.15.0",
     "tailwindcss": "^4.0.0",
+    "tsx": "^4.20.0",
     "typescript": "^5.7.0",
     "vite": "^6.0.0",
     "vitepress": "^1.6.4"
@@ -59,17 +65,17 @@
     "url": "https://github.com/nottyjay/openwolf/issues"
   },
   "keywords": [
-    "claude",
+    "claude-code",
     "codex",
-    "ai",
+    "opencode",
+    "agent-memory",
+    "context-engineering",
+    "observability",
     "context",
     "token",
     "openwolf",
-    "claude-code",
-    "codex-cli",
-    "opencode",
-    "cursor",
-    "developer-tools"
+    "developer-tools",
+    "ai"
   ],
   "files": [
     "dist/",

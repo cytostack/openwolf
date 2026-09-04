@@ -2,8 +2,32 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import type { AnatomyEntry } from "./types.js"
 
-export function parseAnatomy(content: string): Map<string, AnatomyEntry[]> {
+// ── Markdown format (canonical — mirrors src/hooks/anatomy-store.ts) ────────
+
+// The auto-generated header block: never captured as preamble, or every
+// import→render cycle would duplicate it.
+const AUTO_HEADER = /^(?:# anatomy\.md\s*$|> Auto-maintained by OpenWolf\.|> Files:\s*\d+\s*tracked)/
+// Legacy symbol sub-bullets (2.0.0–2.0.3 renders): mechanical output, dropped
+// rather than preserved. Any OTHER indented bullet is hand-written and kept.
+const SYMBOL_SUBBULLET = /^ {2}- (?:fn|class|method|section) `[^`]+` L\d+-\d+ \(~\d+ tok\)$/
+
+/** Strip leading/trailing blank lines so preserved blocks don't grow by two lines per write. */
+function trimBlankEdges(lines: string[]): string[] {
+  let start = 0
+  let end = lines.length
+  while (start < end && lines[start].trim() === "") start++
+  while (end > start && lines[end - 1].trim() === "") end--
+  return lines.slice(start, end)
+}
+
+export function parseAnatomyWithRaw(content: string): {
+  sections: Map<string, AnatomyEntry[]>
+  rawLines: Map<string, string[]>
+  preamble: string[]
+} {
   const sections = new Map<string, AnatomyEntry[]>()
+  const rawLines = new Map<string, string[]>()
+  const preamble: string[] = []
   let currentSection = ""
   for (const raw of content.split("\n")) {
     const line = raw.replace(/\r$/, "")
@@ -13,7 +37,12 @@ export function parseAnatomy(content: string): Map<string, AnatomyEntry[]> {
       if (!sections.has(currentSection)) sections.set(currentSection, [])
       continue
     }
-    if (!currentSection) continue
+    if (!currentSection) {
+      // Above the first section heading: preserve everything hand-written
+      // (issue #61), skipping only our own generated header block.
+      if (!AUTO_HEADER.test(line)) preamble.push(line)
+      continue
+    }
     const em = line.match(/^- `([^`]+)`(?:\s+—\s+(.+?))?\s*\(~(\d+)\s+tok\)$/)
     if (em) {
       sections.get(currentSection)!.push({
@@ -21,35 +50,23 @@ export function parseAnatomy(content: string): Map<string, AnatomyEntry[]> {
         description: em[2] || "",
         tokens: parseInt(em[3], 10),
       })
+      continue
     }
+    if (line.trim() === "") continue
+    if (SYMBOL_SUBBULLET.test(line)) continue
+    if (!rawLines.has(currentSection)) rawLines.set(currentSection, [])
+    rawLines.get(currentSection)!.push(line)
   }
-  return sections
+  return { sections, rawLines, preamble: trimBlankEdges(preamble) }
 }
 
-export function serializeAnatomy(
-  sections: Map<string, AnatomyEntry[]>,
-  metadata: { lastScanned: string; fileCount: number; hits: number; misses: number }
-): string {
-  const lines: string[] = [
-    "# anatomy.md",
-    "",
-    `> Auto-maintained by OpenWolf. Last scanned: ${metadata.lastScanned}`,
-    `> Files: ${metadata.fileCount} tracked | Anatomy hits: ${metadata.hits} | Misses: ${metadata.misses}`,
-    "",
-  ]
-  const keys = [...sections.keys()].sort()
-  for (const key of keys) {
-    lines.push(`## ${key}`)
-    lines.push("")
-    const entries = sections.get(key)!.sort((a, b) => a.file.localeCompare(b.file))
-    for (const e of entries) {
-      const desc = e.description ? ` — ${e.description}` : ""
-      lines.push(`- \`${e.file}\`${desc} (~${e.tokens} tok)`)
-    }
-    lines.push("")
-  }
-  return lines.join("\n")
+export function parseAnatomy(content: string): Map<string, AnatomyEntry[]> {
+  return parseAnatomyWithRaw(content).sections
 }
+
+// serializeAnatomy was removed: it could not carry rawLines or preamble, and
+// every writer must go through renderStore so preserved content survives
+// (issue #61).
 
 export function extractDescription(filePath: string): string {
   const MAX_DESC = 150
@@ -108,21 +125,48 @@ export function sha256(text: string): string {
   return crypto.createHash("sha256").update(text).digest("hex")
 }
 
+export interface SymbolEntry {
+  name: string
+  kind: "fn" | "class" | "method" | "section"
+  startLine: number
+  endLine: number
+  tokens: number
+}
+
 export interface StoreFileEntry {
   description: string
   tokens: number
+  /** sha256 (first 16 hex chars) of file content when last indexed. */
   hash?: string
   size?: number
   mtimeMs?: number
   updatedAt: string
   source: "hook" | "scan" | "md-import"
-  symbols?: Array<{ name: string; kind: string; startLine: number; endLine: number; tokens: number }>
+  symbols?: SymbolEntry[]
 }
 
 export interface AnatomyStoreData {
   version: 1
-  meta: { lastScanned: string; fileCount: number; hits: number; misses: number; renderedHash: string; storeUpdatedAt: string }
+  meta: {
+    lastScanned: string
+    fileCount: number
+    hits: number
+    misses: number
+    /** sha256 of the markdown this store last rendered — skew detection key. */
+    renderedHash: string
+    storeUpdatedAt: string
+  }
+  /** Keyed by full normalized relative path, e.g. "src/hooks/shared.ts". */
   files: Record<string, StoreFileEntry>
+  /** Non-conforming anatomy.md lines preserved verbatim, keyed by section. */
+  rawLines?: Record<string, string[]>
+  /**
+   * Hand-written content above the first `## ` heading (issue #61). A typed
+   * field rather than a reserved rawLines key: old compiled hooks still
+   * installed in projects ignore an unknown field and round-trip it safely,
+   * whereas a magic "" section key would render as a stray `## ` heading.
+   */
+  preamble?: string[]
 }
 
 export function newStore(): AnatomyStoreData {
@@ -155,13 +199,27 @@ export function saveStore(wolfDir: string, store: AnatomyStoreData): void {
   }
 }
 
+/** Section key for a relpath: "src/hooks/" or "./" for root files. */
+export function sectionKeyOf(relPath: string): string {
+  const dir = path.dirname(relPath).split(path.sep).join("/")
+  return dir === "." ? "./" : dir + "/"
+}
+
+/**
+ * Render the store to markdown, byte-identical to the legacy format. Symbols
+ * deliberately do NOT render: they live in anatomy-index.json and reach the
+ * model through the per-file pre-read hint. Rendering them roughly 2.4x'd
+ * anatomy.md, and agents instructed to consult anatomy.md paid that bill
+ * wholesale every session.
+ */
 export function renderStore(store: AnatomyStoreData): string {
   const bySection = new Map<string, Array<{ file: string; entry: StoreFileEntry }>>()
   for (const [relPath, entry] of Object.entries(store.files)) {
-    const dir = relPath.includes("/") ? relPath.slice(0, relPath.lastIndexOf("/") + 1) : "./"
-    if (!bySection.has(dir)) bySection.set(dir, [])
-    bySection.get(dir)!.push({ file: relPath.slice(relPath.lastIndexOf("/") + 1), entry })
+    const key = sectionKeyOf(relPath)
+    if (!bySection.has(key)) bySection.set(key, [])
+    bySection.get(key)!.push({ file: relPath.slice(relPath.lastIndexOf("/") + 1), entry })
   }
+
   const lines: string[] = [
     "# anatomy.md",
     "",
@@ -169,23 +227,31 @@ export function renderStore(store: AnatomyStoreData): string {
     `> Files: ${Object.keys(store.files).length} tracked | Anatomy hits: ${store.meta.hits} | Misses: ${store.meta.misses}`,
     "",
   ]
-  const keys = [...bySection.keys()].sort()
+  const preamble = trimBlankEdges(store.preamble ?? [])
+  if (preamble.length > 0) {
+    lines.push(...preamble, "")
+  }
+  const rawBySection = store.rawLines ?? {}
+  const keys = [...new Set([...bySection.keys(), ...Object.keys(rawBySection)])].sort()
   for (const key of keys) {
     lines.push(`## ${key}`)
     lines.push("")
-    const entries = bySection.get(key)!.sort((a, b) => a.file.localeCompare(b.file))
+    const raws = rawBySection[key] ?? []
+    for (const raw of raws) {
+      lines.push(raw)
+    }
+    const entries = (bySection.get(key) ?? []).sort((a, b) => a.file.localeCompare(b.file))
+    if (raws.length > 0 && entries.length > 0) lines.push("")
     for (const { file, entry } of entries) {
       const desc = entry.description ? ` — ${entry.description}` : ""
       lines.push(`- \`${file}\`${desc} (~${entry.tokens} tok)`)
-      for (const sym of entry.symbols ?? []) {
-        lines.push(`  - ${sym.kind} \`${sym.name}\` L${sym.startLine}-${sym.endLine} (~${sym.tokens} tok)`)
-      }
     }
     lines.push("")
   }
   return lines.join("\n")
 }
 
+/** Write the rendered markdown atomically and pin its hash in the store. */
 export function renderToFile(wolfDir: string, store: AnatomyStoreData): void {
   const content = renderStore(store)
   store.meta.renderedHash = sha256(content)
@@ -200,8 +266,31 @@ export function renderToFile(wolfDir: string, store: AnatomyStoreData): void {
   }
 }
 
+/**
+ * Absorb out-of-band edits to anatomy.md (old compiled hooks, agent/human
+ * hand-edits) into the store. ADDITIVE-ONLY:
+ *  - md entry differs → md wins description/tokens (newer intent)
+ *  - md entry absent from store → added (source "md-import")
+ *  - store entry absent from md → KEPT unless the file is gone from disk
+ *    (deletions are exclusively the full scanner's job)
+ * Symbols always survive (they only flow store → render).
+ */
 export function importFromMarkdown(store: AnatomyStoreData, mdContent: string, projectRoot: string): void {
-  const sections = parseAnatomy(mdContent)
+  // Corruption guard: an empty/unreadable anatomy.md must never wipe the
+  // preserved hand-written content in the store.
+  if (!mdContent.trim()) return
+
+  const { sections, rawLines, preamble } = parseAnatomyWithRaw(mdContent)
+  if (rawLines.size > 0) {
+    store.rawLines = Object.fromEntries(rawLines)
+  } else {
+    delete store.rawLines
+  }
+  if (preamble.length > 0) {
+    store.preamble = preamble
+  } else {
+    delete store.preamble
+  }
   const seen = new Set<string>()
   for (const [sectionKey, entries] of sections) {
     const dir = sectionKey === "./" ? "" : sectionKey
@@ -219,12 +308,72 @@ export function importFromMarkdown(store: AnatomyStoreData, mdContent: string, p
       }
     }
   }
+  // Entries the md no longer lists: keep unless the file is really gone.
   for (const relPath of Object.keys(store.files)) {
     if (seen.has(relPath)) continue
     if (!fs.existsSync(path.join(projectRoot, relPath))) delete store.files[relPath]
   }
 }
 
+/**
+ * Read-side lookup: resolve a file to its anatomy entry. Store-first with an
+ * O(1) relpath key; falls back to a suffix scan (paths outside the root) and
+ * finally to parsing anatomy.md for projects that predate the store.
+ * `normalizedFile` and `projectDir` use forward slashes.
+ */
+export function lookupEntry(
+  wolfDir: string,
+  projectDir: string,
+  normalizedFile: string
+): { file: string; description: string; tokens: number; symbols?: SymbolEntry[]; size?: number; mtimeMs?: number } | null {
+  const rel = normalizedFile.startsWith(projectDir + "/")
+    ? normalizedFile.slice(projectDir.length + 1)
+    : normalizedFile.startsWith("/") ? null : normalizedFile
+
+  const store = loadStore(wolfDir)
+  if (store) {
+    const toResult = (rp: string, e: StoreFileEntry) => ({
+      file: rp.slice(rp.lastIndexOf("/") + 1),
+      description: e.description,
+      tokens: e.tokens,
+      symbols: e.symbols,
+      size: e.size,
+      mtimeMs: e.mtimeMs,
+    })
+    const hit = rel ? store.files[rel] : undefined
+    if (hit) return toResult(rel!, hit)
+    for (const [rp, e] of Object.entries(store.files)) {
+      if (normalizedFile === rp || normalizedFile.endsWith("/" + rp)) {
+        return toResult(rp, e)
+      }
+    }
+    return null
+  }
+
+  // Pre-store project: legacy markdown scan.
+  let md: string
+  try {
+    md = fs.readFileSync(path.join(wolfDir, "anatomy.md"), "utf-8")
+  } catch {
+    return null
+  }
+  for (const [sectionKey, entries] of parseAnatomy(md)) {
+    const dir = sectionKey === "./" ? "" : sectionKey
+    for (const entry of entries) {
+      const entryRelPath = (dir + entry.file).split("\\").join("/")
+      if (normalizedFile === entryRelPath || normalizedFile.endsWith("/" + entryRelPath)) {
+        return entry
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * Standard writer entry point: load the store (bootstrapping from anatomy.md
+ * on first contact), and absorb any md-side divergence before the caller
+ * mutates. Call ONLY while holding the anatomy lock.
+ */
 export function loadStoreReconciled(wolfDir: string, projectRoot: string): AnatomyStoreData {
   let store = loadStore(wolfDir)
   let md: string | null = null

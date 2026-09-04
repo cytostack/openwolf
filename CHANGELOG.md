@@ -4,20 +4,575 @@ All notable changes to OpenWolf are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and OpenWolf uses
 [Semantic Versioning](https://semver.org/).
 
-> This fork (`@alptech/openwolf`) keeps its own package version. Upstream
-> feature history below is retained for reference; package version remains
-> under the fork's numbering (currently 1.0.6).
+> This fork is published as `@alptech/openwolf` and keeps its own package
+> version. Upstream release history is retained below for reference.
 
-## [1.0.6] - 2026-08-12
+## [1.1.1] - 2026-09-04
 
 ### Changed
 
-- Synced business code from upstream [cytostack/openwolf](https://github.com/cytostack/openwolf)
-  (through 2.0.2 feature set): multi-agent adapters, PreCompact, durable
-  anatomy store, measured token usage, redesigned dashboard, bundled skills.
-- Retired Design QC path in favor of upstream architecture.
-- README rewritten for the synced feature set; added Chinese README and
-  upstream acknowledgments. Package name/author/version remain this fork's.
+- Synced business code with upstream `cytostack/openwolf` through 2.5.1.
+- Removed the retired DesignQC command, bundled skill, documentation, and
+  `puppeteer-core` dependency.
+- Added a conservative migration for retired DesignQC command files and
+  made clean-checkout tests build compiled integration targets first.
+- Updated `ws` and Express transitive dependencies to patched releases after
+  a production dependency audit.
+
+## [2.5.1] - 2026-08-30
+
+Sixteen reported defects, fixed. Fifteen were found and reported by
+[@davdittrich](https://github.com/davdittrich), one by
+[@krsfer](https://github.com/krsfer), each with a reproduction. Every fix
+carries a regression test that was first run against the unfixed code and
+observed to fail.
+
+### Fixed
+
+- **`daemon stop` could terminate an unrelated process** (#78). The fallback
+  path sent SIGTERM to every PID listening on the configured dashboard port.
+  Port occupancy is not ownership. The daemon now records `.wolf/daemon.pid`
+  after a successful bind, and stop signals a process only when the record was
+  written on this host, for this project root, for a live PID that still looks
+  like the daemon. Anything else holding the port is reported and left alone.
+- **An existing dashboard token kept its permissions** (#79). New tokens were
+  written 0600; a token file that already existed at 0644 was returned as-is
+  and stayed readable by other local users. It is now repaired in place, never
+  rotated, since a readable token is still the token a live browser tab holds.
+- **Read tracking escaped the project root** (#80). Containment was a
+  `startsWith` check, so `../project-private/secret.ts` shares a prefix with
+  `../project` and was recorded in that project's session state and token
+  metrics. The Bash read channel had no root check at all. All three hooks now
+  share one lexical `path.relative` check, with a realpath fallback so a
+  project reached through a symlink is not silently dropped.
+- **Codex install destroyed a malformed `hooks.json`** (#81). A parse failure
+  was caught and OpenWolf-only defaults were written over the user's file,
+  reporting success. The file is now left byte-identical, hooks are not
+  reported as registered, and one actionable warning explains how to recover.
+- **Parallel hooks lost session state** (#83). Atomic writes prevent torn
+  files, not lost updates: two hook processes that each read, modify and write
+  both produce valid JSON, and the second erases the first. Measured at 60
+  concurrent post-read hooks, 6 of 60 reads survived. Every shared-state
+  read-modify-write now runs through one bounded lock-backed transaction that
+  reads inside the lock. 21 call sites across 13 files.
+- **Concurrent SessionStart lost ledger increments** (#84). 60 concurrent
+  startups created 60 session files and counted 31.
+- **Cron state writes bypassed the lock after timeout** (#86). The fallback
+  wrote anyway once the budget expired, which defeats the lock for every
+  writer that respects it. Contention now fails closed and reports itself.
+- **Concurrent registry updates lost projects** (#88). 60 concurrent
+  registrations kept 31. `openwolf init` in several projects at once is
+  exactly this shape.
+- **Concurrent OpenCode sessions shared one state file** (#89). Every handler
+  received a session id but all of them persisted to `hooks/_session.json`, so
+  a second session overwrote the first and later reads from either mutated the
+  survivor. State is now per session id, with the legacy file kept only when
+  no usable id exists, and session files are garbage collected after 7 days.
+- **The Bash governor pointed at a deleted log** (#82). Full output was
+  written, the cache was pruned, and the model was then handed a pointer to a
+  file the prune had just removed, described as "preserved verbatim". Output
+  is now verified present before anything claims it was preserved; an output
+  larger than the whole cache budget says so plainly instead.
+- **A skipped anatomy write still advanced freshness** (#85). On lock
+  contention the scan wrote nothing but recorded the current Git HEAD in
+  `_scan-state.json`, so the index was reported current when it was empty and
+  the rescan that would have fixed it was suppressed.
+- **Unknown cron task IDs reported success** (#87). `runTask` logged a warning
+  and resolved, so the API returned 200 and the CLI printed "triggered" for a
+  task that does not exist. It now raises a typed not-found, mapped to HTTP
+  404 with the known task list, and a nonzero CLI exit.
+- **Benchmark arms could run different source revisions** (#90). Every arm and
+  repeat cloned mutable HEAD independently, so a branch that moved mid-run
+  confounded the comparison the benchmark exists to make. One commit is now
+  resolved up front, checked out for every arm, printed, and recorded in each
+  result row.
+- **The daemon watcher broadcast files nothing consumed** (#91). Per-session
+  hook state was read and pushed to every websocket client on every update.
+  Lock files and the Bash output cache are now excluded too.
+- **The scanner read every file twice** (#92). Each eligible file was read in
+  full for hashing, tokens and symbols, then reopened for the first 12 KiB of
+  description. Descriptions now reuse the bytes already in hand, and a read
+  failure no longer leaks the descriptor.
+- **Anatomy indexed virtualenvs and build caches** (#93). `.venv`, `.gradle`,
+  `.DS_Store` and `site-packages` were missing from the defaults, and `init`
+  and the scanner fallback shipped two different lists. On a mixed
+  Android/Python project 513 of 526 indexed files were virtualenv noise. There
+  is now one shared list, the project's own `.gitignore` is respected, and
+  Python virtualenvs are detected by `pyvenv.cfg` under any directory name.
+
+### Changed
+
+- File-lock acquisition starts at a 2 ms poll and backs off, instead of a flat
+  25-50 ms. A 60-way herd took roughly two seconds to drain, which is the
+  entire hook budget.
+- Projects created before this release pick up the new anatomy exclusions on
+  `openwolf update`. Nothing is ever removed from a customised list.
+
+## [2.5.0] - 2026-08-22
+
+Positioning, and the removal of the last thing that made "no API calls"
+untrue.
+
+### Added
+
+- **Cost.** The dashboard prices measured usage at Anthropic's published
+  rates, per model, split into cache reads, output, cache writes and fresh
+  input. On one real 277-call project that is $84, of which 67% is cache
+  reads: a number that was previously visible only as "102.3M" with no way to
+  size it. Labelled as list price throughout, because a subscription user is
+  not billed per token.
+- **Overhead as a ratio.** "1.4K injected" now reads "1.6% of what it kept
+  out", which is the claim the footnote on openwolf.com already makes.
+- **Governor breakdown by command family.** The classifier always knew the
+  family at the rewrite point, but the rollup threw it away and kept only
+  scalars. Sessions now carry `bash_governed_by_family`, folded into a
+  lifetime map that survives session trimming, so the dashboard can answer
+  which families are paying off and which are set to suggest.
+- **A plain-language panel.** Not everyone using OpenWolf reads ledgers. One
+  paragraph states how many tokens were kept out of context, what that would
+  have cost at the ceiling, what OpenWolf spent doing it, and the net.
+
+### Changed
+
+- Reads and writes were two numbers glued with a dot; they are now "edits per
+  file read", with the raw counts underneath.
+- A sub-30% anatomy hit rate is called out in the accent colour instead of
+  sitting in a neutral tile: it is the most actionable number on the page.
+- The "saved · denied re-reads" tile no longer renders a dead "n/a" in warn
+  mode. Warn mode says what it caught and how to switch to deny.
+
+### Removed
+
+- **AI suggestions and every other model call.** The `ai_task` cron action
+  shelled out to `claude -p` for two weekly tasks (cerebrum reflection and
+  project suggestions). It was the only path in OpenWolf that reached a
+  model, and it contradicted the one claim the whole project rests on. Gone,
+  along with the Insights dashboard panel, `suggestions.json`, and the
+  `cron.use_claude_p` / `cron.api_key_env` settings. `openwolf update`
+  deletes the leftover file; a stale manifest entry now fails loudly instead
+  of silently reaching the network.
+
+### Fixed
+
+- **Windows hooks, properly this time.** 2.0.4 swapped `$CLAUDE_PROJECT_DIR`
+  for `%CLAUDE_PROJECT_DIR%` on Windows, which fixed nothing: PowerShell is
+  Claude Code's shell there and has no `%VAR%` expansion, and the variable is
+  not in the hook environment on any platform to begin with (project context
+  arrives through the stdin JSON payload). Every hook died with
+  MODULE_NOT_FOUND on every tool call. Hook commands now carry the resolved
+  absolute path, so no shell expansion is involved at all. Hooks also derive
+  the project root from their own location when no environment variable is
+  set. Reported in detail by [@aevnar](https://github.com/aevnar).
+- **A malformed buglog no longer takes anything down.** A `.wolf/buglog.json`
+  written as a bare array of entries (the natural shape when an agent writes
+  the file by hand) reached `bugs.length` unguarded. In one real project the
+  pre-write hook failed on 465 consecutive invocations with nothing but the
+  heartbeat noticing, `openwolf bug search` threw, the SessionStart file
+  index was silently dropped, and the dashboard rendered a blank page. Both
+  shapes are now normalised at the boundary, in the hooks, the CLI, and the
+  dashboard loader.
+- Dashboard panels render inside an error boundary: one malformed state file
+  degrades a single panel instead of blanking the page.
+- `detectAgent()` recognises Claude Code by `CLAUDECODE`, which is actually
+  set, instead of `CLAUDE_PROJECT_DIR`, which is not. Sessions were being
+  attributed to "default" and losing their per-agent ledger rows.
+- `openwolf update` now also removes hand-patched hook entries written with
+  native Windows path separators, which previously survived the filter and
+  ran alongside the new ones.
+
+### Changed
+
+- New positioning across the README, openwolf.com, the npm package and the
+  GitHub description: portable project memory across agents, plus measured
+  token accounting. "Second brain" is retired.
+- `openwolf init` prints a banner and a scannable summary instead of a wall
+  of checkmarks, names whichever agents it actually wired rather than telling
+  every user to run `claude`, and reports the real hook count.
+- Hook count corrected to 12 everywhere. The docs said 10 while documenting
+  12.
+
+## [2.4.1] - 2026-08-21
+
+### Fixed
+
+- The anatomy scanner no longer indexes agent-config directories (.claude,
+  .codex, .opencode, .gemini, .cursor): steering the model toward its own
+  harness config through the index is noise, and those files topped the
+  importance ranking in real projects. Found during the 2.4.0 pre-publish
+  end-to-end test of the Claude and Codex paths.
+
+## [2.4.0] - 2026-08-20
+
+Context quality and large repos: the last two phases of the evidence-based
+roadmap (2.4 "context quality" + 2.5 "large repos and the moat"), shipped
+together.
+
+### Added
+
+- Progressive-disclosure digest: the session digest is now an index, not a
+  content dump. One line per live .wolf state file (what it is, size,
+  freshness, read on demand), the top 3 Do-Not-Repeat rules verbatim, and the
+  STATUS next-phase when genuinely filled in. Files whose frontmatter says
+  `always: true` still inject content, budget-capped. Target ~400 tokens
+  (previous mean: 794, of which 75% was a staleness nag or placeholder).
+- Instruction-decay countermeasure: every N tool batches (default 25,
+  `openwolf.context.reinjection_interval`, 0 disables) the top Do-Not-Repeat
+  rules are re-surfaced as short factual statements. The only factorial study
+  of instruction adherence (1,650 sessions) found within-session decay of
+  ~5.6% per generated function and null effects for file size; cadence is the
+  fix shape, and no other tool does this.
+- Compaction restore now also re-injects paths-scoped rule contents for files
+  touched this session: the platform documents these rules as silently lost
+  at compaction until a matching file is re-read. Plus the top rules and the
+  in-flight session state, all through the sanctioned SessionStart channel.
+- State-file budgets: writing .wolf/cerebrum.md or STATUS.md past its budget
+  (2k/1k tokens, `openwolf.context.state_budgets`) produces one factual
+  warning per session - the measure-after-write loop native auto-memory uses,
+  applied to the committed cross-agent state.
+- .wolf self-read governance: OpenWolf now measures the tokens agents spend
+  reading its own state files (previously a deliberate blind spot worth ~147k
+  tokens) and, once per session, redirects whole-file reads of anatomy.md or
+  cerebrum.md to the cheap paths (`openwolf find`, section greps).
+- `openwolf find --file <path>`: full index detail for one file (description,
+  size, importance, symbol line ranges) - the replacement for reading
+  anatomy.md or the file itself.
+- `openwolf map [--focus terms] [--budget N]`: a token-budgeted overview of
+  the most important files, ranked by personalized PageRank over the import
+  graph persisted in the index (restart vector biased toward files read in
+  recent sessions and focus-term matches - aider's repo-map algorithm on the
+  durable store), fitted to the budget by binary search.
+- Merkle-style freshness: the index stores a root hash over (path,
+  content-hash) pairs, and a stat sweep answers "is the index stale" without
+  reading file bodies. The daemon's scheduled rescan now runs only when the
+  sweep or a git HEAD move says the index is actually stale.
+- Index hygiene: lockfiles, .DS_Store, caches, coverage, minified and map
+  files are excluded built-in (one audited project carried ~105k tokens of
+  such noise).
+- Cross-agent moat: state templates carry frontmatter (description, budget);
+  `.wolf/.gitignore` enforces the committed-vs-machine-local split (cerebrum,
+  STATUS, memory, buglog, anatomy index committed; ledgers, caches, hook
+  runtime ignored); the native Claude auto-memory index is mirrored into a
+  marker-fenced cerebrum section so learnings captured natively become
+  visible to other agents and teammates.
+- `openwolf bench`: the A/B gate harness - same task set with and without
+  OpenWolf via headless runs, medians per cache dimension, task completion,
+  and the bash re-run rate (the failure signature of over-aggressive output
+  condensation). Requires --yes; spends real API budget.
+
+## [2.3.0] - 2026-08-20
+
+The Bash channel release. The empirical audit showed Bash carries 48.3% of
+all tool-result tokens (the Read tool: 35%), oversized results over 2k tokens
+are a quarter of bash output, and every real duplicate file read happened
+through cat/sed/head, invisible to the Read hooks. This release governs that
+channel.
+
+### Added
+
+- Bash output governor (PostToolUse): oversized stdout is condensed
+  structurally, family-aware, and the tool result is replaced before it
+  enters context via the platform's updatedToolOutput channel. grep floods
+  keep the first matches per file plus counts; git show keeps the commit
+  header and per-file diff stats; file re-prints keep a head and tail
+  window. The full output is always preserved verbatim at
+  .wolf/cache/bash/<id>.log and every condensed result ends with a factual
+  pointer to it. stderr is never modified, test and build output is never
+  replaced by default (suggest mode only), and condensation only happens
+  when it saves at least 30%. Config: openwolf.bash.governor (mode,
+  threshold_tokens, per-family actions; global and per-family kill switches).
+- Measured-at-the-rewrite-point accounting: for every governed call the
+  ledger records original vs entered tokens. This number is unique ground
+  truth: the platform's own telemetry logs tool output before hooks run, so
+  only the rewriting hook can measure what actually entered the context
+  window. The dashboard hero tile now shows tokens verifiably kept out of
+  context; openwolf report prints the governor section.
+- Bash-channel read dedupe: simple single-file reads (cat, head, tail,
+  sed -n) are parsed and registered in the session's read tracking, closing
+  the blind spot where all measured duplicate reads lived. A repeated full
+  cat of an unchanged file gets a short factual advisory.
+
+### Changed
+
+- The pre-Bash suggestion filter's disqualifier list matched 1 of 2,256 real
+  commands; it now exempts only genuinely shaped commands (redirects, tee,
+  pipes into head/tail/grep, quiet flags, compound commands) since the
+  PostToolUse governor is the safety net.
+
+## [2.2.0] - 2026-08-20
+
+The reliability release: OpenWolf proves what it does. Built on an empirical
+audit of 16 live projects (6,869 API records) that found a hook crashing
+silently for 3 weeks, self-reported counters drifting ~20x from transcript
+ground truth, and several shipped files no agent ever used.
+
+### Added
+
+- Hook health: every hook records a heartbeat (last success, last error,
+  consecutive failures) and every crash is captured instead of swallowed.
+  Session start self-tests the installed hooks' imports and reports breakage
+  in the digest; `openwolf update` verifies the install (file presence plus a
+  per-hook selfcheck run) and fails loudly instead of leaving a broken
+  install; the dashboard shows failing hooks with the error.
+- Transcript-verified measurement: the ledger now records, per session, how
+  many hook runs the harness actually logged, how many failed, and which
+  injected context verifiably entered the conversation, parsed from the
+  transcript's own hook records with a schema probe that falls back to
+  labeled estimates if the format drifts. The dashboard displays verified
+  numbers next to estimates.
+- Cache-invalidation attribution: `openwolf report` and the daemon name what
+  broke the prompt cache in the last 7 days (model switch, compaction,
+  version change, cache expiry, or honestly unattributed) and how many
+  tokens each rebuild re-wrote. Prefix rebuilds are the largest single waste
+  class in agent sessions and no other tool attributes them.
+- Position-weighted cost model: waste is now valued as tokens times remaining
+  API calls times the cache-read rate, because a byte's real cost is being
+  re-read on every later call, not its size.
+
+### Fixed
+
+- Session state is keyed by the harness session id (`.wolf/hooks/sessions/`),
+  so concurrent sessions in one project no longer cross-contaminate
+  duplicate-read tracking (one of two causes of a ~20x warning inflation).
+- Ranged reads (offset/limit) are recorded as ranged contact and never make a
+  later full read look like a duplicate (the other inflation cause).
+- The edit-count warning fires once per file per session instead of on every
+  edit after the third (it would have hit 39% of all writes).
+- Removed the dead `cerebrum_warnings` counter (it was never incremented
+  anywhere).
+
+### Removed
+
+- The anatomy staleness banner: it led 21 of 28 measured digests because a 6h
+  rescan interval loses to normal commit cadence. Freshness is the scanner's
+  job, not the model's.
+- Unfilled STATUS.md template text is never injected into the digest (8 of 28
+  measured digests were pure placeholder).
+- Dead weight no longer shipped into projects, and removed on update when
+  verifiably untouched: reframe-frameworks.md (31KB, referenced once in 2,256
+  measured commands; the /reframe skill still carries it), identity.md,
+  designqc-report.json stubs, empty suggestions.json stubs.
+
+## [2.1.0] - 2026-08-20
+
+The measurement release. OpenWolf now proves its numbers instead of asserting
+them: ground-truth token usage from the harness's own transcripts, an honest
+ledger of what OpenWolf itself injects, an exact tree-sitter index, and
+relevance-ranked bug recall.
+
+### Added
+
+- Project-wide measured usage: `openwolf report` and the daemon scan every
+  transcript in the harness project directory (subagent sidechains and
+  headless runs included), deduplicated by message and request id, broken
+  down per model. The dashboard shows the project-wide card next to the
+  session numbers.
+- Injection accounting: every digest, anatomy hint, duplicate-read warning,
+  cerebrum/buglog note, edit warning, and reminder OpenWolf injects is
+  counted per source and reported as overhead next to the savings it claims,
+  in the ledger, `openwolf report`, and the dashboard.
+- A/B benchmark harness (`scripts/benchmark/run-ab.mjs`, repository only):
+  fixed task set, OpenWolf vs bare clones, headless runs, medians, cache
+  dimensions reported separately. Methodology in the README.
+- Tree-sitter symbol extraction: `openwolf scan` upgrades the index with
+  exact AST line ranges and nested methods for ts/tsx/js, python, go, rust,
+  java, ruby, and php, with signature skeletons for large files. Hooks keep
+  the dependency-free regex extractor as the incremental fast path; any
+  wasm failure falls back silently.
+- Import-graph importance: a PageRank score per file ranks hints and search
+  results; projects with no resolvable imports get no scores rather than
+  false ones.
+- `openwolf find <query>`: ranked symbol/file shortlist straight from the
+  index, capped near 1k output tokens, quality then importance ordering.
+- Buglog FTS: SQLite full-text index (node:sqlite, Node 22.5+) over the bug
+  log keyed by normalized error signature; powers `openwolf bug search`
+  (relevance ranked) and the pre-write hook's cross-file fix recall. Falls
+  back to the previous matcher on older Node.
+- Bash output filter (suggest mode, `openwolf.bash.filter_mode`): a
+  once-per-session note when a verbose test/build command is about to dump
+  its output into context, with a log-to-file + tail recipe. Rewrite mode is
+  configured but intentionally inert: OpenWolf will not auto-approve tool
+  calls to rewrite them.
+- Context-health audit: `GET /api/context-health` and an overview card
+  flagging oversized CLAUDE.md, always-on @-imports, missing config blocks,
+  and injection above the digest budget.
+- `/handoff` command: regenerates `.wolf/STATUS.md` from the session's real
+  state. The Stop hook's STATUS staleness nag is gone.
+
+### Changed
+
+- CLAUDE.md snippet is now a lean stub; the operating protocol ships as a
+  Claude Code skill (`.claude/skills/openwolf/SKILL.md`) loaded on demand.
+  `openwolf update` swaps legacy shipped snippets byte-identically and never
+  touches customized files. `.claude/rules/openwolf.md` slimmed to the
+  always-true lines.
+- cerebrum syncs into Claude Code auto-memory (preferences, learnings,
+  do-not-repeat) when the memory directory exists; the session-start digest
+  then stops re-injecting Do-Not-Repeat on Claude. cerebrum.md remains
+  canonical for Codex, OpenCode, Gemini, and Cursor.
+- The dashboard's char-ratio estimate headline is retired; measured tiles
+  lead everywhere.
+
+### Fixed
+
+- Importing an existing anatomy.md preserves its recorded scan timestamp
+  instead of claiming it was scanned now.
+
+## [2.0.5] - 2026-08-20
+
+Dashboard honesty release. After 2.0.4 made savings accounting honest, two
+leftovers made the dashboard contradict itself: a "re-reads blocked" count
+carried over from the old warning semantics next to a savings figure of 0,
+and the config key that enables deny mode was undiscoverable on upgraded
+projects. Both are fixed.
+
+### Fixed
+
+- `openwolf update` and `openwolf init` now deep-merge new config defaults
+  into an existing `.wolf/config.json`, adding missing keys only and never
+  touching customized values (ports, budgets, exclude patterns). Upgraded
+  projects finally see `openwolf.reads.duplicate_mode`, which previously
+  existed only in fresh installs. The default stays `warn`.
+- Duplicate-read warnings and denials are now tracked as separate ledger
+  fields (`repeated_reads_warned` vs `repeated_reads_blocked`). Sessions
+  written before 2.0.5 stored warning counts in the blocked field;
+  `openwolf update` migrates them, so "193 blocked, 0 saved" can no longer
+  appear. `openwolf report` lists both lines.
+- The dashboard no longer renders misleading zeros. In warn mode the savings
+  tile shows "n/a" with a note that denial savings are not tracked and how to
+  enable deny mode; the stat row shows "re-read warnings". In deny mode the
+  tiles show denied re-reads and the tokens they saved. The context health
+  card now shows the active duplicate read mode.
+
+## [2.0.4] - 2026-08-18
+
+The repair release. A full audit against the Claude Code hooks reference
+found that most of OpenWolf's guidance never reached the model, that the
+measurement layer inflated and misattributed numbers, and that anatomy.md
+could destroy hand-written content. This release fixes all of it.
+
+### Fixed
+
+- Every hook nudge now actually reaches the model. Anatomy hints, symbol
+  slice hints, repeated-read notes, cerebrum Do-Not-Repeat warnings, buglog
+  matches, and edit-count warnings were written to stderr with exit code 0,
+  which Claude Code sends to the debug log only; the model never saw any of
+  them, in 1.x or 2.x. They now flow through the documented
+  `hookSpecificOutput.additionalContext` channel.
+- End-of-turn reminders no longer burn a full extra model turn each. The Stop
+  hook queues them and a new UserPromptSubmit hook delivers them with the next
+  user prompt. Reminders fire at most once per session, and the STATUS.md
+  staleness nudge (previously stderr-only, a no-op) joins the same queue.
+- The token ledger is idempotent. The Stop hook fires every turn, and the old
+  flush appended a cumulative session entry each time while re-adding running
+  totals (including full-transcript measured usage) to lifetime, producing
+  duplicate entries and quadratically inflated metrics. Session entries are
+  now upserted by id, lifetime is derived from the retained sessions plus an
+  archived baseline, sessions are capped at 200, and `openwolf update`
+  repairs existing inflated ledgers. A new SessionEnd hook writes the single
+  memory.md session summary that used to be appended once per turn.
+- Read-token tracking works again: the post-read hook read a `tool_output`
+  field that does not exist in the PostToolUse payload; it now parses
+  `tool_response` in all its shapes.
+- Savings are honest. The old formula credited 200 tokens per anatomy hit and
+  the full token count of every repeated read that in fact went through and
+  was paid for. Savings are now credited only for duplicate reads OpenWolf
+  verifiably prevented, and `openwolf report` leads with measured transcript
+  usage instead of estimates.
+- anatomy.md no longer destroys hand-written content above the first section
+  heading (#61, including the follow-up report): preambles survive rewrites,
+  hand-written indented notes are preserved, and an empty or unreadable
+  anatomy.md can no longer wipe preserved content on import.
+- The OpenCode plugin is de-forked from the canonical hook logic, closing a
+  cluster of already-fixed bugs it still shipped: pre-#61 anatomy data loss,
+  an .env-only sensitive-file guard (#54), missing outside-root guard, stale
+  read warnings after edits (#41), boundary-less path matching, ledger
+  inflation, and crashes on pre-2.0 ledger files.
+- Windows installs get working hooks: `$CLAUDE_PROJECT_DIR` never expands
+  under cmd.exe, which silently disabled all hooks; settings now use the
+  platform's own variable syntax.
+- `openwolf scan --check` no longer reports out-of-date immediately after a
+  scan; it compares against the exact merged render a scan would write.
+- Scanner lock contention no longer clobbers curated descriptions; the write
+  is skipped and the next scan converges.
+- Daemon and dashboard reliability: the launcher reuses this project's own
+  daemon instead of forking an orphan per invocation and persists the served
+  port; a bind race no longer kills the daemon silently; `/api/health`
+  reports real degraded states; AI cron tasks no longer freeze the daemon
+  event loop for up to two minutes; cron-state and token-ledger writers are
+  file-locked against each other; `daemon stop` kills every listener on the
+  port; memory consolidation is idempotent across runs.
+- Dashboard data: live anatomy.md updates no longer wipe symbol data derived
+  from the index; the anatomy metadata regex is anchored; memory table rows
+  with empty cells no longer shift columns.
+- CLI paper cuts: `openwolf restore` works from subdirectories; the Node 20
+  version guard runs before the CLI loads; registry writes are atomic and
+  read-only listings no longer unregister projects on unmounted volumes;
+  buglog ids no longer collide after manual deletions; the daemon staleness
+  threshold respects the configured heartbeat interval.
+- The Codex adapter merges `.codex/hooks.json` instead of clobbering user
+  hooks, and skill/rule installs never overwrite user-customized files.
+
+### Changed
+
+- The always-on context bill is much smaller. anatomy.md no longer renders
+  symbol sub-bullets (symbols stay in `anatomy-index.json` and reach the
+  model through the per-file pre-read hint), roughly halving the rendered
+  index. OPENWOLF.md is rewritten at about a third of its size; DesignQC and
+  Reframe move to on-demand skills (`/designqc` is new). The navigation rule
+  is now "grep anatomy.md for the path", never "read anatomy.md".
+- New config `openwolf.reads.duplicate_mode`: `warn` (default) injects a
+  context note on a repeated unchanged full-file read; `deny` blocks it with
+  a reason the model sees (never for ranged reads, never in subagents, never
+  after compaction, at most once per file per session); `off` only counts.
+
+Thanks to prghbla and laihenyi (#61) for the anatomy data-loss reports and
+analyses that triggered the full audit.
+
+### Fixed
+
+- The post-write hook no longer crashes on every write. `symbol-extractor.js`
+  was imported by the installed hook but missing from the install, update, and
+  status file lists, which silently disabled write tracking, memory.md logging,
+  and anatomy.md updates on every v2 install. `openwolf status` now checks all
+  11 hook files, and a regression test verifies that every file imported by an
+  installed hook is present in the copy lists. Reported with a full root-cause
+  analysis by Laptopcorei7 (#68).
+- The Stop hook no longer reports "no semantic summary was written" on every
+  session. `countSemanticEntries()` looked for a UTC date prefix that no writer
+  ever emits; it now counts entries under the newest session heading. This also
+  fixes sessions that cross midnight looping forever on the reminder. Reported
+  by statik1 (#62) and Laptopcorei7 (#68).
+- End-of-turn reminders now fire at most twice per session, so a reminder whose
+  condition cannot be cleared degrades into a stale message instead of a
+  non-terminating loop (#68).
+- The buglog reminder now checks buglog.json's modification time. The old check
+  read a session list that buglog.json could never appear in, so the reminder
+  fired even right after the file was updated (#68).
+- On Windows, files on a different drive than the project are no longer indexed
+  into anatomy (#68).
+- Auto-detected buglog entries now name the file they refer to. Error-handling
+  detection requires a real catch/except construct instead of a substring match,
+  so a comment containing the word "catch" no longer files a bug, and test
+  files are skipped by the error-handling and guard-clause rules. Reported with
+  verified repros by spignataro (#73).
+- The anatomy store now preserves anatomy.md lines it does not recognize, such
+  as prose notes or entries sized in GB/MB instead of tokens, instead of
+  silently deleting them on the next write. Reported with a proposed patch by
+  prghbla (#61).
+- The repeated-read notice only fires when the file is unchanged since the last
+  read. A file modified during the session, by the agent or externally, can be
+  re-read without a false warning, and writing a file clears its read record.
+  The notice wording now leaves the gist-vs-exact decision to the model.
+  Reported by 1re2turn1 (#41).
+- `openwolf cron list` and `openwolf status` now say when the scheduler cannot
+  run (pm2 missing, daemon not running, or heartbeat stale) instead of showing
+  tasks as enabled that will never fire. Reported by Esturban (#75).
+
+### Added
+
+- `openwolf daemon status` shows whether the daemon is running.
+- `openwolf cron enable <id>` and `openwolf cron disable <id>` toggle tasks
+  without hand-editing cron-manifest.json.
 
 ## [2.0.2] - 2026-07-15
 

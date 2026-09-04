@@ -20,7 +20,20 @@ alwaysApply: true
 
 ${readSnippet(ctx.templatesDir).trim()}
 `;
-    fs.writeFileSync(path.join(rulesDir, "openwolf.mdc"), body, "utf-8");
+    const rulePath = path.join(rulesDir, "openwolf.mdc");
+    // Overwrite only a file that is still recognizably ours (unchanged
+    // OpenWolf frontmatter); a user-customized rule is left alone.
+    if (fs.existsSync(rulePath)) {
+      const existing = fs.readFileSync(rulePath, "utf-8");
+      const stillOurs = existing.includes("description: OpenWolf project protocol");
+      if (!stillOurs && existing !== body) {
+        return {
+          actions: ["Cursor rule left untouched (customized): .cursor/rules/openwolf.mdc"],
+          warnings: [],
+        };
+      }
+    }
+    fs.writeFileSync(rulePath, body, "utf-8");
     return { actions: ["Cursor rule installed (.cursor/rules/openwolf.mdc)"], warnings: [] };
   },
 };

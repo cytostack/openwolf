@@ -1,140 +1,127 @@
 # Configuration
 
-OpenWolf is configured via `.wolf/config.json`. All settings have sensible defaults -- you do not need to change anything for normal use.
-
-## Full Reference
+OpenWolf is configured through `.wolf/config.json`. Every setting has a
+sensible default; nothing needs changing for normal use. `openwolf update`
+merges newly introduced keys into existing configs without touching your
+values.
 
 ```json
 {
   "version": 1,
   "openwolf": {
     "enabled": true,
+    "reads": { ... },
+    "bash": { ... },
+    "context": { ... },
     "anatomy": { ... },
     "token_audit": { ... },
     "cron": { ... },
     "memory": { ... },
     "cerebrum": { ... },
     "daemon": { ... },
-    "dashboard": { ... },
-    "designqc": { ... }
+    "dashboard": { ... }
   }
 }
 ```
 
+## `reads`
+
+Duplicate-read handling and read hints.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `duplicate_mode` | `"warn"` | `"warn"` advises on duplicate full reads; `"deny"` blocks each duplicate once (with a pass-through retry so the model is never stranded); `"off"` disables |
+| `skeleton_hints` | `true` | For large indexed files, serve a signature outline in the pre-read hint instead of the largest-sections line |
+
+## `bash`
+
+The Bash channel: the pre-run suggestion filter and the output governor.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `filter_mode` | `"suggest"` | Pre-run note for flood-prone commands: `"suggest"` or `"off"` |
+| `governor.mode` | `"replace"` | Master switch: `"replace"`, `"suggest"`, or `"off"` |
+| `governor.threshold_tokens` | `2000` | Only results above this size are governed |
+| `governor.families` | *(below)* | Per-family action override |
+
+Default family actions:
+
+```json
+"families": {
+  "grep_flood": "replace",
+  "file_print": "replace",
+  "git_show": "replace",
+  "test": "suggest",
+  "build": "suggest",
+  "unknown": "suggest"
+}
+```
+
+Only the three losslessly recoverable families replace by default. Test and
+build output is never replaced unless you opt in, and stderr is never
+modified by any family. Full outputs are always preserved at
+`.wolf/cache/bash/`.
+
+## `context`
+
+Session digest, rule re-injection, and state budgets.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `session_digest_budget_tokens` | `1500` | Upper bound for the session-start injection (the index targets ~400) |
+| `budgets` | per agent | Per-agent digest budgets (`claude` 1500, `codex` 1200, `cursor` 800, ...) |
+| `reinjection_interval` | `25` | Re-surface the top Do-Not-Repeat rules every N tool batches; `0` disables |
+| `state_budgets` | `{".wolf/cerebrum.md": 2000, ".wolf/STATUS.md": 1000}` | Token budgets enforced with one warning per session on over-budget writes |
+
 ## `anatomy`
 
-Controls the project file scanner.
+The project scanner.
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `auto_scan_on_init` | `true` | Run a full scan during `openwolf init` |
-| `rescan_interval_hours` | `6` | How often the daemon rescans the project |
-| `max_description_length` | `100` | Max characters for file descriptions |
+| `rescan_interval_hours` | `6` | Daemon rescan cadence. Rescans are skipped when the index is provably fresh (stat sweep + git HEAD) |
+| `max_description_length` | `100` | Max characters per file description |
 | `max_files` | `500` | Stop scanning after this many files |
-| `exclude_patterns` | *(see below)* | Directories and patterns to skip |
+| `exclude_patterns` | node_modules, .git, dist, ... | Directories and globs to skip |
 
-**Default exclude patterns:**
-
-```json
-[
-  "node_modules", ".git", "dist", "build", ".wolf",
-  ".next", ".nuxt", "coverage", "__pycache__", ".cache",
-  "target", ".vscode", ".idea", ".turbo", ".vercel",
-  ".netlify", ".output", "*.min.js", "*.min.css"
-]
-```
+Lockfiles, OS junk, caches, coverage, minified files, and agent-config
+directories (`.claude`, `.codex`, and friends) are excluded built-in,
+regardless of this list.
 
 ## `token_audit`
 
-Controls token estimation and waste detection.
-
 | Key | Default | Description |
 |-----|---------|-------------|
-| `enabled` | `true` | Enable token tracking |
-| `report_frequency` | `"weekly"` | How often to generate waste reports |
-| `waste_threshold_percent` | `15` | Alert when waste exceeds this percentage |
-| `chars_per_token_code` | `3.5` | Character-to-token ratio for code files |
-| `chars_per_token_prose` | `4.0` | Character-to-token ratio for prose files |
+| `enabled` | `true` | Token tracking |
+| `chars_per_token_code` | `3.5` | Estimation ratio for code |
+| `chars_per_token_prose` | `4.0` | Estimation ratio for prose |
+| `waste_threshold_percent` | `15` | Waste-alert threshold |
+
+Estimates are the softest tier; measured and verified numbers come from
+transcripts and are unaffected by these ratios.
 
 ## `cron`
 
-Controls the daemon's task scheduler.
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enabled` | `true` | Scheduled tasks |
+| `max_retry_attempts` | `3` | Retries before dead-lettering |
+
+## `memory` and `cerebrum`
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `enabled` | `true` | Enable cron tasks |
-| `max_retry_attempts` | `3` | Times to retry a failed task before dead-lettering |
-| `dead_letter_enabled` | `true` | Move exhausted tasks to dead letter queue |
-| `heartbeat_interval_minutes` | `30` | Daemon health check frequency |
-| `use_claude_p` | `true` | Use `claude -p` (subscription) for AI-powered tasks |
-| `api_key_env` | `null` | Environment variable name for API key override. When `null`, uses `claude -p` OAuth credentials |
+| `memory.consolidation_after_days` | `7` | Compress session blocks older than this |
+| `cerebrum.max_tokens` | `2000` | Target size for cerebrum.md |
 
-## `memory`
-
-Controls the action log.
+## `daemon` and `dashboard`
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `consolidation_after_days` | `7` | Compress sessions older than this |
-| `max_entries_before_consolidation` | `200` | Force consolidation at this count |
+| `daemon.port` | per project | Daemon HTTP API port |
+| `dashboard.port` | per project | Dashboard HTTP and WebSocket port |
+| `dashboard.enabled` | `true` | Serve the dashboard |
 
-## `cerebrum`
-
-Controls the learning memory.
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `max_tokens` | `2000` | Keep cerebrum.md under this token count |
-| `reflection_frequency` | `"weekly"` | How often AI reviews and prunes cerebrum |
-
-## `daemon`
-
-Controls the background daemon process.
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `port` | `18790` | Daemon HTTP API port |
-| `log_level` | `"info"` | Log verbosity: `"debug"`, `"info"`, `"warn"`, `"error"` |
-
-## `dashboard`
-
-Controls the web dashboard.
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `enabled` | `true` | Serve the dashboard |
-| `port` | `18791` | Dashboard HTTP and WebSocket port |
-
-::: tip
-The dashboard port is also the daemon's HTTP server port for the web UI. Change this if 18791 conflicts with another service.
-:::
-
-## `designqc`
-
-Controls the design QC screenshot capture system used by [`openwolf designqc`](/commands#openwolf-designqc).
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `enabled` | `true` | Enable design QC features |
-| `viewports` | `[{desktop: 1440x900}, {mobile: 375x812}]` | Capture viewports. Each entry has `name`, `width`, and `height` |
-| `max_screenshots` | `6` | Maximum screenshots per run |
-| `chrome_path` | `null` | Custom Chrome or Edge executable path. Auto-detected if `null` |
-
-**Default viewports:**
-
-```json
-[
-  { "name": "desktop", "width": 1440, "height": 900 },
-  { "name": "mobile", "width": 375, "height": 812 }
-]
-```
-
-Set `chrome_path` if auto-detection fails or you want to use a specific browser installation:
-
-```json
-{
-  "designqc": {
-    "chrome_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
-  }
-}
-```
+Ports are assigned per project at init so multiple dashboards never collide,
+and they survive updates.

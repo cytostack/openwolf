@@ -1,3 +1,7 @@
+---
+description: session handoff, regenerate with /handoff when a quest finishes
+budget_tokens: 1000
+---
 # STATUS — {{PROJECT_NAME}}
 
 > Single source of truth for resuming work. Read this FIRST when starting a session.

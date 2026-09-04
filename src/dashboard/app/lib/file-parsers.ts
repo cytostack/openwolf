@@ -12,6 +12,8 @@ export interface AnatomyEntry {
   description: string;
   tokens: number;
   section: string;
+  /** PageRank import-graph importance, 0..1 (index-derived entries only). */
+  importance?: number;
 }
 
 export interface MemorySession {
@@ -35,7 +37,10 @@ export function parseAnatomy(content: string): { entries: AnatomyEntry[]; metada
 
   for (const raw of content.split("\n")) {
     const line = raw.replace(/\r$/, "");
-    const metaMatch = line.match(/Files:\s*(\d+).*hits:\s*(\d+).*Misses:\s*(\d+)/i);
+    // Anchored to the generated header line: an unanchored match let any
+    // description or preserved raw line containing "files: N ... hits: N ..."
+    // overwrite the real counters.
+    const metaMatch = line.match(/^> Files:\s*(\d+)\s*tracked.*hits:\s*(\d+).*Misses:\s*(\d+)/i);
     if (metaMatch) {
       files = parseInt(metaMatch[1]);
       hits = parseInt(metaMatch[2]);
@@ -75,14 +80,19 @@ export function parseMemory(content: string): MemorySession[] {
     }
 
     if (current && line.startsWith("|") && !line.startsWith("|--") && !line.startsWith("| Time")) {
-      const parts = line.split("|").map(s => s.trim()).filter(Boolean);
-      if (parts.length >= 4) {
+      // Positional split: filter(Boolean) collapsed EMPTY cells and shifted
+      // every following column (an empty Outcome cell put the token count in
+      // the outcome field). Slice off only the leading/trailing empties that
+      // come from the outer pipes.
+      const cells = line.split("|").map(s => s.trim());
+      const parts = cells.slice(1, cells.length - 1);
+      if (parts.filter(Boolean).length >= 3) {
         current.entries.push({
-          time: parts[0],
-          action: parts[1],
-          files: parts[2],
-          outcome: parts[3],
-          tokens: parts[4] || "",
+          time: parts[0] ?? "",
+          action: parts[1] ?? "",
+          files: parts[2] ?? "",
+          outcome: parts[3] ?? "",
+          tokens: parts[4] ?? "",
         });
       }
     }

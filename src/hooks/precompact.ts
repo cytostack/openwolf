@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { getWolfDir, ensureWolfDir, readJSON, writeJSON, readStdin, timestamp } from "./shared.js";
+import { getWolfDir, ensureWolfDir, readJSON, writeJSON, readStdin, timestamp, hookMain, getSessionFilePath } from "./shared.js";
 
 // PreCompact hook (Workstream F3: compaction survival).
 //
@@ -22,15 +22,13 @@ async function main(): Promise<void> {
   } catch {}
 
   try {
-    const session = readJSON<Record<string, unknown>>(path.join(hooksDir, "_session.json"), {});
+    const session = readJSON<Record<string, unknown>>(getSessionFilePath(input), {});
     writeJSON(path.join(hooksDir, "_precompact-snapshot.json"), {
       at: timestamp(),
       trigger: input.trigger ?? "unknown",
       session,
     });
   } catch {}
-
-  process.exit(0);
 }
 
-main().catch(() => process.exit(0));
+hookMain("precompact", main);

@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { findProjectRoot } from "../scanner/project-root.js";
 import { readJSON, readText } from "../utils/fs-safe.js";
+import { HOOK_FILES } from "./hook-manifest.js";
 
 export async function statusCommand(): Promise<void> {
   const projectRoot = findProjectRoot();
@@ -16,8 +17,11 @@ export async function statusCommand(): Promise<void> {
   console.log("===============\n");
 
   // File integrity check
+  // identity.md is deliberately absent: `openwolf update` deletes it as dead
+  // weight (untouched in 16/16 audited projects), so listing it here made
+  // status report a missing file on every project the product itself cleaned.
   const requiredFiles = [
-    "OPENWOLF.md", "identity.md", "cerebrum.md", "memory.md",
+    "OPENWOLF.md", "cerebrum.md", "memory.md",
     "anatomy.md", "config.json", "token-ledger.json", "buglog.json",
     "cron-manifest.json", "cron-state.json",
   ];
@@ -35,10 +39,7 @@ export async function statusCommand(): Promise<void> {
   }
 
   // Hook scripts check
-  const hookFiles = [
-    "session-start.js", "pre-read.js", "pre-write.js",
-    "post-read.js", "post-write.js", "stop.js", "shared.js",
-  ];
+  const hookFiles = HOOK_FILES;
   const hooksDir = path.join(wolfDir, "hooks");
   let hooksMissing = 0;
   for (const file of hookFiles) {
@@ -50,17 +51,25 @@ export async function statusCommand(): Promise<void> {
     console.log(`  ✗ Missing ${hooksMissing} hook scripts`);
   }
 
-  // Claude settings check
-  const settingsPath = path.join(projectRoot, ".claude", "settings.json");
-  if (fs.existsSync(settingsPath)) {
-    const settings = readJSON<Record<string, unknown>>(settingsPath, {});
-    const hooks = settings.hooks as Record<string, unknown[]> | undefined;
-    if (hooks) {
-      const hookCount = Object.values(hooks).reduce((sum, arr) => sum + arr.length, 0);
-      console.log(`  ✓ Claude Code hooks registered (${hookCount} matchers)`);
+  const config = readJSON<{ openwolf?: { agents?: string[] } }>(
+    path.join(wolfDir, "config.json"),
+    {},
+  );
+  // Projects predating agent selection were Claude projects. Newer projects
+  // should only be checked for the integrations they explicitly enabled.
+  const configuredAgents = config.openwolf?.agents ?? ["claude"];
+  if (configuredAgents.includes("claude")) {
+    const settingsPath = path.join(projectRoot, ".claude", "settings.json");
+    if (fs.existsSync(settingsPath)) {
+      const settings = readJSON<Record<string, unknown>>(settingsPath, {});
+      const hooks = settings.hooks as Record<string, unknown[]> | undefined;
+      if (hooks) {
+        const hookCount = Object.values(hooks).reduce((sum, arr) => sum + arr.length, 0);
+        console.log(`  ✓ Claude Code hooks registered (${hookCount} matchers)`);
+      }
+    } else {
+      console.log("  ✗ .claude/settings.json not found");
     }
-  } else {
-    console.log("  ✗ .claude/settings.json not found");
   }
 
   // Token ledger stats
@@ -80,8 +89,8 @@ export async function statusCommand(): Promise<void> {
   console.log(`  Sessions: ${ledger.lifetime.total_sessions}`);
   console.log(`  Total reads: ${ledger.lifetime.total_reads}`);
   console.log(`  Total writes: ${ledger.lifetime.total_writes}`);
-  console.log(`  Tokens tracked: ~${ledger.lifetime.total_tokens_estimated.toLocaleString()}`);
-  console.log(`  Estimated savings: ~${ledger.lifetime.estimated_savings_vs_bare_cli.toLocaleString()} tokens`);
+  console.log(`  Tokens tracked (estimate): ~${ledger.lifetime.total_tokens_estimated.toLocaleString()}`);
+  console.log(`  Saved by denied reads: ~${ledger.lifetime.estimated_savings_vs_bare_cli.toLocaleString()} tokens (run 'openwolf report' for measured usage)`);
 
   // Anatomy stats
   const anatomyContent = readText(path.join(wolfDir, "anatomy.md"));
@@ -93,11 +102,23 @@ export async function statusCommand(): Promise<void> {
     path.join(wolfDir, "cron-state.json"),
     { engine_status: "unknown", last_heartbeat: null }
   );
-  console.log(`\nDaemon: ${cronState.engine_status}`);
+  const { hasPm2 } = await import("./daemon-cmd.js");
+  // A recorded heartbeat is direct evidence the daemon runs (it can be
+  // fork-spawned by `openwolf dashboard` without pm2) — report it before
+  // complaining about pm2, which is only the persistence mechanism.
   if (cronState.last_heartbeat) {
+    console.log(`\nDaemon: ${cronState.engine_status}`);
     const elapsed = Date.now() - new Date(cronState.last_heartbeat).getTime();
     const mins = Math.floor(elapsed / 60000);
     console.log(`  Last heartbeat: ${mins} minutes ago`);
+    if (!hasPm2()) {
+      console.log(`  Note: pm2 not installed; the daemon will not survive reboots (pnpm add -g pm2)`);
+    }
+  } else if (!hasPm2()) {
+    console.log(`\nDaemon: ⚠ never run; pm2 not installed (pnpm add -g pm2). Cron tasks will not fire.`);
+  } else {
+    console.log(`\nDaemon: ${cronState.engine_status}`);
+    console.log(`  ⚠ No heartbeat recorded — daemon has never run. Start with: openwolf daemon start`);
   }
 
   console.log("");

@@ -1,0 +1,1 @@
+Explain the architecture of this codebase: the entry points, the main modules and what each is responsible for, how data flows between them, and where the tests live. Be specific with file paths. End with the three most fragile spots a new contributor should be careful around.

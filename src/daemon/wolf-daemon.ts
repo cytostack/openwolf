@@ -6,10 +6,14 @@ import type { Request, Response, NextFunction } from "express";
 import { WebSocketServer, WebSocket } from "ws";
 import { findProjectRoot } from "../scanner/project-root.js";
 import { readJSON, writeJSON, readText } from "../utils/fs-safe.js";
+import { getHealth } from "./health.js";
+import { auditContextHealth } from "./context-audit.js";
+import { withFileLock, mutateJSON } from "../hooks/anatomy-lock.js";
 import { Logger } from "../utils/logger.js";
 import { getDashboardToken, validateDashboardToken } from "../utils/dashboard-auth.js";
-import { CronEngine } from "./cron-engine.js";
+import { CronEngine, CronTaskNotFoundError } from "./cron-engine.js";
 import { startFileWatcher } from "./file-watcher.js";
+import { writeDaemonPidFile, removeDaemonPidFile } from "../utils/daemon-pidfile.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -140,22 +144,9 @@ const projectMeta = detectProjectMeta();
 app.use("/api", requireDashboardAuth);
 
 app.get("/api/health", (_req, res) => {
-  const cronState = readJSON<{ engine_status: string; last_heartbeat: string | null; dead_letter_queue: unknown[] }>(
-    path.join(wolfDir, "cron-state.json"),
-    { engine_status: "unknown", last_heartbeat: null, dead_letter_queue: [] }
-  );
-  const cronManifest = readJSON<{ tasks?: unknown[] }>(
-    path.join(wolfDir, "cron-manifest.json"),
-    { tasks: [] }
-  );
-  const taskCount = Array.isArray(cronManifest.tasks) ? cronManifest.tasks.length : 0;
-  res.json({
-    status: "healthy",
-    uptime_seconds: Math.floor((Date.now() - startTime) / 1000),
-    last_heartbeat: cronState.last_heartbeat,
-    tasks: taskCount,
-    dead_letters: cronState.dead_letter_queue.length,
-  });
+  // getHealth computes real degraded/unhealthy states from the dead-letter
+  // queue; the route used to hardcode "healthy" regardless.
+  res.json(getHealth(wolfDir, startTime));
 });
 
 app.get("/api/project", (_req, res) => {
@@ -172,6 +163,7 @@ app.get("/api/files", (_req, res) => {
     "OPENWOLF.md", "identity.md", "cerebrum.md", "memory.md", "anatomy.md",
     "config.json", "token-ledger.json", "buglog.json",
     "cron-manifest.json", "cron-state.json", "STATUS.md", "_scan-state.json", "anatomy-index.json",
+    "hooks/_heartbeat.json",
   ];
   for (const file of wolfFiles) {
     try {
@@ -180,13 +172,16 @@ app.get("/api/files", (_req, res) => {
       files[file] = "";
     }
   }
-  // Also try suggestions.json
-  try {
-    files["suggestions.json"] = fs.readFileSync(path.join(wolfDir, "suggestions.json"), "utf-8");
-  } catch {
-    files["suggestions.json"] = "";
-  }
   res.json(files);
+});
+
+// Context-health audit (J3): read-only checks on always-on context cost.
+app.get("/api/context-health", (_req, res) => {
+  try {
+    res.json(auditContextHealth(projectRoot, wolfDir));
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 // Trigger a cron task by ID
@@ -199,6 +194,12 @@ app.post("/api/cron/run/:taskId", (req, res) => {
   cronEngine.runTask(taskId).then(() => {
     res.json({ status: "ok", task_id: taskId });
   }).catch((err) => {
+    // An unknown id is a client error, not a server failure, and definitely
+    // not a success (#87).
+    if (err instanceof CronTaskNotFoundError) {
+      res.status(404).json({ error: err.message, task_id: taskId, known_tasks: err.knownTaskIds });
+      return;
+    }
     res.status(500).json({ error: String(err) });
   });
 });
@@ -220,6 +221,17 @@ const port = Number.isInteger(envPort) && envPort > 0 ? envPort : config.openwol
 const host = config.openwolf.dashboard.host || "127.0.0.1";
 const server = app.listen(port, host, () => {
   logger.info(`Dashboard server listening on ${host}:${port}`);
+  // Written only after a successful bind: this file is what `daemon stop`
+  // uses to prove a process is ours before signalling it, so it must never
+  // claim a daemon that failed to start.
+  writeDaemonPidFile(wolfDir, projectRoot, port);
+});
+server.on("error", (err: NodeJS.ErrnoException) => {
+  // Without this handler a bind race (EADDRINUSE between the launcher's port
+  // probe and our listen) is an uncaught exception that kills the daemon
+  // silently under stdio:"ignore".
+  logger.error(`Dashboard server failed to bind ${host}:${port}: ${err.code ?? err.message}`);
+  process.exit(1);
 });
 
 // WebSocket server
@@ -286,13 +298,15 @@ function handleDashboardCommand(msg: { type: string; task_id?: string }): void {
     case "retry_dead_letter":
       if (msg.task_id) {
         const statePath = path.join(wolfDir, "cron-state.json");
-        const state = readJSON<{ dead_letter_queue: Array<{ task_id: string }> }>(statePath, {
-          dead_letter_queue: [],
+        withFileLock(statePath + ".lock", 2000, () => {
+          const state = readJSON<{ dead_letter_queue: Array<{ task_id: string }> }>(statePath, {
+            dead_letter_queue: [],
+          });
+          state.dead_letter_queue = state.dead_letter_queue.filter(
+            (d) => d.task_id !== msg.task_id
+          );
+          writeJSON(statePath, state);
         });
-        state.dead_letter_queue = state.dead_letter_queue.filter(
-          (d) => d.task_id !== msg.task_id
-        );
-        writeJSON(statePath, state);
       }
       break;
     case "force_scan":
@@ -340,32 +354,35 @@ startFileWatcher(wolfDir, logger, broadcast);
 const heartbeatInterval = config.openwolf.cron.heartbeat_interval_minutes * 60 * 1000;
 const heartbeatTimer = setInterval(() => {
   const statePath = path.join(wolfDir, "cron-state.json");
-  const state = readJSON<Record<string, unknown>>(statePath, {});
-  state.last_heartbeat = new Date().toISOString();
-  writeJSON(statePath, state);
+  mutateJSON<Record<string, unknown>>(statePath, {}, 2000, (state) => {
+    state.last_heartbeat = new Date().toISOString();
+  });
   broadcast({ type: "health", status: "healthy", uptime: Math.floor((Date.now() - startTime) / 1000) });
 }, heartbeatInterval);
 
 // Update cron-state to running
 const cronStatePath = path.join(wolfDir, "cron-state.json");
-const cronState = readJSON<Record<string, unknown>>(cronStatePath, {});
-cronState.engine_status = "running";
-cronState.last_heartbeat = new Date().toISOString();
-writeJSON(cronStatePath, cronState);
+mutateJSON<Record<string, unknown>>(cronStatePath, {}, 2000, (cronState) => {
+  cronState.engine_status = "running";
+  cronState.last_heartbeat = new Date().toISOString();
+});
 
 logger.info("OpenWolf daemon started");
 
 // Graceful shutdown
 function shutdown(): void {
   logger.info("Daemon shutting down...");
+  removeDaemonPidFile(wolfDir);
   broadcast({ type: "daemon_stopping", timestamp: new Date().toISOString() });
 
   clearInterval(heartbeatTimer);
   if (cronEngine) cronEngine.stop();
 
-  const state = readJSON<Record<string, unknown>>(cronStatePath, {});
-  state.engine_status = "stopped";
-  writeJSON(cronStatePath, state);
+  // Locked like every other cron-state writer: this one ran unlocked and
+  // could clobber a concurrent heartbeat or execution-log entry (#86).
+  mutateJSON<Record<string, unknown>>(cronStatePath, {}, 2000, (state) => {
+    state.engine_status = "stopped";
+  });
 
   for (const client of wsClients) {
     client.close();

@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from "vue";
-import { useData } from "vitepress";
+import { useData, withBase } from "vitepress";
 
 const { isDark } = useData();
 const copied = ref(false);
 const mounted = ref(false);
 
 function copyInstall() {
-  navigator.clipboard.writeText("npm install -g openwolf");
+  navigator.clipboard.writeText("npm install -g @alptech/openwolf");
   copied.value = true;
   setTimeout(() => (copied.value = false), 2000);
 }
@@ -36,59 +36,65 @@ onUnmounted(() => observer?.disconnect());
 
 const features = [
   {
-    icon: "lightbulb",
-    title: "Invisible Enforcement",
-    desc: "You type claude and work normally. Hooks fire automatically, tracking tokens, updating project maps, enforcing learned preferences.",
+    icon: "bolt",
+    title: "The Bash Output Governor",
+    desc: "grep floods, git show dumps, and file re-prints are condensed structurally before they enter context. The full output stays on disk with a pointer. Test failures are never touched. The saving is measured per call, at the rewrite point.",
     accent: "var(--ow-accent)",
   },
   {
     icon: "chart",
-    title: "Token Intelligence",
-    desc: "Claude reads blind. OpenWolf gives it a file index with descriptions and token estimates before every read. If the description is enough, Claude skips the full file. Repeated reads are caught and flagged.",
+    title: "Measured, Verified, Attributed",
+    desc: "Real usage from every transcript, per model, priced at list rates so you can see where the money actually goes (on most projects, two thirds of it is cache reads). Hook delivery verified against the harness's own records. Cache rebuilds attributed to their trigger. If OpenWolf claims it, it can prove it.",
     accent: "#818cf8",
   },
   {
-    icon: "bolt",
-    title: "Zero Overhead",
-    desc: "All hooks are pure Node.js file I/O. No network requests, no external APIs, no extra cost. OpenWolf runs entirely on your machine.",
-    accent: "#fbbf24",
-  },
-  {
     icon: "loop",
-    title: "Self-Learning",
-    desc: "Every correction you make gets logged. Every bug fix gets remembered. Every preference gets enforced. Claude gets smarter with every session -- without you repeating yourself.",
+    title: "Context That Survives",
+    desc: "A ~400-token index of your project state at session start. Rules re-surfaced on a cadence to counter within-session decay. Compaction restores the path-scoped rules the platform documents as lost.",
     accent: "#f472b6",
   },
   {
-    icon: "eye",
-    title: "Design QC",
-    desc: "Capture full-page sectioned screenshots with one command. Claude evaluates the design inline. No external services, no extra cost.",
+    icon: "grid",
+    title: "Large Repos, Navigated",
+    desc: "openwolf find answers location queries in under 1k tokens. openwolf map ranks the important files by personalized PageRank over the import graph. Tree-sitter symbols give exact line ranges for slice reads.",
+    accent: "#fbbf24",
+  },
+  {
+    icon: "lightbulb",
+    title: "A Committed Team Brain",
+    desc: "Conventions, corrections, and bug fixes live in files that travel through git and code review, readable by every agent and every teammate. On Claude Code, they sync both ways with native auto-memory.",
     accent: "#fb923c",
   },
   {
-    icon: "grid",
-    title: "Reframe",
-    desc: "Ask Claude to help pick a UI framework. Built-in knowledge base covers 12 component libraries, from shadcn/ui to Aceternity UI to DaisyUI.",
+    icon: "eye",
+    title: "Provably Alive",
+    desc: "Heartbeats on every hook, a session-start self-test, and install verification on every update. A hook cannot die silently. Plus loopback-only token-auth dashboard, zero shell interpolation, and secrets excluded from every index.",
     accent: "#38bdf8",
   },
 ];
 
 const hooks = [
-  { event: "SessionStart", script: "session-start.js", desc: "Creates session tracker, logs to memory" },
-  { event: "PreToolUse", script: "pre-read.js", desc: "Warns on repeated reads, shows anatomy info" },
-  { event: "PreToolUse", script: "pre-write.js", desc: "Checks cerebrum Do-Not-Repeat patterns" },
-  { event: "PostToolUse", script: "post-read.js", desc: "Estimates and records token usage" },
-  { event: "PostToolUse", script: "post-write.js", desc: "Updates anatomy, appends to memory" },
-  { event: "Stop", script: "stop.js", desc: "Writes session summary to token ledger" },
+  { event: "SessionStart", script: "session-start.js", desc: "Self-tests the install, injects the state index, restores post-compaction context" },
+  { event: "UserPromptSubmit", script: "user-prompt-submit.js", desc: "Attaches the project protocol and current context to each submitted prompt" },
+  { event: "PreToolUse", script: "pre-read.js", desc: "Duplicate-read advisories, anatomy descriptions, symbol and outline hints" },
+  { event: "PreToolUse", script: "pre-write.js", desc: "Do-Not-Repeat checks and relevant past bug fixes, before the edit happens" },
+  { event: "PreToolUse", script: "pre-bash.js", desc: "Suggests output caps for commands about to flood the context" },
+  { event: "PostToolUse", script: "post-bash.js", desc: "The governor: condenses oversized output, preserves the original, measures the delta" },
+  { event: "PostToolUse", script: "post-read.js", desc: "Records real read sizes into session tracking" },
+  { event: "PostToolUse", script: "post-write.js", desc: "Updates the index under a lock, logs the action, enforces state budgets" },
+  { event: "PostToolBatch", script: "post-batch.js", desc: "Re-surfaces the top rules every N batches, countering instruction decay" },
+  { event: "PreCompact", script: "precompact.js", desc: "Snapshots session state before context compaction" },
+  { event: "Stop", script: "stop.js", desc: "Flushes the ledger with measured usage and transcript-verified hook delivery" },
+  { event: "SessionEnd", script: "session-end.js", desc: "Finalizes session state and usage when the harness closes the session" },
 ];
 
 const archFiles = [
-  { name: "anatomy.md", desc: "File index with descriptions and token estimates. Prevents unnecessary full-file reads.", icon: "file" },
-  { name: "cerebrum.md", desc: "Learned preferences, conventions, Do-Not-Repeat mistakes. Gets smarter every session.", icon: "brain" },
-  { name: "memory.md", desc: "Chronological action log. Every read, write, and decision recorded per session.", icon: "clock" },
-  { name: "buglog.json", desc: "Bug encounter and resolution memory. Searchable. Prevents re-discovering the same fix.", icon: "bug" },
-  { name: "hooks/", desc: "6 Node.js hooks that fire on every Claude action. Pure file I/O, no network, no AI calls.", icon: "code" },
-  { name: "config.json", desc: "All settings with sensible defaults. Token ratios, cron schedules, dashboard port, exclude patterns.", icon: "gear" },
+  { name: "anatomy-index.json", desc: "Durable project index: descriptions, token estimates, content hashes, symbols, and the import graph. Rendered to anatomy.md.", icon: "file" },
+  { name: "cerebrum.md", desc: "Learned preferences, conventions, Do-Not-Repeat mistakes. Budgeted, committed, shared across agents and teammates.", icon: "brain" },
+  { name: "STATUS.md", desc: "Session handoff. Regenerate it with /handoff; the next session reaches productive context in one small read.", icon: "clock" },
+  { name: "buglog.json", desc: "Bug and fix memory with full-text search. The pre-write hook recalls relevant past fixes before an edit repeats them.", icon: "bug" },
+  { name: "hooks/", desc: "12 Node.js lifecycle hooks shared by all wired agents. Pure file I/O, no network, no model calls, heartbeat-monitored.", icon: "code" },
+  { name: "token-ledger.json", desc: "Estimated, measured, and transcript-verified usage per session and agent, plus governor deltas and cache-rebuild attribution.", icon: "gear" },
 ];
 </script>
 
@@ -113,20 +119,26 @@ const archFiles = [
           <!-- Left -->
           <div class="ow-hero__copy">
             <h1 class="ow-hero__title">
-              A second brain
-              <span class="ow-hero__title-accent">for Claude Code.</span>
+              Your agents change.
+              <span class="ow-hero__title-accent">Your project memory shouldn't.</span>
             </h1>
 
             <p class="ow-hero__desc">
-              Claude re-reads files it already saw. It scans entire directories to find one function. It doesn't know your conventions until you tell it again. OpenWolf gives it persistent project intelligence through invisible hooks. No workflow changes.
+              openwolf keeps one project memory across Claude Code, Codex and OpenCode, intercepts the reads and command output that quietly fill your context, and reports what each session actually cost, read from the harness transcript. Pure local file I/O: no API calls, no telemetry, no added latency.
+            </p>
+
+            <p class="ow-hero__agents">
+              <span class="ow-hero__agents-row"><span class="ow-hero__agents-key">Full hooks</span> Claude Code</span>
+              <span class="ow-hero__agents-row"><span class="ow-hero__agents-key">Core hooks</span> Codex CLI, OpenCode</span>
+              <span class="ow-hero__agents-row"><span class="ow-hero__agents-key">Context only</span> Cursor, Gemini CLI, Antigravity</span>
             </p>
 
             <div class="ow-hero__actions">
-              <a href="/getting-started" class="ow-btn ow-btn--primary">
+              <a :href="withBase('/getting-started')" class="ow-btn ow-btn--primary">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0a0c12" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                 Get Started
               </a>
-              <a href="/how-it-works" class="ow-btn ow-btn--ghost">
+              <a :href="withBase('/how-it-works')" class="ow-btn ow-btn--ghost">
                 How It Works
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
               </a>
@@ -134,7 +146,7 @@ const archFiles = [
 
             <button @click="copyInstall" class="ow-install">
               <span class="ow-install__prompt">$</span>
-              <code class="ow-install__cmd">npm install -g openwolf</code>
+              <code class="ow-install__cmd">npm install -g @alptech/openwolf</code>
               <span class="ow-install__icon">
                 <svg v-if="!copied" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                 <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ow-accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
@@ -153,14 +165,14 @@ const archFiles = [
               </div>
               <div class="ow-terminal__body">
                 <div class="ow-terminal__line"><span class="ow-terminal__ps">$</span> <span class="ow-terminal__cmd">openwolf init</span></div>
-                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> OpenWolf v1.0.4 initialized</div>
-                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> .wolf/ created with 13 files</div>
-                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> Claude Code hooks registered (6 hooks)</div>
-                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> CLAUDE.md updated</div>
-                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> .claude/rules/openwolf.md created</div>
-                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> Anatomy scan: 24 files indexed</div>
-                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> Daemon: running via pm2</div>
-                <div class="ow-terminal__line ow-terminal__line--hint">You're ready. Just use <span class="ow-terminal__hl">'claude'</span> as normal -- OpenWolf is watching.</div>
+                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> Agents detected: codex, gemini (wiring all)</div>
+                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> Codex hooks registered (.codex/hooks.json)</div>
+                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> Skills installed: /handoff, /security-audit, /reframe</div>
+                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> created &nbsp; .wolf/ · 10 files</div>
+                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> hooks &nbsp; &nbsp; 12 registered</div>
+                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> index &nbsp; &nbsp; 247 files indexed</div>
+                <div class="ow-terminal__line ow-terminal__line--out"><span class="ow-terminal__ok">✓</span> agents &nbsp; &nbsp;claude, codex, gemini</div>
+                <div class="ow-terminal__line ow-terminal__line--hint">Work as before. Whichever agent you start, OpenWolf runs underneath.</div>
               </div>
             </div>
           </div>
@@ -179,56 +191,53 @@ const archFiles = [
     <section class="ow-section ow-section--alt ow-why">
       <div class="ow-container ow-container--narrow">
         <div class="ow-why__content reveal">
-          <h2 class="ow-why__title">Claude is powerful. But it works blind.</h2>
+          <h2 class="ow-why__title">The cost of a byte is not its size.<br /><span class="ow-why__title-em">It is its size times every call that follows.</span></h2>
           <p class="ow-why__text">
-            Claude doesn't know what a file contains until it opens it. It can't tell a 50-token config from a 2,000-token module. It reads the same file three times in one session without noticing. It has no map of your project, no memory of past corrections, no awareness of what it already tried.
+            The obvious suspects are your prompts and your codebase. Before building 2.x we audited 16 live projects, 6,869 real API calls of transcripts, and <strong>neither was the problem</strong>. Nearly half of all tool-result tokens arrived through Bash: grep floods, <code>git show</code> dumps, test logs, whole files printed with <code>cat</code>. None of that is in your prompt. All of it is re-read from cache on every later call for the rest of the session.
           </p>
-          <p class="ow-why__text">
-            OpenWolf gives Claude a project index, a learning memory, and a token-aware read layer. It makes every session sharper from the first prompt.
+          <p class="ow-why__text ow-why__text--muted">
+            Coding agents flood their own context with grep dumps and re-read files, then forget your conventions between sessions. OpenWolf governs the Bash channel at the source, keeps context healthy across long sessions, and measures everything it claims from your agent's own transcripts.
           </p>
           <div class="ow-why__stats">
             <div class="ow-why__stat">
-              <span class="ow-why__stat-num">~80%</span>
-              <span class="ow-why__stat-label">token reduction on real projects</span>
+              <span class="ow-why__stat-num">48%</span>
+              <span class="ow-why__stat-label">of tool-result tokens flow through Bash. Measured, 16 projects, 6,869 API calls.</span>
             </div>
             <div class="ow-why__stat">
-              <span class="ow-why__stat-num">71%</span>
-              <span class="ow-why__stat-label">repeated reads caught</span>
+              <span class="ow-why__stat-num">10x</span>
+              <span class="ow-why__stat-label">A token kept out of context is worth roughly ten trimmed from a prompt, because it is never re-read on any call that follows.</span>
             </div>
             <div class="ow-why__stat">
-              <span class="ow-why__stat-num">2M+</span>
-              <span class="ow-why__stat-label">tokens saved</span>
+              <span class="ow-why__stat-num">0</span>
+              <span class="ow-why__stat-label">unverifiable claims. Every number traces back to a transcript.</span>
             </div>
           </div>
 
-          <!-- Token comparison -->
+          <!-- Governor delta -->
           <div class="ow-why__comparison">
-            <h3 class="ow-why__comparison-title">Same project. Same prompts. Different setups.</h3>
+            <h3 class="ow-why__comparison-title">One governed grep flood, measured at the rewrite point.</h3>
             <div class="ow-why__bar-group">
               <div class="ow-why__bar-row">
-                <span class="ow-why__bar-label">OpenClaw + Claude</span>
+                <span class="ow-why__bar-label">Command output</span>
                 <div class="ow-why__bar-track">
-                  <div class="ow-why__bar ow-why__bar--red" style="width: 100%"></div>
+                  <div class="ow-why__bar ow-why__bar--yellow" style="width: 100%"></div>
                 </div>
-                <span class="ow-why__bar-val">~3.4M</span>
+                <span class="ow-why__bar-val">41,203</span>
               </div>
               <div class="ow-why__bar-row">
-                <span class="ow-why__bar-label">Claude CLI (no OpenWolf)</span>
+                <span class="ow-why__bar-label">Entered context</span>
                 <div class="ow-why__bar-track">
-                  <div class="ow-why__bar ow-why__bar--yellow" style="width: 73%"></div>
+                  <div class="ow-why__bar ow-why__bar--green" style="width: 5%"></div>
                 </div>
-                <span class="ow-why__bar-val">~2.5M</span>
-              </div>
-              <div class="ow-why__bar-row">
-                <span class="ow-why__bar-label">OpenWolf + Claude CLI</span>
-                <div class="ow-why__bar-track">
-                  <div class="ow-why__bar ow-why__bar--green" style="width: 12.5%"></div>
-                </div>
-                <span class="ow-why__bar-val">~425K</span>
+                <span class="ow-why__bar-val">1,850</span>
               </div>
             </div>
-            <p class="ow-why__bar-note">Estimates based on project size and average session patterns.</p>
+            <p class="ow-why__bar-note">Full output preserved on disk with a pointer, so nothing is lost. Run <code>openwolf report</code> for your own deltas.</p>
           </div>
+
+          <p class="ow-why__footnote">
+            OpenWolf subtracts its own overhead from every figure it reports. Every digest, hint and reminder it injects is counted against the savings it claims.
+          </p>
         </div>
       </div>
     </section>
@@ -241,7 +250,7 @@ const archFiles = [
         <div class="ow-section__header reveal">
           <span class="ow-label">Features</span>
           <h2 class="ow-heading">Everything works invisibly</h2>
-          <p class="ow-subheading">OpenWolf hooks into Claude Code's lifecycle. No commands to remember. It just makes every session smarter.</p>
+          <p class="ow-subheading">OpenWolf hooks into your agent's lifecycle. No commands to remember. It just makes every session smarter.</p>
         </div>
 
         <div class="ow-features-grid">
@@ -293,16 +302,16 @@ const archFiles = [
             <div class="ow-step__num">02</div>
             <div class="ow-step__content">
               <h3 class="ow-step__title">Work Normally</h3>
-              <p class="ow-step__desc">Just use <code>claude</code> as you always do. Hooks fire invisibly, tracking, learning, enforcing. You don't interact with any of it.</p>
-              <div class="ow-step__cmd"><span class="ow-step__ps">$</span> claude</div>
+              <p class="ow-step__desc">Start whichever agent you were going to start anyway. Hooks fire invisibly, tracking, learning, enforcing. You never interact with any of it, and switching agents changes nothing.</p>
+              <div class="ow-step__cmd"><span class="ow-step__ps">$</span> claude &nbsp;<span class="ow-step__alt">or</span>&nbsp; codex &nbsp;<span class="ow-step__alt">or</span>&nbsp; opencode</div>
             </div>
           </div>
 
           <div class="ow-step reveal" style="transition-delay: 200ms">
             <div class="ow-step__num">03</div>
             <div class="ow-step__content">
-              <h3 class="ow-step__title">Get Smarter</h3>
-              <p class="ow-step__desc">Every session, OpenWolf learns preferences, logs bugs, prevents repeated mistakes. View everything on the real-time dashboard.</p>
+              <h3 class="ow-step__title">See the Proof</h3>
+              <p class="ow-step__desc">Every session, OpenWolf learns preferences, logs bugs, and governs output. The dashboard shows tokens verifiably kept out of context, hook health, and what broke your prompt cache.</p>
               <div class="ow-step__cmd"><span class="ow-step__ps">$</span> openwolf dashboard</div>
             </div>
           </div>
@@ -340,7 +349,7 @@ const archFiles = [
         <div class="ow-section__header reveal">
           <span class="ow-label ow-label--warn">Hooks</span>
           <h2 class="ow-heading">The enforcement layer</h2>
-          <p class="ow-subheading">Six hooks fire on every Claude action. They warn but never block. Pure Node.js. No network, no AI, no extra cost.</p>
+          <p class="ow-subheading">Twelve hooks cover the agent lifecycle. Heartbeat-monitored, never permission-bypassing. Pure Node.js. No network, no AI, no extra cost.</p>
         </div>
 
         <div class="ow-hooks reveal">
@@ -359,15 +368,15 @@ const archFiles = [
     <!-- ============================================================ -->
     <section class="ow-section ow-cta">
       <div class="ow-container ow-container--narrow reveal">
-        <h2 class="ow-heading" style="text-align: center">Make Claude Code smarter</h2>
+        <h2 class="ow-heading" style="text-align: center">Make your coding agent smarter</h2>
         <p class="ow-subheading" style="text-align: center">One install. One init. Then it's invisible.</p>
 
         <div class="ow-cta__actions">
-          <a href="/getting-started" class="ow-btn ow-btn--primary ow-btn--lg">
+          <a :href="withBase('/getting-started')" class="ow-btn ow-btn--primary ow-btn--lg">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0a0c12" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
             Get Started
           </a>
-          <a href="https://github.com/cytostack/openwolf" target="_blank" class="ow-btn ow-btn--ghost ow-btn--lg">
+          <a href="https://github.com/nottyjay/openwolf" target="_blank" class="ow-btn ow-btn--ghost ow-btn--lg">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
             GitHub
           </a>
@@ -384,39 +393,38 @@ const archFiles = [
 
           <div class="ow-footer__brand">
             <div class="ow-footer__logo">
-              <img src="/wolf.svg" alt="OpenWolf" width="24" height="24" />
+              <img :src="withBase('/wolf.svg')" alt="OpenWolf" width="24" height="24" />
               <span class="ow-footer__name">OpenWolf</span>
             </div>
-            <p class="ow-footer__tagline">A second brain for Claude Code.<br />Created by Dr. Farhan Palathinkal at <a href="https://github.com/cytostack" target="_blank" class="ow-footer__link">Cytostack</a>.</p>
+            <p class="ow-footer__tagline">One project memory across Claude Code, Codex and OpenCode.<br />Original by <a href="https://github.com/cytostack" target="_blank" class="ow-footer__link">Cytostack</a>; fork maintained by alptech.</p>
           </div>
 
           <div class="ow-footer__col">
             <h4 class="ow-footer__col-title">Product</h4>
-            <a href="/getting-started" class="ow-footer__link">Getting Started</a>
-            <a href="/how-it-works" class="ow-footer__link">How It Works</a>
-            <a href="/commands" class="ow-footer__link">Commands</a>
-            <a href="/dashboard" class="ow-footer__link">Dashboard</a>
+            <a :href="withBase('/getting-started')" class="ow-footer__link">Getting Started</a>
+            <a :href="withBase('/how-it-works')" class="ow-footer__link">How It Works</a>
+            <a :href="withBase('/commands')" class="ow-footer__link">Commands</a>
+            <a :href="withBase('/dashboard')" class="ow-footer__link">Dashboard</a>
           </div>
 
           <div class="ow-footer__col">
             <h4 class="ow-footer__col-title">Features</h4>
-            <a href="/hooks" class="ow-footer__link">Hooks</a>
-            <a href="/designqc" class="ow-footer__link">Design QC</a>
-            <a href="/reframe" class="ow-footer__link">Reframe</a>
-            <a href="/configuration" class="ow-footer__link">Configuration</a>
+            <a :href="withBase('/hooks')" class="ow-footer__link">Hooks</a>
+            <a :href="withBase('/reframe')" class="ow-footer__link">Reframe</a>
+            <a :href="withBase('/configuration')" class="ow-footer__link">Configuration</a>
           </div>
 
           <div class="ow-footer__col">
             <h4 class="ow-footer__col-title">Community</h4>
-            <a href="https://github.com/cytostack/openwolf" target="_blank" class="ow-footer__link">GitHub</a>
-            <a href="https://github.com/cytostack/openwolf/issues" target="_blank" class="ow-footer__link">Report a Bug</a>
-            <a href="https://www.npmjs.com/package/openwolf" target="_blank" class="ow-footer__link">npm</a>
+            <a href="https://github.com/nottyjay/openwolf" target="_blank" class="ow-footer__link">GitHub</a>
+            <a href="https://github.com/nottyjay/openwolf/issues" target="_blank" class="ow-footer__link">Report a Bug</a>
+            <a href="https://www.npmjs.com/package/@alptech/openwolf" target="_blank" class="ow-footer__link">npm</a>
           </div>
 
         </div>
 
         <div class="ow-footer__bottom">
-          <p>AGPL-3.0 · Copyright 2026 Cytostack Pvt Ltd</p>
+          <p>AGPL-3.0 · Copyright 2026 Cytostack Pvt Ltd / alptech</p>
           <p>Node.js 20+ · Windows, macOS, Linux</p>
         </div>
       </div>
@@ -654,6 +662,30 @@ const archFiles = [
   font-weight: 600;
 }
 
+/* Agent support: full hooks vs context-only, stated plainly under the subhead */
+.ow-hero__agents {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 20px;
+  max-width: 480px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ow-text-secondary);
+}
+.ow-hero__agents-key {
+  display: inline-block;
+  min-width: 148px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ow-text-faint);
+}
+@media (max-width: 480px) {
+  .ow-hero__agents-key { display: block; min-width: 0; }
+}
+
 /* Buttons */
 .ow-hero__actions {
   display: flex;
@@ -835,11 +867,36 @@ const archFiles = [
   margin-bottom: 24px !important;
   text-align: left !important;
 }
+.ow-why__title-em {
+  color: var(--ow-accent);
+}
 .ow-why__text {
   font-size: 1.05rem !important;
   line-height: 1.7 !important;
   color: var(--ow-text-secondary) !important;
   margin-bottom: 16px !important;
+  text-align: left !important;
+}
+.ow-why__text strong {
+  color: var(--ow-text-primary);
+  font-weight: 700;
+}
+.ow-why__text code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.92em;
+  color: var(--ow-text-primary);
+}
+.ow-why__text--muted {
+  font-size: 0.97rem !important;
+  color: var(--ow-text-faint) !important;
+}
+.ow-why__footnote {
+  margin-top: 28px !important;
+  padding-top: 20px;
+  border-top: 1px solid var(--ow-border);
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+  color: var(--ow-text-faint) !important;
   text-align: left !important;
 }
 .ow-why__stats {
@@ -1039,6 +1096,10 @@ const archFiles = [
   background: var(--ow-bg-deep);
   padding: 8px 16px;
   border-radius: 10px;
+}
+.ow-step__alt {
+  color: var(--ow-text-faint);
+  font-size: 11px;
 }
 .ow-step__ps {
   color: var(--ow-accent);

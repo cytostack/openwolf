@@ -1,0 +1,1 @@
+Add a small new feature: a `--version` flag (or equivalent version display for this project type) that prints the version from the project manifest. Follow the existing code style, wire it into the existing entry point, and verify it works.

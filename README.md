@@ -1,22 +1,26 @@
-<p align="center">
-  <img src="demo.gif" alt="OpenWolf demo" width="640" />
-</p>
-
 <h1 align="center">@alptech/openwolf</h1>
 
 <p align="center">
-  <strong>The second brain for Claude Code. Now for every AI coding assistant.</strong>
+  <strong>Your agents change. Your project memory shouldn't.</strong>
 </p>
 
 <p align="center">
-  Improved context management, optimized architecture scaffolding, and smarter token utilization,<br />
-  delivered through 7 invisible lifecycle hooks. Zero workflow changes.
+  openwolf keeps one project memory across Claude Code, Codex and OpenCode,<br />
+  intercepts the reads and command output that quietly fill your context,<br />
+  and reports what each session actually cost, read from the harness transcript.<br />
+  Pure local file I/O: no API calls, no telemetry, no added latency.
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@alptech/openwolf"><img src="https://img.shields.io/npm/v/@alptech/openwolf.svg" alt="npm version" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0" /></a>
-  <a href="https://nodejs.org"><img src="https://img.shields.io/badge/Node.js-20%2B-green.svg" alt="Node.js" /></a>
+  <sub><b>Full hooks:</b> Claude Code &nbsp;·&nbsp; <b>Core hooks:</b> Codex CLI, OpenCode &nbsp;·&nbsp; <b>Context only:</b> Cursor, Gemini CLI, Antigravity</sub>
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/@alptech/openwolf"><img src="https://img.shields.io/npm/v/%40alptech%2Fopenwolf?color=cb3837&label=npm" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/@alptech/openwolf"><img src="https://img.shields.io/npm/dm/%40alptech%2Fopenwolf?color=2ea44f&label=downloads" alt="npm downloads" /></a>
+  <a href="https://github.com/nottyjay/openwolf/stargazers"><img src="https://img.shields.io/github/stars/nottyjay/openwolf?color=444&label=stars" alt="GitHub stars" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License" /></a>
+  <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E%3D20-2ea44f" alt="Node.js" /></a>
 </p>
 
 <p align="center">
@@ -26,54 +30,45 @@
   <a href="README.ru.md">Русский</a>
 </p>
 
-<p align="center">
-  <a href="#quick-start"><b>Quick Start</b></a> &nbsp;&middot;&nbsp;
-  <a href="#supported-agents"><b>Supported Agents</b></a> &nbsp;&middot;&nbsp;
-  <a href="#context-management"><b>Context Management</b></a> &nbsp;&middot;&nbsp;
-  <a href="#token-intelligence"><b>Token Intelligence</b></a> &nbsp;&middot;&nbsp;
-  <a href="#security"><b>Security</b></a> &nbsp;&middot;&nbsp;
-  <a href="#dashboard"><b>Dashboard</b></a> &nbsp;&middot;&nbsp;
-  <a href="CHANGELOG.md"><b>Changelog</b></a>
-</p>
-
 > **This is a fork of [openwolf](https://github.com/cytostack/openwolf) by [Cytostack](https://github.com/cytostack).** It tracks upstream business features while keeping the `@alptech/openwolf` package identity.
 
----
+<p align="center">
+  <img src="assets/openwolf-dashboard.png" alt="" width="900" />
+</p>
 
 | Without OpenWolf | With OpenWolf |
-|---|---|
-| The agent rereads a file it already saw (~2,000 tokens) | It reads the one-line description first, or skips the read entirely |
-| Whole-file reads just to find one function | Symbol-level hints give exact line ranges for `offset`/`limit` reads |
-| Context compaction wipes what the session did | A PreCompact snapshot and restore keep the work in context |
-| Every agent starts from a cold prompt | One shared `.wolf/` brain across Codex, OpenCode, Claude Code, Cursor, and Antigravity |
-| No idea where your tokens went | Usage measured from harness transcripts, plus a live local dashboard |
+|------------------|---------------|
+| Each agent starts cold and learns your project separately | One `.wolf/` brain, shared across Claude Code, Codex and OpenCode |
+| Switching agents means losing everything the last one learned | Corrections, bug fixes and project map follow you across tools |
+| Your token usage is a monthly invoice with no line items | Real usage read from the transcript, per session, per agent |
+| Nobody can tell you what broke the prompt cache | Attributed: model switch, compaction, version change, expiry |
+| The agent rereads a file it already saw | Repeated reads caught; oversized Bash output condensed before it enters context |
 
----
+## What it does
 
-## Why OpenWolf?
+Coding agents waste tokens in predictable ways. A `grep -rn` dumps 40,000
+tokens into context, and the session re-reads them from cache on every later
+API call. The same file gets printed three times with `cat`. Conventions you
+taught the agent last week are gone today. When context compacts, the agent
+forgets what it already did.
 
-Coding agents are powerful but they work blind. An agent does not know what a
-file contains until it opens it. It cannot tell a 50-token config from a
-2,000-token module. It rereads the same file in one session without noticing,
-forgets your corrections between sessions, and loses everything when its
-context window compacts.
+OpenWolf installs lifecycle hooks into your agent and fixes this underneath
+your normal workflow:
 
-OpenWolf gives your agent a second brain that fixes all of that:
+- Oversized Bash output is condensed before it enters context. The full text
+  stays on disk with a pointer. Test failures are never touched.
+- Your project gets a durable index. `openwolf find` locates any symbol in
+  under 1k tokens. Large files carry exact line ranges so the agent reads one
+  function, not the whole file.
+- Corrections, conventions, and bug fixes are written to files that survive
+  sessions, travel through git, and reach every agent and teammate.
+- After compaction, OpenWolf restores what was lost: in-flight state, your
+  rules, and the path-scoped instructions the platform drops.
+- Everything is measured. Real usage from transcripts, hook delivery verified
+  against the harness's own records, and savings counted only where OpenWolf
+  can prove them.
 
-- **Context management.** A budget-capped digest of your project's most
-  valuable state (current goals, known mistakes, fixed bugs, the project map)
-  is injected at every session start. A PreCompact hook plus a
-  compaction-aware restart mean context compaction no longer erases what the
-  session already did.
-- **Architecture scaffolding.** A durable, self-healing project index maps
-  every file with a description, a token estimate, and (for large files) its
-  functions and classes with exact line ranges. Agents navigate your codebase
-  instead of rediscovering it.
-- **Token utilization.** Repeated reads are caught, whole-file reads become
-  targeted slice reads, and real usage is measured from harness transcripts
-  so you can verify the savings instead of trusting an estimate.
-
-## Quick Start
+## Quick start
 
 ```bash
 npm install -g @alptech/openwolf
@@ -81,235 +76,209 @@ cd your-project
 openwolf init
 ```
 
-That is it. `init` auto-detects the coding agents installed on your machine
-and wires each of them to the same `.wolf/` brain. Use your agents normally;
-OpenWolf works underneath.
+`init` detects the agents installed on your machine and wires each of them.
+Then use your agents as normal.
 
-## Supported Agents
+## Supported agents
 
-One `.wolf/` brain, many agents:
+| Agent | Integration |
+|-------|-------------|
+| Claude Code | Full: 12 hooks, output governor, skills, verified measurement |
+| Codex CLI | Core hooks via `.codex/hooks.json` + `AGENTS.md`: session, read, write, compaction, stop |
+| OpenCode | Native plugin + `AGENTS.md`: session and tool before/after |
+| Cursor | Rules file (context only) |
+| Gemini CLI | `GEMINI.md` block (context only) |
+| Antigravity | `AGENTS.md` block (context only) |
 
-| Agent | Integration | Depth |
-|-------|-------------|-------|
-| **Codex CLI** | `.codex/hooks.json` lifecycle hooks + `AGENTS.md` | Full (hooks + context) |
-| **OpenCode** | Native plugin + `AGENTS.md` | Full (hooks + context) |
-| **Claude Code** | 7 lifecycle hooks + `CLAUDE.md` | Full (hooks + context) |
-| **Cursor** | `.cursor/rules/openwolf.mdc` (always applied) | Beta (context) |
-| **Antigravity** | `AGENTS.md` protocol block | Beta (context) |
-| **Gemini CLI** | `GEMINI.md` protocol block | Beta (context) |
+All agents share the same `.wolf/` directory. It ships with a `.gitignore`
+that commits the useful state (conventions, handoff, bug log, index) and
+ignores the machine-local runtime (ledgers, caches). On Claude Code the
+learned conventions also sync with native auto-memory, in both directions.
 
-```bash
-openwolf init                          # auto-detect installed agents (recommended)
-openwolf init --agent codex opencode   # wire exactly these
-openwolf init --agent all              # wire every detected agent
-openwolf init --agent claude           # Claude Code only
-```
+## How it works
 
-Protocol blocks are marker-fenced: your own content in `AGENTS.md` or
-`GEMINI.md` is never touched, and re-running init never duplicates anything.
-
-## What It Creates
-
-`openwolf init` creates a `.wolf/` directory in your project:
+`openwolf init` creates `.wolf/` and registers hooks with your agent. The
+hooks are plain Node.js scripts: no network, no AI calls, no dependencies.
 
 | File | Purpose |
 |------|---------|
-| `anatomy-index.json` | Durable project index: descriptions, token estimates, content hashes, symbols |
-| `anatomy.md` | Human-readable render of the index, kept in sync automatically |
-| `cerebrum.md` | Learned preferences, corrections, Do-Not-Repeat list |
-| `memory.md` | Chronological action log with token estimates |
-| `STATUS.md` | Session handoff: resume any session in one small read |
-| `buglog.json` | Bug fix memory, searchable, prevents rediscovery |
-| `token-ledger.json` | Estimated and measured token usage, per session and per agent |
-| `hooks/` | 7 lifecycle hooks (pure Node.js, zero dependencies) |
-| `config.json` | Configuration, including per-agent context budgets |
-| `OPENWOLF.md` | The operating protocol your agents follow |
+| `anatomy-index.json` | Project index: descriptions, sizes, symbols, import graph |
+| `cerebrum.md` | Preferences, conventions, and a Do-Not-Repeat list |
+| `STATUS.md` | Session handoff. Regenerate with `/handoff` |
+| `buglog.json` | Searchable memory of bugs and their fixes |
+| `memory.md` | Action log per session |
+| `token-ledger.json` | Measured, estimated, and verified usage |
+| `hooks/` | The 12 lifecycle hooks, with health heartbeats |
+| `cache/bash/` | Verbatim copies of every condensed Bash output |
 
-## How It Works
+During a session:
 
-```
-Session starts
-    |
-OpenWolf injects a token-budgeted digest: current goals, known mistakes,
-recent bug fixes, project map pointer
-    |
-Agent decides to read a big file
-    |
-OpenWolf: "auth.ts (~2,900 tok). Symbols: validateToken L82-140 ~450 tok.
-Read with offset/limit to fetch just the part you need."
-    |
-Agent edits files
-    |
-OpenWolf updates the index under a cross-process lock, logs the action,
-estimates the cost
-    |
-Context compacts mid-session
-    |
-OpenWolf snapshots state before compaction and re-injects a digest of the
-files already modified, so the agent does not redo finished work
-    |
-Session ends
-    |
-OpenWolf reads the real token usage from the transcript into the ledger
-```
+- **Session start.** A ~400-token index of your project state is injected:
+  what each file holds, the top rules, the current handoff. Pointers, not
+  content.
+- **Before reads.** Duplicate reads get a note. Large files get their symbol
+  map so the agent can read a slice.
+- **After Bash.** Output over 2,000 tokens is condensed by command family:
+  grep floods keep the first matches per file plus counts, `git show` keeps
+  the header and diff stats, file re-prints keep head and tail. Original
+  preserved, delta recorded. Test and build output is suggested-only by
+  default because failure detail matters more than tokens.
+- **Every 25 tool batches.** The top rules are repeated in one short note.
+  Instruction compliance decays as sessions get longer (the one controlled
+  study of this, across 1,650 sessions, found the decay and found that file
+  size does not matter). Cadence is the fix.
+- **On compaction.** State, rules, and scoped instructions are re-injected.
+- **On stop.** The ledger records real usage per model and verifies against
+  the transcript which hooks fired, which failed, and which injected context
+  actually reached the model.
 
-## Context Management
-
-- **Session digest.** The highest-value state is pushed into the model's
-  context at session start, capped to a configurable token budget per agent.
-  The model gets what it needs without reading six files.
-- **Compaction survival.** The PreCompact hook snapshots in-flight session
-  state; after compaction the digest lists the files already modified with a
-  pointer to the action log. Resume and compaction no longer reset tracking.
-- **Staleness detection.** Scans pin the git HEAD. If the HEAD moves or the
-  scan ages out, the agent is told to rescan before trusting the map. A wrong
-  index is never silently trusted.
-- **STATUS.md handoff.** End-of-phase state lives in one small document, so a
-  fresh session reaches productive context in a single read.
-
-## Project Anatomy
-
-The index is a durable store (`anatomy-index.json`) with a rendered,
-human-readable view (`anatomy.md`). Writers coordinate through a
-cross-process lock, so concurrent hook fires cannot lose entries. Edits made
-to the markdown by hand or by older hook versions are detected by content
-hash and absorbed additively.
-
-Files above 500 estimated tokens also index their top-level symbols:
-
-```
-- `shared.ts` (~3,200 tok)
-  - fn `parseAnatomy` L82-104 (~180 tok)
-  - fn `serializeAnatomy` L106-129 (~200 tok)
-```
-
-Before the agent reads a large file, the hint lists the biggest symbols with
-line ranges so it can fetch one function with offset/limit instead of the
-whole file. Hints are suppressed automatically if the file changed since
-indexing; a stale range is never allowed to misdirect a read.
-Languages with symbol support today: TypeScript, JavaScript, Python, Go, Rust.
-
-## Token Intelligence
-
-Estimates are useful; measurements are trustworthy. At session end OpenWolf
-reads the real usage from the harness transcript: input tokens, output
-tokens, cache reads, cache writes, and API calls, attributed to the agent
-that ran the session.
+## Measurement
 
 ```bash
 openwolf report
 ```
 
 ```
-  Estimated (char-ratio heuristic)
-    Total tokens:           1,549,658
-    Est. savings vs bare:   1,772,690
+  Measured (all project transcripts, scanned now)
+    API calls:              814
+    Output tokens:          737,952
+    Cache reads:            238,172,904
+    Cache writes:           3,323,678
 
-  Measured (from harness transcripts)
-    API calls:              29
-    Input tokens:           57,489
-    Cache reads:            309,141
+  Bash governor (measured at the rewrite point)
+    Governed calls:         12
+    Original output:        96,410
+    Entered context:        14,867
+    Kept out of context:    81,543
+
+  Cache rebuilds (last 7 days): 6 events, 1,942,520 tokens re-written
+    model_switch         3 events  929,737 tok
+    cache_expired        1 events  524,661 tok
+    unattributed         2 events  488,122 tok
 ```
 
-Field results from 1.x deployments (20 projects, 132+ sessions) averaged a
-65.8% estimated token reduction, with 71% of repeated file reads caught and
-blocked. Those figures are heuristic estimates; measured numbers in 2.x let
-you verify savings on your own workload.
+Three things worth knowing about these numbers:
+
+1. The governor delta is measured where nothing else can measure it. The
+   platform's telemetry logs tool output before hooks run, so only the hook
+   that rewrites the output knows what actually entered context.
+2. Cache rebuilds are the most expensive events in an agent session: a full
+   rebuild re-pays your entire context at the write rate instead of the 0.1x
+   read rate. OpenWolf names the trigger and the cost.
+3. Earlier releases reported estimated savings from a heuristic that counted
+   tokens that were actually spent. That math is gone. OpenWolf also reports
+   its own injection cost next to any saving it claims. If a context tool
+   cannot show you measured numbers including its own overhead, doubt it.
+
+`openwolf bench --repo <fixture> --yes` runs the same tasks with and without
+OpenWolf and reports each token dimension separately, plus completion rate
+and the bash re-run rate. It spends real API budget, so it requires `--yes`.
+
+## Reliability
+
+Invisible tools need proof of life. Every hook writes a heartbeat. Session
+start verifies the installed hooks can load. `openwolf update` runs a
+selfcheck on every hook after install and fails loudly instead of leaving a
+broken install. The dashboard shows failing hooks with the error. This
+exists because a hook once crashed silently 440 times over three weeks
+before anyone noticed.
 
 ## Security
 
-- Dashboard binds to 127.0.0.1 and requires a per-project token
-  (timing-safe comparison) for all API and WebSocket access.
-- Every dynamic process invocation uses argument arrays; no shell
-  interpolation anywhere.
-- Path traversal guards on all cron file access, realpath-based and symlink-safe.
-- Secret-bearing files (keys, keystores, credential files, `.npmrc`, `.env`
-  and friends) never enter the index or the memory log.
-- A security regression suite runs with `pnpm test`.
+- Dashboard binds to 127.0.0.1 with per-project token auth.
+- No shell interpolation anywhere; every process call uses argument arrays.
+- Hooks never auto-approve tool calls. Permission decisions stay yours.
+- Secret-bearing files (`.env`, keys, credentials) never enter any index.
+- Path traversal guards on all cron file access.
 
-## Bundled Skills
+## Skills
 
-`openwolf init` installs two slash commands into every configured agent
-(Claude Code, Codex, OpenCode):
+Installed for every wired agent:
 
-- **`/security-audit [scope]`**: layered audit covering dependencies,
-  secrets, injection surfaces, and authorization, ending in a
-  severity-ranked report wired into `.wolf/buglog.json`.
-- **`/reframe [migrate | audit | fix]`**: the design brain. Pick or migrate a
-  UI framework using a curated knowledge base of 13 frameworks (shadcn/ui,
-  Aceternity, Magic UI, DaisyUI, HeroUI, Chakra, Flowbite, Preline, Park UI,
-  Origin UI, Headless UI, Cult UI, Astryx), or audit and fix existing UI
-  against an anti-generic design mandate.
+- `/handoff` regenerates `STATUS.md` from git, the action log, and open items.
+- `/security-audit` runs a layered audit and files results into the bug log.
+- `/reframe` picks or migrates a UI framework from a curated comparison of
+  13, with an anti-generic design mandate.
+
+On Claude Code, the operating protocol ships as a proper skill so CLAUDE.md
+stays a five-line stub.
 
 ## Dashboard
 
 ```bash
-openwolf daemon start
 openwolf dashboard
 ```
 
-A local, token-authenticated dashboard: measured vs estimated tokens, cache
-economics, per-agent usage, context health, session handoff, live activity,
-cron control, and the full anatomy browser with per-file symbols.
+Local, token-authenticated, live. The hero number is tokens verifiably kept
+out of context, with a plain-language reading of what that means. Around it:
+what the measured usage is worth at list price and where that cost sits
+(cache reads usually dominate), OpenWolf's own overhead as a share of what it
+saved, the governor's results per command family, cache rebuild attribution,
+per-agent breakdown, hook health, the anatomy browser, activity, and cron
+control.
 
 ## Commands
 
 ```
-openwolf init              Initialize .wolf/ and wire detected agents
+openwolf init              Set up .wolf/ and wire detected agents
 openwolf status            Health, stats, file integrity
 openwolf scan              Rebuild the project index
-openwolf scan --check      Verify the index matches the filesystem (CI-friendly)
-openwolf report            Token report: estimated vs measured
-openwolf dashboard         Open the web dashboard
-openwolf daemon start      Start the background daemon
-openwolf daemon stop       Stop the daemon
-openwolf cron list         Scheduled tasks
-openwolf cron run <id>     Trigger a task
-openwolf bug search <term> Search the bug memory
-openwolf update            Update every registered project (with backup)
-openwolf restore [backup]  Roll back .wolf/ from a timestamped backup
-```
-
-There is also a standalone inspector that needs nothing installed:
-
-```bash
-node scripts/openwolf-check.mjs [projectDir]   # read-only usage report
+openwolf scan --check      CI check: does the index match the tree
+openwolf find <query>      Locate a symbol or file (ranked, ~1k tokens max)
+openwolf find --file <p>   One file's description, size, and symbol map
+openwolf map               Token-budgeted overview of the important files
+openwolf report            Measured, verified, governed, attributed usage
+openwolf bench             A/B benchmark with and without OpenWolf (--yes)
+openwolf bug search <term> Full-text search over the bug memory
+openwolf dashboard         Open the dashboard
+openwolf cron list         Scheduled maintenance tasks
+openwolf update            Update every registered project (backup first)
+openwolf restore [backup]  Roll back .wolf/ from a backup
 ```
 
 ## Requirements
 
-- Node.js 20+
-- At least one supported coding agent
-- Windows, macOS, or Linux
-- Optional: PM2 for a persistent background daemon
+Node.js 20+ and at least one supported agent. Works on macOS, Linux, and
+Windows. Bug-log full-text search uses Node's built-in SQLite on 22.5+ and
+falls back to a simpler matcher below that.
 
 ## Limitations
 
-- Estimated figures use a character-ratio heuristic (accurate to roughly
-  15%); measured figures come from harness transcripts and are exact.
-- Hook coverage varies by agent: Claude Code and Codex have full lifecycle
-  hooks, OpenCode uses its plugin events, Gemini CLI and Cursor are
-  context-only integrations.
-- Protocol compliance (updating cerebrum, logging bugs) depends on the model
-  following instructions; the hooks enforce what can be enforced and remind
-  about the rest.
-- Found something broken? [File an issue](https://github.com/nottyjay/openwolf/issues).
+- Estimates use a character-ratio heuristic. Measured and verified numbers
+  come from transcripts and the rewrite point.
+- The Bash governor and decay re-injection currently run on Claude Code.
+  Codex and OpenCode get the core lifecycle hooks; Gemini and Cursor are
+  context-only.
+- Protocol compliance still depends on the model. Hooks enforce what can be
+  enforced and measure the rest.
+
+Found something broken? [File an issue](https://github.com/nottyjay/openwolf/issues).
+
+## Contributors
+
+OpenWolf is better because people fixed it. Every merged contribution is credited here. Kindly let us know if we have missed a contribution.
+
+| | | | | |
+|:-:|:-:|:-:|:-:|:-:|
+| [<img src="https://github.com/fsener.png" width="60"/>](https://github.com/fsener)<br/>**fsener** | [<img src="https://github.com/albertomenache.png" width="60"/>](https://github.com/albertomenache)<br/>**albertomenache** | [<img src="https://github.com/whydoyouwork.png" width="60"/>](https://github.com/whydoyouwork)<br/>**whydoyouwork** | [<img src="https://github.com/mann1x.png" width="60"/>](https://github.com/mann1x)<br/>**mann1x** | [<img src="https://github.com/GordongWang.png" width="60"/>](https://github.com/GordongWang)<br/>**GordongWang** |
+| [<img src="https://github.com/WeathermanTony.png" width="60"/>](https://github.com/WeathermanTony)<br/>**WeathermanTony** | [<img src="https://github.com/goashem.png" width="60"/>](https://github.com/goashem)<br/>**goashem** | [<img src="https://github.com/bryandent.png" width="60"/>](https://github.com/bryandent)<br/>**bryandent** | [<img src="https://github.com/levnikmyskin.png" width="60"/>](https://github.com/levnikmyskin)<br/>**levnikmyskin** | [<img src="https://github.com/svanack404.png" width="60"/>](https://github.com/svanack404)<br/>**svanack404** |
+| [<img src="https://github.com/riverwolf67.png" width="60"/>](https://github.com/riverwolf67)<br/>**riverwolf67** | [<img src="https://github.com/nottyjay.png" width="60"/>](https://github.com/nottyjay)<br/>**nottyjay** | [<img src="https://github.com/alfasin.png" width="60"/>](https://github.com/alfasin)<br/>**alfasin** | [<img src="https://github.com/ChasLui.png" width="60"/>](https://github.com/ChasLui)<br/>**ChasLui** | [<img src="https://github.com/JarrodAI.png" width="60"/>](https://github.com/JarrodAI)<br/>**JarrodAI** |
+| [<img src="https://github.com/meketreve.png" width="60"/>](https://github.com/meketreve)<br/>**meketreve** | [<img src="https://github.com/Laptopcorei7.png" width="60"/>](https://github.com/Laptopcorei7)<br/>**Laptopcorei7** | [<img src="https://github.com/statik1.png" width="60"/>](https://github.com/statik1)<br/>**statik1** | [<img src="https://github.com/spignataro.png" width="60"/>](https://github.com/spignataro)<br/>**spignataro** | [<img src="https://github.com/Esturban.png" width="60"/>](https://github.com/Esturban)<br/>**Esturban** |
+| [<img src="https://github.com/prghbla.png" width="60"/>](https://github.com/prghbla)<br/>**prghbla** | [<img src="https://github.com/1re2turn1.png" width="60"/>](https://github.com/1re2turn1)<br/>**1re2turn1** | [<img src="https://github.com/aevnar.png" width="60"/>](https://github.com/aevnar)<br/>**aevnar** | [<img src="https://github.com/davdittrich.png" width="60"/>](https://github.com/davdittrich)<br/>**davdittrich** | [<img src="https://github.com/krsfer.png" width="60"/>](https://github.com/krsfer)<br/>**krsfer** |
+| [<img src="https://github.com/kantorcodes.png" width="60"/>](https://github.com/kantorcodes)<br/>**kantorcodes** | | | | |
+
+## License
+
+[AGPL-3.0](LICENSE)
 
 ## Acknowledgments
 
 This project is based on the original **[OpenWolf](https://github.com/cytostack/openwolf)**
 by [Cytostack](https://github.com/cytostack) / Farhan Palathinkal Afsal.
 Thank you to the upstream authors and contributors for the architecture,
-hooks, and ongoing improvements. This fork tracks upstream business features
-while publishing as `@alptech/openwolf`.
-
-Upstream repository: https://github.com/cytostack/openwolf
-
-## License
-
-[AGPL-3.0](LICENSE)
+hooks, and ongoing improvements.
 
 ## Author
 
-Original project by Farhan Palathinkal Afsal — [Cytostack](https://github.com/cytostack).
+Original project by Farhan Palathinkal Afsal, [Cytostack](https://github.com/cytostack).
 Maintained as `@alptech/openwolf` by [alptech](https://github.com/nottyjay) / [@nottyjay](https://github.com/nottyjay).

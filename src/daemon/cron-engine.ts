@@ -1,10 +1,17 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { execFileSync, spawnSync } from "node:child_process";
-import cron, { type ScheduledTask } from "node-cron";
+import { execFileSync } from "node:child_process";
+import cron from "node-cron";
 import { readJSON, writeJSON, readText, writeText, appendText } from "../utils/fs-safe.js";
 import { scanProject } from "../scanner/anatomy-scanner.js";
 import { detectWaste } from "../tracker/waste-detector.js";
+import { scanProjectUsage, projectTranscriptDir } from "../tracker/transcript-usage.js";
+import { readUsageSequence, attributeCacheRebuilds, type CacheRebuild } from "../tracker/cache-attribution.js";
+import { mutateJSON } from "../hooks/anatomy-lock.js";
+
+// Cron writers are daemon-side and can afford to wait longer than a hook.
+const CRON_LOCK_BUDGET_MS = 5_000;
+import { loadStore, quickStaleCheck } from "../hooks/anatomy-store.js";
 import type { Logger } from "../utils/logger.js";
 
 interface CronAction {
@@ -44,12 +51,27 @@ interface CronState {
   upcoming: unknown[];
 }
 
+/**
+ * Typed not-found at the runTask() boundary, mapped to HTTP 404 / nonzero CLI
+ * exit. Issue #87, reported with PR #111 by @davdittrich.
+ */
+export class CronTaskNotFoundError extends Error {
+  readonly taskId: string;
+  readonly knownTaskIds: string[];
+  constructor(taskId: string, knownTaskIds: string[] = []) {
+    super(`Task not found: ${taskId}`);
+    this.name = "CronTaskNotFoundError";
+    this.taskId = taskId;
+    this.knownTaskIds = knownTaskIds;
+  }
+}
+
 export class CronEngine {
   private wolfDir: string;
   private projectRoot: string;
   private logger: Logger;
   private broadcast: (msg: unknown) => void;
-  private scheduledTasks: ScheduledTask[] = [];
+  private scheduledTasks: cron.ScheduledTask[] = [];
   private failureCounts = new Map<string, number>();
 
   constructor(
@@ -89,12 +111,21 @@ export class CronEngine {
     this.scheduledTasks = [];
   }
 
+  /**
+   * Run one task by id.
+   *
+   * Throws CronTaskNotFoundError for an unknown id. It used to log a warning
+   * and resolve normally, so the HTTP endpoint answered 200 and the CLI
+   * printed "task triggered" for a task that does not exist: automation could
+   * not tell an executed task from a typo, and a renamed or deleted task kept
+   * reporting success forever (#87).
+   */
   async runTask(taskId: string): Promise<void> {
     const manifest = this.readManifest();
     const task = manifest.tasks.find((t) => t.id === taskId);
     if (!task) {
       this.logger.warn(`Task not found: ${taskId}`);
-      return;
+      throw new CronTaskNotFoundError(taskId, manifest.tasks.map((t) => t.id));
     }
     await this.executeTask(task);
   }
@@ -117,6 +148,30 @@ export class CronEngine {
     writeJSON(path.join(this.wolfDir, "cron-state.json"), state);
   }
 
+  /**
+   * Locked read-modify-write for cron-state.json: the daemon heartbeat and
+   * websocket handlers write it concurrently, and unlocked interleaves
+   * dropped execution-log / dead-letter entries.
+   */
+  private mutateState(mutator: (state: CronState) => void): boolean {
+    // No unlocked fallback. Writing anyway after the budget expires defeats
+    // the lock for every writer that respects it: the heartbeat, task, and
+    // websocket paths could then overwrite one another exactly as if no lock
+    // existed (#86). On contention we report failure and let the caller log
+    // it; cron state converges on the next heartbeat or execution.
+    const written = mutateJSON<CronState>(
+      path.join(this.wolfDir, "cron-state.json"),
+      { last_heartbeat: null, engine_status: "running", execution_log: [], dead_letter_queue: [], upcoming: [] },
+      CRON_LOCK_BUDGET_MS,
+      (state) => { mutator(state); },
+    );
+    if (written === null) {
+      this.logger.warn("cron-state.json is locked by another writer; state update skipped this round");
+      return false;
+    }
+    return true;
+  }
+
   private async executeTask(task: CronTask): Promise<void> {
     const startTime = Date.now();
     this.logger.info(`Executing task: ${task.name}`);
@@ -126,18 +181,18 @@ export class CronEngine {
       const duration = Date.now() - startTime;
 
       // Log success
-      const state = this.readState();
-      state.execution_log.push({
-        task_id: task.id,
-        status: "success",
-        timestamp: new Date().toISOString(),
-        duration_ms: duration,
+      this.mutateState((state) => {
+        state.execution_log.push({
+          task_id: task.id,
+          status: "success",
+          timestamp: new Date().toISOString(),
+          duration_ms: duration,
+        });
+        // Keep last 100 entries
+        if (state.execution_log.length > 100) {
+          state.execution_log = state.execution_log.slice(-100);
+        }
       });
-      // Keep last 100 entries
-      if (state.execution_log.length > 100) {
-        state.execution_log = state.execution_log.slice(-100);
-      }
-      this.writeState(state);
 
       this.failureCounts.set(task.id, 0);
       this.broadcast({
@@ -164,25 +219,24 @@ export class CronEngine {
         }, delay);
       } else {
         // Dead letter or skip
-        const state = this.readState();
-        state.execution_log.push({
-          task_id: task.id,
-          status: "failed",
-          timestamp: new Date().toISOString(),
-          duration_ms: duration,
-          error: errorMsg,
-        });
-
-        if (task.failsafe.dead_letter) {
-          state.dead_letter_queue.push({
+        this.mutateState((state) => {
+          state.execution_log.push({
             task_id: task.id,
-            error: errorMsg,
+            status: "failed",
             timestamp: new Date().toISOString(),
-            attempts: failures,
+            duration_ms: duration,
+            error: errorMsg,
           });
-        }
 
-        this.writeState(state);
+          if (task.failsafe.dead_letter) {
+            state.dead_letter_queue.push({
+              task_id: task.id,
+              error: errorMsg,
+              timestamp: new Date().toISOString(),
+              attempts: failures,
+            });
+          }
+        });
         this.failureCounts.set(task.id, 0);
       }
 
@@ -209,9 +263,17 @@ export class CronEngine {
 
   private async runAction(action: CronAction): Promise<void> {
     switch (action.type) {
-      case "scan_project":
-        scanProject(this.wolfDir, this.projectRoot);
+      case "scan_project": {
+        // 2.4 freshness without nagging: scan only when the index is actually
+        // stale (stat sweep of indexed files) or git HEAD moved — the blind
+        // 6h interval rescanned fresh indexes and still missed fast staleness.
+        if (this.anatomyIsFresh()) {
+          this.logger.info("anatomy rescan skipped: index matches the tree (stat sweep + git HEAD)");
+          break;
+        }
+        await scanProject(this.wolfDir, this.projectRoot);
         break;
+      }
 
       case "consolidate_memory":
         this.consolidateMemory(action.params?.older_than_days as number ?? 7);
@@ -221,12 +283,40 @@ export class CronEngine {
         this.generateTokenReport();
         break;
 
+      // 2.5: OpenWolf makes no model calls of any kind. The old "ai_task"
+      // action shelled out to `claude -p`, which is the one thing that made
+      // "local file I/O only, no API calls" untrue. Tasks of this type are
+      // left in place but refused, so a stale manifest fails loudly instead
+      // of silently reaching the network.
       case "ai_task":
-        await this.runAiTask(action.params as { prompt: string; context_files: string[] });
-        break;
+        throw new Error(
+          "ai_task is no longer supported: OpenWolf makes no model calls. Remove this task from .wolf/cron-manifest.json."
+        );
 
       default:
         throw new Error(`Unknown action type: ${action.type}`);
+    }
+  }
+
+  /** True when the anatomy index still matches the tree (2.4 stale gating). */
+  private anatomyIsFresh(): boolean {
+    try {
+      const store = loadStore(this.wolfDir);
+      if (!store || Object.keys(store.files).length === 0) return false;
+      // git HEAD moved since the last scan: branch switches/pulls add files
+      // the stat sweep cannot see (it only checks indexed paths).
+      try {
+        const state = readJSON<{ git_head?: string | null }>(path.join(this.wolfDir, "_scan-state.json"), {});
+        if (state.git_head) {
+          const head = execFileSync("git", ["rev-parse", "HEAD"], {
+            cwd: this.projectRoot, encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 3000,
+          }).trim();
+          if (head && head !== state.git_head) return false;
+        }
+      } catch {}
+      return !quickStaleCheck(store, this.projectRoot).stale;
+    } catch {
+      return false;
     }
   }
 
@@ -244,15 +334,26 @@ export class CronEngine {
     let oldSessionLines: string[] = [];
     let currentSessionDate: Date | null = null;
 
+    // Idempotent: a session already reduced to its "> Consolidated session"
+    // marker has zero table rows; recounting would rewrite it as "(0 actions)"
+    // and destroy the original count on every re-run.
+    const flushOldSession = () => {
+      if (!inOldSession || oldSessionLines.length === 0) return;
+      const existingMarker = oldSessionLines.find((l) => l.startsWith("> Consolidated session"));
+      if (existingMarker) {
+        result.push(existingMarker);
+        result.push("");
+        return;
+      }
+      const actionCount = oldSessionLines.filter((l) => l.startsWith("|") && !l.startsWith("|--") && !l.startsWith("| Time")).length;
+      result.push(`> Consolidated session (${actionCount} actions)`);
+      result.push("");
+    };
+
     for (const line of lines) {
       const sessionMatch = line.match(/^## Session: (\d{4}-\d{2}-\d{2})/);
       if (sessionMatch) {
-        // Flush previous old session
-        if (inOldSession && oldSessionLines.length > 0) {
-          const actionCount = oldSessionLines.filter((l) => l.startsWith("|") && !l.startsWith("|--") && !l.startsWith("| Time")).length;
-          result.push(`> Consolidated session (${actionCount} actions)`);
-          result.push("");
-        }
+        flushOldSession();
 
         currentSessionDate = new Date(sessionMatch[1]);
         if (currentSessionDate < cutoff) {
@@ -273,127 +374,62 @@ export class CronEngine {
       }
     }
 
-    // Flush last old session
-    if (inOldSession && oldSessionLines.length > 0) {
-      const actionCount = oldSessionLines.filter((l) => l.startsWith("|") && !l.startsWith("|--") && !l.startsWith("| Time")).length;
-      result.push(`> Consolidated session (${actionCount} actions)`);
-      result.push("");
-    }
+    flushOldSession();
 
     writeText(memoryPath, result.join("\n"));
   }
 
   private generateTokenReport(): void {
     const flags = detectWaste(this.wolfDir);
-    const ledgerPath = path.join(this.wolfDir, "token-ledger.json");
-    const ledger = readJSON<Record<string, unknown>>(ledgerPath, {});
-    (ledger as { waste_flags: unknown[] }).waste_flags = flags;
-    (ledger as { optimization_report: { last_generated: string; patterns: unknown[] } }).optimization_report = {
-      last_generated: new Date().toISOString(),
-      patterns: flags.map((f) => f.pattern),
-    };
-    writeJSON(ledgerPath, ledger);
-  }
-
-  private hasClaude(): boolean {
+    // Ground truth (J1): scan every harness transcript for this project —
+    // including subagent sidechains and sessions the Stop hook never saw.
+    // Scanned OUTSIDE the lock; only the result assignment happens inside.
+    let measured: ReturnType<typeof scanProjectUsage> = null;
     try {
-      execFileSync(process.platform === "win32" ? "where" : "which", ["claude"], { stdio: "ignore" });
-      return true;
-    } catch {
-      return false;
-    }
-  }
+      measured = scanProjectUsage(this.projectRoot);
+    } catch {}
 
-  private async runAiTask(params: { prompt: string; context_files: string[] }): Promise<void> {
-    if (!this.hasClaude()) {
-      throw new Error("Claude CLI not found. Install it from https://claude.ai/download or add it to PATH.");
-    }
-
-    const contextParts: string[] = [];
-    const contextFiles = Array.isArray(params.context_files) ? params.context_files : [];
-    for (const file of contextFiles) {
-      if (typeof file !== "string") continue;
-      try {
-        const filePath = this.resolveProjectContextFile(file);
-        contextParts.push(`--- ${file} ---\n${fs.readFileSync(filePath, "utf-8")}`);
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : "not found";
-        contextParts.push(`--- ${file} --- (${reason})`);
-      }
-    }
-
-    const fullPrompt = `${params.prompt}\n\n---\nContext:\n${contextParts.join("\n\n")}`;
-
+    // Cache-invalidation attribution (2.2): name what broke the prompt cache
+    // and what it cost, per recent transcript. Nothing else in the ecosystem
+    // attributes this, and it is the largest single waste class.
+    let cacheRebuilds: { generated_at: string; by_cause: Record<string, { events: number; tokens: number }>; recent: CacheRebuild[] } | null = null;
     try {
-      // Use spawnSync to pipe prompt via stdin — avoids command-line length limits on Windows
-      // claude -p (no argument) reads prompt from stdin
-      // Strip ANTHROPIC_API_KEY so claude uses OAuth subscription credentials
-      // instead of a potentially depleted API key
-      const env = { ...process.env };
-      delete env.ANTHROPIC_API_KEY;
-
-      const claudeBin = process.platform === "win32" ? "claude.cmd" : "claude";
-      const proc = spawnSync(claudeBin, ["-p", "--output-format", "text"], {
-        input: fullPrompt,
-        timeout: 120000,
-        encoding: "utf-8",
-        cwd: this.projectRoot,
-        env,
-        stdio: ["pipe", "pipe", "pipe"],
-        windowsHide: true,
-      });
-
-      if (proc.error) {
-        throw proc.error;
-      }
-
-      if (proc.status !== 0) {
-        const stderr = proc.stderr?.trim();
-        const stdout = proc.stdout?.trim();
-        const errMsg = stderr || stdout || "Unknown error";
-        throw new Error(`Exit code ${proc.status}: ${errMsg}`);
-      }
-
-      let result = (proc.stdout || "").replace(/\r\n/g, "\n").trim();
-
-      // Strip markdown code fences if present (```markdown ... ``` or ```json ... ```)
-      const fenceMatch = result.match(/```[\w]*\n([\s\S]*?)\n```/);
-      if (fenceMatch) {
-        result = fenceMatch[1].trim();
-      }
-
-      // Write result to suggestions.json if it looks like JSON
-      try {
-        const parsed = JSON.parse(result);
-        writeJSON(path.join(this.wolfDir, "suggestions.json"), {
-          generated_at: new Date().toISOString(),
-          ...parsed,
-        });
-      } catch {
-        // Not JSON, might be a cerebrum update
-        if (result.includes("## User Preferences") || result.includes("## Key Learnings") || result.includes("# Cerebrum")) {
-          writeText(path.join(this.wolfDir, "cerebrum.md"), result);
+      const dir = projectTranscriptDir(this.projectRoot);
+      const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
+      const byCause: Record<string, { events: number; tokens: number }> = {};
+      const recent: CacheRebuild[] = [];
+      for (const f of fs.readdirSync(dir)) {
+        if (!f.endsWith(".jsonl")) continue;
+        const p = path.join(dir, f);
+        try {
+          if (fs.statSync(p).mtimeMs < cutoff) continue;
+        } catch { continue; }
+        const seq = readUsageSequence(p);
+        if (!seq) continue;
+        const report = attributeCacheRebuilds(seq.calls, seq.compactions);
+        for (const r of report.rebuilds) {
+          const bucket = byCause[r.cause] ?? (byCause[r.cause] = { events: 0, tokens: 0 });
+          bucket.events++;
+          bucket.tokens += r.creation_tokens;
+          recent.push(r);
         }
       }
-    } catch (err) {
-      throw new Error(`claude -p failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  private resolveProjectContextFile(file: string): string {
-    if (file.includes("\0")) {
-      throw new Error("invalid path");
-    }
-
-    const root = fs.realpathSync(this.projectRoot);
-    const requested = path.resolve(this.projectRoot, file);
-    const resolved = fs.realpathSync(requested);
-    const relative = path.relative(root, resolved);
-
-    if (relative.startsWith("..") || path.isAbsolute(relative)) {
-      throw new Error("outside project root");
-    }
-
-    return resolved;
+      if (recent.length > 0) {
+        recent.sort((a, b) => (b.timestamp ?? "").localeCompare(a.timestamp ?? ""));
+        cacheRebuilds = { generated_at: new Date().toISOString(), by_cause: byCause, recent: recent.slice(0, 8) };
+      }
+    } catch {}
+    const ledgerPath = path.join(this.wolfDir, "token-ledger.json");
+    // Same lock the hooks' ledger writer uses: an unlocked rewrite here could
+    // clobber a concurrent Stop-hook flush and lose whole sessions.
+    mutateJSON<Record<string, unknown>>(ledgerPath, {}, CRON_LOCK_BUDGET_MS, (ledger) => {
+      (ledger as { waste_flags: unknown[] }).waste_flags = flags;
+      if (measured) (ledger as { measured_project: unknown }).measured_project = measured;
+      if (cacheRebuilds) (ledger as { cache_rebuilds: unknown }).cache_rebuilds = cacheRebuilds;
+      (ledger as { optimization_report: { last_generated: string; patterns: unknown[] } }).optimization_report = {
+        last_generated: new Date().toISOString(),
+        patterns: flags.map((f) => f.pattern),
+      };
+    });
   }
 }

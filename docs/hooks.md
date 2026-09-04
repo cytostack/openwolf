@@ -1,160 +1,153 @@
 # Hooks
 
-OpenWolf registers 6 hooks with Claude Code. They fire automatically on every action. No user interaction required.
+OpenWolf registers 12 lifecycle hooks. The same scripts serve Claude Code
+and Codex (OpenCode uses a native plugin with equivalent behavior). They run
+automatically; you never interact with them.
 
-All hooks are **pure Node.js file I/O**. No network calls, no AI, no external dependencies. They read JSON on stdin from Claude Code and communicate via exit codes and stderr.
+All hooks are pure Node.js file I/O: no network calls, no AI, no external
+dependencies. They read JSON on stdin from the agent and answer through the
+platform's documented hook output channel, so everything they say actually
+reaches the model.
 
-## Hook Lifecycle
+Three properties hold for every hook:
 
-```
-┌──────────────┐
-│ Claude Code   │
-│ session start │──→  session-start.js  ──→ creates _session.json, logs to memory.md
-└──────┬───────┘
-       │
-       ▼
-┌──────────────┐      ┌──────────────┐
-│ Claude wants  │──→   │ pre-read.js  │──→ warns on repeated reads, shows anatomy info
-│ to READ      │      └──────────────┘
-└──────┬───────┘
-       │ (read happens)
-       ▼
-┌──────────────┐      ┌──────────────┐
-│ Read complete │──→   │ post-read.js │──→ estimates tokens, records to _session.json
-└──────────────┘      └──────────────┘
+- **Never blocking by surprise.** Hooks advise and measure. The only
+  gate-shaped behavior (duplicate-read denial) is off by default and
+  one-shot when enabled.
+- **Never permission-bypassing.** No hook ever auto-approves a tool call.
+- **Provably alive.** Every hook records a heartbeat (last success, last
+  error, consecutive failures) in `.wolf/hooks/_heartbeat.json`. Session
+  start self-tests the install; `openwolf update` runs a per-hook selfcheck
+  and fails loudly if anything cannot load.
 
-┌──────────────┐      ┌───────────────┐
-│ Claude wants  │──→   │ pre-write.js  │──→ checks cerebrum Do-Not-Repeat patterns
-│ to WRITE     │      └───────────────┘
-└──────┬───────┘
-       │ (write happens)
-       ▼
-┌──────────────┐      ┌────────────────┐
-│ Write done    │──→   │ post-write.js  │──→ updates anatomy.md, appends to memory.md
-└──────────────┘      └────────────────┘
-
-┌──────────────┐      ┌──────────┐
-│ Claude stops  │──→   │ stop.js  │──→ writes session summary to token-ledger.json
-└──────────────┘      └──────────┘
-```
+Session state lives in `.wolf/hooks/sessions/<session-id>.json`, keyed by
+the harness's own session id, so concurrent sessions in the same project
+never contaminate each other's tracking.
 
 ## `session-start.js`
 
-**Fires:** When a Claude Code session begins.
+Fires when a session begins (startup, resume, clear, or compact).
 
-**What it does:**
-1. Creates a fresh `_session.json` in `.wolf/hooks/` with a unique session ID
-2. Appends a session header to `.wolf/memory.md` with a table template
-3. Increments the `total_sessions` counter in `token-ledger.json`
+1. Self-tests the installed hooks: every script's imports must resolve.
+   Breakage is reported in the digest with a repair instruction.
+2. Creates the session state file and appends a session header to
+   `memory.md` (new sessions only).
+3. Injects the state index: one line per live `.wolf` file with its
+   description, size, and freshness, plus the top Do-Not-Repeat rules and
+   the current STATUS handoff. Target size is about 400 tokens. Template
+   placeholder text is never injected. Files whose frontmatter says
+   `always: true` inject their content, budget-capped.
+4. On compaction: re-injects the in-flight state (files already modified),
+   the top rules, and the contents of path-scoped rules matching files this
+   session touched. The platform documents those rules as lost at
+   compaction; this puts them back.
 
-**Timeout:** 5 seconds
+## `user-prompt-submit.js`
 
----
+Delivers reminders queued by the Stop hook alongside your next prompt.
+Queued delivery costs zero extra model turns; Stop-level injection would
+force a full continuation turn per reminder.
 
 ## `pre-read.js`
 
-**Fires:** Before Claude reads any file (via the Read tool).
+Fires before the Read tool runs.
 
-**Stdin:** `{ "tool_name": "Read", "tool_input": { "file_path": "src/index.ts" } }`
-
-**What it does:**
-1. Checks if this file was already read this session
-2. If repeated: writes a warning to stderr. _"⚡ OpenWolf: file.ts was already read this session (~380 tokens)"_
-3. Looks up the file in `anatomy.md` and prints the description. _"📋 OpenWolf anatomy: file.ts, Main entry point (~380 tok)"_
-4. Records anatomy hit or miss in the session tracker
-
-**Behavior:** Always exits 0 (allows the read). Warnings only, never blocks.
-
-**Timeout:** 5 seconds
-
----
+- First contact with a file: surfaces the anatomy description, and for large
+  files either the biggest symbols with line ranges or a signature outline,
+  so the agent can read a slice with `offset`/`limit` instead of the whole
+  file. Hints are suppressed if the file changed since indexing.
+- Repeat full read of an unchanged file: a short factual advisory. Ranged
+  reads are tracked separately and never make a later full read look like a
+  duplicate.
+- Whole-file reads of `.wolf/anatomy.md` or `cerebrum.md`: once per session,
+  points at the cheap alternative (`openwolf find`, section greps).
+- With `reads.duplicate_mode: "deny"` (off by default): a duplicate full
+  read of an unchanged file is denied once, with a pass-through on retry so
+  the model is never stranded.
 
 ## `pre-write.js`
 
-**Fires:** Before Claude writes, edits, or multi-edits any file.
+Fires before Write, Edit, or MultiEdit.
 
-**Stdin:** `{ "tool_name": "Write", "tool_input": { "file_path": "...", "content": "..." } }`
+1. Checks the edit against the cerebrum Do-Not-Repeat list.
+2. Searches the bug log for relevant past fixes (full-text, keyed by error
+   signature, with a precision gate) and surfaces up to two as FYI, not
+   directives.
 
-**What it does:**
-1. Reads `cerebrum.md` and extracts entries from the `## Do-Not-Repeat` section
-2. For each entry, checks if the content being written contains flagged patterns
-3. If matched: writes a warning to stderr. _"⚠️ OpenWolf cerebrum warning: 'never use var', check your code"_
+## `pre-bash.js`
 
-**Pattern matching:** Simple regex on quoted strings and "never use X" / "avoid X" phrases. No LLM involved.
+Fires before Bash runs. If the command is a known flood producer (test
+runners, builds) and is not already shaped (no redirect, no head/tail), it
+suggests capping the output, once per command family per session.
 
-**Behavior:** Always exits 0 (allows the write). Warnings only, never blocks.
+## `post-bash.js`
 
-**Timeout:** 5 seconds
+Fires after Bash completes. The output governor:
 
----
+1. If stdout exceeds the threshold (default 2,000 tokens), condenses it by
+   command family: grep floods keep first matches per file plus counts,
+   `git show` keeps the header and diff stats, file re-prints keep head and
+   tail. Test and build output is suggested-only by default. stderr is never
+   touched.
+2. Writes the full output to `.wolf/cache/bash/<id>.log` and ends the
+   condensed result with a pointer to it.
+3. Records original tokens versus entered tokens in the ledger. This is the
+   only place that delta can be measured; the platform's telemetry records
+   output before hooks run.
+4. Parses simple `cat`/`head`/`tail`/`sed` commands and registers those
+   reads in session tracking. A repeated full `cat` of an unchanged file
+   gets an advisory.
 
 ## `post-read.js`
 
-**Fires:** After Claude successfully reads a file.
-
-**Stdin:** `{ "tool_input": { "file_path": "..." }, "tool_output": { "content": "..." } }`
-
-**What it does:**
-1. Estimates token count of the file content (character ratio based on file extension)
-2. Updates the file's entry in `_session.json` with the actual token count
-
-**Timeout:** 5 seconds
-
----
+Records the real size of completed full reads into session tracking. Ranged
+reads are marked as ranged contact. Reads of `.wolf/` files are measured
+separately so OpenWolf's own context cost is visible, not hidden.
 
 ## `post-write.js`
 
-**Fires:** After Claude writes, edits, or multi-edits a file. This is the most important hook.
+The busiest hook.
 
-**Stdin:** `{ "tool_name": "Write", "tool_input": { "file_path": "...", "content": "..." } }`
+1. Updates the anatomy entry for the written file (description, tokens,
+   hash, symbols) under a cross-process lock and re-renders `anatomy.md`.
+   Secret-bearing files are never indexed.
+2. Appends the action to `memory.md` with a change summary.
+3. Tracks edit counts; a file edited three or more times gets one reminder
+   per session to log the bug.
+4. For `.wolf/` state files: enforces the token budget (cerebrum 2k, STATUS
+   1k by default) with one factual warning per session when a write exceeds
+   it.
 
-**What it does:**
-1. **Updates `anatomy.md`**: reads the written file, extracts a description, estimates tokens, upserts the entry in the correct directory section. Writes atomically (temp + rename).
-2. **Appends to `memory.md`**: logs the action with timestamp, file path, and token estimate.
-3. **Records in `_session.json`**: file, action type, tokens, timestamp.
+## `post-batch.js`
 
-**Timeout:** 10 seconds (longer because anatomy update involves file parsing)
+Fires after each batch of tool calls. Every N batches (default 25,
+`context.reinjection_interval`, 0 disables) it re-surfaces the top
+Do-Not-Repeat rules in one short note. This targets within-session
+instruction decay, the one effect a 1,650-session controlled study actually
+found.
 
----
+## `precompact.js`
+
+Snapshots the session state just before the harness compacts the context
+window. The restore happens in `session-start.js` when the session
+continues.
 
 ## `stop.js`
 
-**Fires:** When Claude finishes a response.
+Fires when the agent finishes a response.
 
-**What it does:**
-1. Reads `_session.json` for accumulated session data
-2. If there's been any activity (reads or writes):
-   - Builds a session entry with read/write totals
-   - Appends the session to `token-ledger.json`
-   - Updates lifetime counters
-   - Calculates estimated savings (anatomy hits + blocked repeated reads)
+1. Upserts the session's ledger entry (idempotent: Stop fires every turn).
+2. Reads measured usage from the transcript: input, output, cache read,
+   cache write, per model.
+3. Verifies delivery against the transcript's own hook records: which hooks
+   fired, which failed, and which injected context provably entered the
+   conversation. When verification is unavailable, self-reported numbers are
+   labeled estimates.
+4. Queues end-of-turn reminders (missing bug logs, stale cerebrum, missing
+   session summary), each at most once per session, for delivery with your
+   next prompt.
 
-**Note:** The stop hook fires every time Claude finishes a response, not just at session end. It only writes to the ledger when there's significant data.
+## `session-end.js`
 
-**Timeout:** 10 seconds
-
----
-
-## Session State (`_session.json`)
-
-An ephemeral file in `.wolf/hooks/` that tracks the current session:
-
-```json
-{
-  "session_id": "session-2026-03-09-1430",
-  "started": "2026-03-09T14:30:00Z",
-  "files_read": {
-    "src/index.ts": { "count": 1, "tokens": 380, "first_read": "..." }
-  },
-  "files_written": [
-    { "file": "src/api.ts", "action": "edit", "tokens": 620, "at": "..." }
-  ],
-  "anatomy_hits": 4,
-  "anatomy_misses": 1,
-  "repeated_reads_warned": 1,
-  "cerebrum_warnings": 0,
-  "stop_count": 0
-}
-```
-
-This file is deleted and recreated on each `SessionStart`. It does not persist across sessions.
+Final ledger flush on clear/logout/exit, plus a one-line session summary in
+`memory.md`.

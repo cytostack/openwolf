@@ -1,157 +1,183 @@
 # How It Works
 
-OpenWolf operates as invisible middleware between you and Claude Code. It has three layers: the `.wolf/` directory (state), hooks (enforcement), and optional features (Design QC, Reframe, daemon).
+OpenWolf is invisible middleware between you and your coding agent. It has
+three layers: the `.wolf/` directory (state), lifecycle hooks (enforcement
+and measurement), and optional extras (dashboard, daemon, skills).
 
-## The `.wolf/` Directory
-
-Every OpenWolf project has a `.wolf/` folder containing:
+## The `.wolf/` directory
 
 | File | Purpose |
 |------|---------|
-| `OPENWOLF.md` | Master instructions Claude follows every turn |
-| `anatomy.md` | File index with descriptions and token estimates |
-| `cerebrum.md` | Learned preferences, conventions, and Do-Not-Repeat list |
-| `memory.md` | Chronological action log (append-only per session) |
-| `identity.md` | Project name, AI role, constraints |
-| `config.json` | OpenWolf configuration |
-| `token-ledger.json` | Lifetime token usage statistics |
-| `buglog.json` | Bug encounter/resolution memory |
-| `cron-manifest.json` | Scheduled task definitions |
-| `cron-state.json` | Cron execution state and dead letter queue |
-| `suggestions.json` | AI-generated project improvement suggestions |
-| `designqc-report.json` | Design QC capture metadata and results |
-| `reframe-frameworks.md` | UI framework knowledge base for Reframe |
+| `anatomy-index.json` | Durable project index: descriptions, token estimates, content hashes, symbols with line ranges, and the import graph |
+| `anatomy.md` | Human-readable render of the index, kept in sync automatically |
+| `cerebrum.md` | Learned preferences, conventions, and the Do-Not-Repeat list. Budgeted at 2k tokens |
+| `memory.md` | Chronological action log, one block per session |
+| `STATUS.md` | Session handoff. Regenerate with `/handoff`. Budgeted at 1k tokens |
+| `buglog.json` | Bug and fix memory with full-text search |
+| `token-ledger.json` | Measured, estimated, and transcript-verified usage |
+| `config.json` | Configuration: governor, budgets, cadences, ports |
+| `hooks/` | The compiled hook scripts, session state, and health heartbeats |
+| `cache/bash/` | Verbatim copies of every governed Bash output |
+| `.gitignore` | Splits committed state from machine-local runtime |
+| `OPENWOLF.md` | The operating protocol, for agents without a skill surface |
 
-**Markdown is source of truth** for human-readable state. JSON is for machine-readable state only.
+The split matters: cerebrum, STATUS, buglog, and the index are meant to be
+committed. They travel through git and code review, so conventions and known
+fixes reach every teammate and every agent. Ledgers, caches, and hook state
+stay machine-local.
 
-## Hooks -- The Enforcement Layer
+## Hooks
 
-OpenWolf registers 6 hooks with Claude Code via `.claude/settings.json`. These fire automatically:
+OpenWolf registers 12 lifecycle hooks through the agent's own hook system
+(`.claude/settings.json` for Claude Code, `.codex/hooks.json` for Codex, a
+native plugin for OpenCode):
 
 ```
-SessionStart ──→ session-start.js    Creates session tracker, logs to memory
-PreToolUse   ──→ pre-read.js         Warns on repeated reads, shows anatomy info
-PreToolUse   ──→ pre-write.js        Checks cerebrum Do-Not-Repeat patterns
-PostToolUse  ──→ post-read.js        Estimates and records token usage
-PostToolUse  ──→ post-write.js       Updates anatomy.md, appends to memory.md
-Stop         ──→ stop.js             Writes session summary to token-ledger
+SessionStart  ──→ session-start.js  Self-test, state index injection, compaction restore
+UserPromptSubmit → user-prompt-submit.js  Delivers queued reminders with the next prompt
+PreToolUse    ──→ pre-read.js       Duplicate-read advisories, anatomy and symbol hints
+PreToolUse    ──→ pre-write.js      Do-Not-Repeat checks, relevant past bug fixes
+PreToolUse    ──→ pre-bash.js       Suggests output caps for flood-prone commands
+PostToolUse   ──→ post-read.js      Records real read sizes
+PostToolUse   ──→ post-write.js     Index update under a lock, action log, state budgets
+PostToolUse   ──→ post-bash.js      The output governor and bash-channel read dedupe
+PostToolBatch ──→ post-batch.js     Rule re-injection every N batches
+PreCompact    ──→ precompact.js     Session snapshot before compaction
+Stop          ──→ stop.js           Ledger flush with measured and verified numbers
+SessionEnd    ──→ session-end.js    Final flush and session summary
 ```
 
-**Key design decisions:**
+Design rules that hold everywhere:
 
-- Hooks are **pure Node.js file I/O**. No network calls, no AI, no dependencies beyond Node stdlib
-- Hooks **warn but never block**. A pre-read warning about a repeated read still allows the read
-- Each hook has a **timeout** (5-10 seconds). They must be fast
-- Atomic writes (write to `.tmp`, rename) prevent corruption
+- Hooks are pure Node.js file I/O. No network, no AI calls, no dependencies.
+- Hooks never auto-approve tool calls. Output is condensed after execution;
+  permission decisions stay with you.
+- Nudges are factual statements delivered through the platform's context
+  channel, not warnings shouted into a log.
+- Every hook writes a heartbeat, so a broken hook is visible within one
+  session instead of weeks later.
+- Session state is keyed by the harness session id, so concurrent sessions
+  in one project never contaminate each other's tracking.
 
-## The Anatomy System
+## The Bash output governor
 
-`anatomy.md` is a structured index of every file in your project:
+Bash results are the largest single source of context waste: grep floods,
+`git show` dumps, test logs, whole files printed with `cat`. In our audit of
+16 live projects, Bash carried 48% of all tool-result tokens, and results
+over 2,000 tokens made up a quarter of that channel.
 
-```markdown
-## src/
+When a Bash result exceeds the threshold, the governor condenses it by
+command family before it reaches the model:
 
-- `index.ts` -- Main entry point. startServer() (~380 tok)
-- `server.ts` -- Express HTTP server configuration (~520 tok)
-```
+- **grep / rg floods**: first matches per file, per-file counts, a total.
+- **git show / git log -p / git diff**: commit header and per-file diff
+  stats; hunks are elided with counts.
+- **File re-prints** (`cat`, `sed -n`): a head-and-tail window.
+- **Test and build output**: never replaced by default. Those families get a
+  suggestion, because failure detail is worth more than tokens. stderr is
+  never modified by any family.
 
-When Claude wants to read a file, the pre-read hook tells it:
-> "anatomy.md says `server.ts` is 'Express HTTP server configuration' at ~520 tokens"
+The full output is always preserved at `.wolf/cache/bash/<id>.log` and every
+condensed result ends with a pointer to it. Condensation only happens when
+it saves at least 30%. Every family has its own switch in
+`openwolf.bash.governor`.
 
-If that description is enough, Claude can skip the full read. This is how OpenWolf saves tokens.
+For every governed call the ledger records original tokens versus tokens
+that entered context. This delta is unique ground truth: the platform's own
+telemetry captures tool output before hooks run, so only the hook doing the
+rewriting can measure what the model actually received.
 
-The anatomy is:
-- **Generated** by `openwolf scan` or `openwolf init`
-- **Updated incrementally** by the post-write hook whenever a file is created or edited
-- **Rescanned** every 6 hours by the daemon cron
+The same hook also parses simple `cat`/`head`/`tail`/`sed` commands and
+registers those reads in session tracking, because that is the channel where
+duplicate reads actually happen.
 
-## The Cerebrum -- Learning Memory
+## The anatomy system
 
-`cerebrum.md` has four sections:
+The index maps every file with a description, a token estimate, a content
+hash, and (for larger files) its symbols with exact line ranges, parsed with
+tree-sitter on scan. Supported for symbol extraction: TypeScript,
+JavaScript, Python, Go, Rust, Java, Ruby, PHP. Lockfiles, caches, minified
+files, and agent-config directories are never indexed.
 
-- **User Preferences** -- how you like things done (code style, tools, patterns)
-- **Key Learnings** -- project-specific conventions discovered during development
-- **Do-Not-Repeat** -- mistakes that must not recur, with dates
-- **Decision Log** -- significant technical decisions with rationale
+Agents consume the index three ways:
 
-When you correct Claude or express a preference, it updates the cerebrum. The pre-write hook then enforces Do-Not-Repeat rules on every subsequent write.
+1. **Hints.** Before a read, the pre-read hook surfaces the description and
+   the symbol map, so the agent can skip the read or fetch one function with
+   `offset`/`limit`. For big files it can serve a signature outline instead.
+2. **`openwolf find <query>`.** A ranked shortlist of matching symbols and
+   paths, capped near 1k tokens. `find --file <path>` prints one file's full
+   entry.
+3. **`openwolf map`.** A token-budgeted overview of the most important
+   files, ranked by personalized PageRank over the import graph. The ranking
+   is seeded by what this session has already touched and by `--focus`
+   terms, then fitted to the budget by binary search.
 
-The cerebrum is populated with your project's name and description during `openwolf init`, and is automatically reviewed and cleaned by the weekly AI reflection task.
+Freshness is handled without nagging the model: the index stores a root hash
+over every (path, content hash) pair, and a fast stat sweep answers "does
+this index still describe this tree". The daemon rescans only when the
+answer is no, or when git HEAD moved.
 
-## Design QC
+## The cerebrum and the decay problem
 
-Design QC is a capture-only tool. It takes screenshots; Claude does the evaluation.
+`cerebrum.md` holds user preferences, key learnings, a dated Do-Not-Repeat
+list, and a decision log. When you correct your agent, it writes the
+correction here. The pre-write hook then checks every edit against the
+Do-Not-Repeat list, and recalls relevant past bug fixes from `buglog.json`
+before the same mistake is re-made.
 
-### How it works
+Two mechanisms keep this working over long sessions:
 
-1. **Dev server detection** -- `openwolf designqc` checks common ports (3000, 3001, 5173, 5174, 4321, 8080, 8000, 4200) for a running dev server. If none is found, it starts one automatically using `npm run dev`, `pnpm dev`, or whatever start script your project defines.
+- **Re-injection cadence.** The only controlled study of instruction
+  adherence (1,650 sessions) found that compliance decays as the session
+  gets longer, and that instruction-file size has no measurable effect. So
+  instead of growing the file, OpenWolf re-surfaces the top rules in one
+  short note every 25 tool batches (configurable).
+- **Compaction restore.** The platform documents that path-scoped rules and
+  nested instructions are dropped at compaction until a matching file is
+  read again. When a session continues after compaction, OpenWolf re-injects
+  those rules for the files in flight, along with the top Do-Not-Repeat
+  rules and the list of files already modified.
 
-2. **Route detection** -- OpenWolf scans your project for route files (Next.js `app/` routes, file-based routers, etc.) and builds a list of pages to capture. You can also specify routes manually with `--routes`.
+State files have budgets (cerebrum 2k tokens, STATUS 1k). Writing past the
+budget produces one factual warning per session, the same
+measure-after-write enforcement the platform's native memory uses.
 
-3. **Sectioned screenshots** -- Each page is captured as full-page sectioned images at desktop (1440x900) and mobile (375x812) viewports. Pages are split into viewport-height sections rather than one giant screenshot. This produces images that fit within Claude's vision token budget.
+On Claude Code, the cerebrum also syncs with native auto-memory in both
+directions: learned rules reach Claude's own recall, and topics recorded
+natively become visible in the committed cerebrum for other agents and
+teammates.
 
-4. **Output** -- Screenshots are saved to `.wolf/designqc-captures/`. A report is written to `.wolf/designqc-report.json` with metadata (routes, viewports, file sizes, estimated token cost).
+## Measurement
 
-5. **Evaluation** -- You ask Claude to read the screenshots and evaluate the design. Claude uses its vision capabilities to assess layout, spacing, typography, color, responsiveness, and overall design quality. The evaluation happens inline in your conversation -- no external service needed.
+Three levels, from softest to hardest:
 
-### Requirements
+1. **Estimates**: character-ratio heuristics (3.5 chars per token for code,
+   4.0 for prose). Always labeled as estimates.
+2. **Measured**: real input, output, cache read, and cache write tokens from
+   the harness transcripts, per model, including subagent sidechains.
+3. **Verified**: the transcript records every hook invocation, so the ledger
+   knows which hooks fired, which failed, and which injected context
+   provably entered the conversation.
 
-- `puppeteer-core` must be installed (`npm install -g puppeteer-core`)
-- Chrome, Chromium, or Edge must be installed (OpenWolf auto-detects the path)
-- A dev server that serves your UI (auto-started if not running)
+The ledger also attributes prompt-cache rebuilds. A full rebuild re-pays
+your entire context at the cache-write rate instead of the 0.1x read rate,
+which makes it the most expensive event in an agent session. OpenWolf
+detects rebuilds from the usage sequence and names the trigger: model
+switch, compaction, version change, cache expiry, or honestly unattributed.
 
-### Architecture choice
+## The daemon
 
-Design QC deliberately does not call Claude itself. The capture step is deterministic and free. The evaluation step uses your existing Claude conversation context, so you can ask follow-up questions, request specific fixes, and iterate without switching tools.
+An optional background process for scheduled maintenance and the live
+dashboard:
 
-## Reframe
+- **Stale-gated rescans**: the anatomy index is rescanned only when the stat
+  sweep or a git HEAD move says it is actually stale.
+- **Measured-usage refresh**: scans all project transcripts into the ledger.
+- **Memory consolidation**: compresses session blocks older than the
+  configured window. Pure file rewriting, no model involved.
+- **Dashboard server** with WebSocket live updates, bound to localhost with
+  per-project token auth.
 
-Reframe helps you choose a UI component framework. It is not a CLI command -- it is a knowledge file that Claude reads when you ask about framework selection.
-
-### How it works
-
-1. **Knowledge file** -- `.wolf/reframe-frameworks.md` contains a structured comparison of 12 UI component frameworks: shadcn/ui, Aceternity UI, Magic UI, DaisyUI, HeroUI, Chakra UI, Flowbite, Preline UI, Park UI, Origin UI, Headless UI, and Cult UI.
-
-2. **Decision tree** -- When you ask Claude to help pick a framework, it reads the knowledge file and asks targeted questions: What is your current stack? What is your priority (animations, speed, control, accessibility, enterprise)? Do you use Tailwind? What pages are you building?
-
-3. **Comparison matrix** -- The file includes a feature matrix covering styling approach, animation capabilities, setup complexity, best use case, and cost for each framework.
-
-4. **Migration prompts** -- Once a framework is selected, the file provides ready-made prompts tailored to that framework. Claude adapts these to your actual project structure using `anatomy.md`.
-
-### Why a knowledge file?
-
-Framework selection is a conversation, not a command. Different projects have different constraints, and the best framework depends on context that only emerges through questions. A knowledge file lets Claude have that conversation naturally while drawing on structured, up-to-date comparison data.
-
-## The Daemon
-
-An optional background process that handles:
-
-- **Cron tasks** -- anatomy rescans, memory consolidation, token audits, AI reflections
-- **File watching** -- broadcasts `.wolf/` changes to the dashboard via WebSocket
-- **Dashboard server** -- serves the web dashboard at `http://localhost:18791`
-- **Health monitoring** -- heartbeat tracking, dead letter queue management
-
-### Starting the daemon
-
-There are two ways to run the daemon:
-
-1. **`openwolf dashboard`** -- starts the daemon automatically via `fork()`. No extra tools needed. The daemon runs as long as the parent process lives.
-
-2. **`openwolf daemon start`** -- starts via [PM2](https://pm2.keymetrics.io/) for persistent operation. Survives terminal closures and can auto-start on boot.
-
-The daemon is optional. OpenWolf works without it -- hooks are the primary layer. The daemon adds scheduled maintenance and the live dashboard.
-
-### AI tasks and credentials
-
-The daemon's AI tasks (`cerebrum-reflection` and `project-suggestions`) use `claude -p` to invoke the Claude CLI. These use your **Claude subscription credentials** from `~/.claude/.credentials.json` -- not API credits.
-
-If `ANTHROPIC_API_KEY` is set in your environment, OpenWolf automatically strips it when spawning `claude -p` to ensure the subscription OAuth token is used instead.
-
-## Token Tracking
-
-Every file read/write is estimated using character-to-token ratios:
-- Code files: **3.5 characters per token**
-- Prose files: **4.0 characters per token**
-- Mixed: **3.75 characters per token**
-
-The waste detector looks for patterns like repeated reads, large reads where anatomy sufficed, and stale cerebrum files. Reports are generated weekly.
+Start it with `openwolf dashboard` (auto-fork, no extra tools) or
+`openwolf daemon start` (PM2, survives reboots). OpenWolf works fully
+without it; hooks are the primary layer.

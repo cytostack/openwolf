@@ -1,9 +1,20 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 import * as crypto from "node:crypto"
-import { getWolfDir, writeJSON, readJSON, appendMarkdown, timeShort, normalizePath, estimateTokens } from "./fs.js"
+import { getWolfDir, writeJSON, readJSON, appendMarkdown, timeShort, normalizePath, estimateTokens, isSensitiveFile, sessionFilePath } from "./fs.js"
 import { extractDescription, withAnatomyLock, loadStoreReconciled, saveStore, renderToFile, sha256, LOCK_BUDGET_MS } from "./anatomy.js"
 import type { PartialSessionState, FixDetection } from "./types.js"
+
+// File types where a value/string change is normal content editing, not a bug
+// fix — auto bug detection never runs on these (see autoDetectBugFix). Without
+// this, a version bump in a README or a key change in a JSON/YAML config is
+// logged as a "wrong-value" bug, since the detector matches quoted spans
+// (including markdown backticks) regardless of file type.
+const NON_CODE_EXTS = new Set([
+  ".md", ".mdx", ".markdown", ".txt", ".rst", ".adoc",
+  ".json", ".jsonc", ".yaml", ".yml", ".toml", ".ini", ".env",
+  ".lock", ".csv", ".tsv",
+])
 
 export function handlePostWrite(
   directory: string,
@@ -18,20 +29,28 @@ export function handlePostWrite(
   if (!fs.existsSync(wolfDir)) return
 
   const hooksDir = path.join(wolfDir, "hooks")
-  const sessionFile = path.join(hooksDir, "_session.json")
+  const sessionFile = sessionFilePath(hooksDir, sessionId)
   const projectRoot = directory
 
   const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(projectRoot, filePath)
   const relPath = normalizePath(path.relative(projectRoot, absolutePath))
   if (relPath.startsWith(".wolf/")) return
 
+  // Never track files outside the project root (e.g. a scratchpad under
+  // /private/tmp). path.relative() yields ../.. section keys that pollute
+  // anatomy.md and are wiped again by every full scan, so the index churns
+  // instead of converging.
+  if (relPath.startsWith("..") || path.isAbsolute(relPath)) return
+
+  // Never track secret-bearing files in anatomy/memory (issue #54): .env is
+  // not the only file whose description would leak sensitive content.
   const baseName = path.basename(absolutePath)
-  if (baseName === ".env" || baseName.startsWith(".env.")) return
+  if (isSensitiveFile(baseName)) return
 
   updateAnatomy(wolfDir, absolutePath, projectRoot, content)
   appendToMemory(wolfDir, toolName, absolutePath, projectRoot, content, newStr)
-  trackSession(wolfDir, sessionFile, filePath, toolName, content, newStr, baseName)
-  
+  trackSession(sessionFile, filePath, toolName, content, newStr, baseName, projectRoot, absolutePath)
+
   if (oldStr && newStr) {
     autoDetectBugFix(wolfDir, absolutePath, projectRoot, oldStr, newStr)
   }
@@ -113,13 +132,14 @@ function appendToMemory(
 }
 
 function trackSession(
-  wolfDir: string,
   sessionFile: string,
   filePath: string,
   toolName: string,
   content: string,
   newStr: string,
-  baseName: string
+  baseName: string,
+  projectRoot: string,
+  absolutePath: string
 ): void {
   try {
     const session = readJSON<PartialSessionState>(sessionFile, { files_written: [], edit_counts: {} })
@@ -137,8 +157,14 @@ function trackSession(
       at: new Date().toISOString(),
     })
 
-    const editKey = normalizePath(path.relative(wolfDir.replace("/.wolf", ""), path.join(wolfDir.replace("/.wolf", ""), filePath)))
+    const editKey = normalizePath(path.relative(projectRoot, absolutePath))
     session.edit_counts![editKey] = (session.edit_counts![editKey] || 0) + 1
+
+    // A write invalidates the read record: the next read of this file is
+    // legitimate, not a duplicate.
+    if (session.files_read && session.files_read[normalizedFile]) {
+      delete session.files_read[normalizedFile]
+    }
 
     writeJSON(sessionFile, session)
 
@@ -182,12 +208,31 @@ export function summarizeEdit(oldStr: string, newStr: string, filename: string):
   return `${oldCount}→${newCount} lines`
 }
 
+function bugAutoDetectEnabled(wolfDir: string): boolean {
+  try {
+    const cfg = readJSON<{ openwolf?: { buglog?: { auto_detect?: boolean } } }>(
+      path.join(wolfDir, "config.json"),
+      {}
+    )
+    // Default on; only an explicit `false` disables auto bug detection.
+    return cfg.openwolf?.buglog?.auto_detect !== false
+  } catch {
+    return true
+  }
+}
+
 export function autoDetectBugFix(wolfDir: string, absolutePath: string, projectRoot: string, oldStr: string, newStr: string): void {
+  const basename = path.basename(absolutePath)
+  const ext = path.extname(basename).toLowerCase()
+
+  // Bug-fix detection is a code concept — never fire on prose/docs/data files.
+  if (NON_CODE_EXTS.has(ext)) return
+  // Respect an explicit opt-out in .wolf/config.json (default: enabled).
+  if (!bugAutoDetectEnabled(wolfDir)) return
+
   const bugLogPath = path.join(wolfDir, "buglog.json")
   const bugLog = readJSON<{ version: number; bugs: Array<{ id: string; timestamp: string; error_message: string; file: string; root_cause: string; fix: string; tags: string[]; related_bugs: string[]; occurrences: number; last_seen: string }> }>(bugLogPath, { version: 1, bugs: [] })
   const relFile = normalizePath(path.relative(projectRoot, absolutePath))
-  const basename = path.basename(absolutePath)
-  const ext = path.extname(basename).toLowerCase()
 
   const detection = detectFixPattern(oldStr, newStr, ext, basename)
   if (!detection) return

@@ -2,6 +2,25 @@
   "version": 1,
   "openwolf": {
     "enabled": true,
+    "reads": {
+      "duplicate_mode": "warn",
+      "skeleton_hints": true
+    },
+    "bash": {
+      "filter_mode": "suggest",
+      "governor": {
+        "mode": "replace",
+        "threshold_tokens": 2000,
+        "families": {
+          "grep_flood": "replace",
+          "file_print": "replace",
+          "git_show": "replace",
+          "test": "suggest",
+          "build": "suggest",
+          "unknown": "suggest"
+        }
+      }
+    },
     "anatomy": {
       "auto_scan_on_init": true,
       "rescan_interval_hours": 6,
@@ -9,25 +28,40 @@
       "max_files": 500,
       "exclude_patterns": [
         "node_modules",
-        ".git",
         "dist",
         "build",
-        ".wolf",
         ".next",
         ".nuxt",
-        "coverage",
-        "__pycache__",
-        ".cache",
-        "target",
-        ".vscode",
-        ".idea",
         ".turbo",
         ".vercel",
         ".netlify",
         ".output",
+        "coverage",
+        "__pycache__",
+        ".venv",
+        "venv",
+        "site-packages",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".tox",
+        "*.pyc",
+        ".gradle",
+        "target",
+        ".m2",
+        ".cargo",
+        ".git",
+        ".wolf",
+        ".cache",
+        ".vscode",
+        ".idea",
+        ".DS_Store",
+        "Thumbs.db",
         "*.min.js",
-        "*.min.css"
-      ]
+        "*.min.css",
+        "*.map"
+      ],
+      "respect_gitignore": true
     },
     "token_audit": {
       "enabled": true,
@@ -40,9 +74,7 @@
       "enabled": true,
       "max_retry_attempts": 3,
       "dead_letter_enabled": true,
-      "heartbeat_interval_minutes": 30,
-      "use_claude_p": true,
-      "api_key_env": null
+      "heartbeat_interval_minutes": 30
     },
     "memory": {
       "consolidation_after_days": 7,
@@ -63,6 +95,11 @@
     },
     "context": {
       "session_digest_budget_tokens": 1500,
+      "reinjection_interval": 25,
+      "state_budgets": {
+        ".wolf/cerebrum.md": 2000,
+        ".wolf/STATUS.md": 1000
+      },
       "budgets": {
         "claude": 1500,
         "codex": 1200,
@@ -71,14 +108,5 @@
         "cursor": 800
       }
     }
-  },
-  "designqc": {
-    "enabled": true,
-    "viewports": [
-      { "name": "desktop", "width": 1440, "height": 900 },
-      { "name": "mobile", "width": 375, "height": 812 }
-    ],
-    "max_screenshots": 6,
-    "chrome_path": null
   }
 }

@@ -1,6 +1,8 @@
 import React from "react";
 import { StatusBadge } from "../shared/StatusBadge.js";
 import { StatTile } from "../shared/StatTile.js";
+import { costOfProject, formatUsd } from "../../lib/pricing.js";
+import type { ModelUsage } from "../../lib/pricing.js";
 import { DotBar, type DotBarDatum } from "../shared/DotBar.js";
 import { formatTokens } from "../../lib/utils.js";
 import type { WolfData } from "../../hooks/useWolfData.js";
@@ -46,19 +48,26 @@ function nextPhase(statusDoc: string): string[] {
 }
 
 export function ProjectOverview({ data }: { data: WolfData }) {
-  const { health, tokenLedger, anatomy, buglog, cronState, config, statusDoc, scanState, project, identity } = data;
+  const { health, tokenLedger, anatomy, buglog, cronState, config, contextHealth, hookHealth, statusDoc, scanState, project, identity } = data;
+  const brokenHooks = Object.entries(hookHealth).filter(([, h]) => h.consecutive_failures >= 2);
+  const hookCount = Object.keys(hookHealth).length;
   const lt = tokenLedger.lifetime;
   const projectName = project.name || identity.name;
   const measured = (lt.real_api_calls ?? 0) > 0;
-  const savingsPct = lt.total_tokens_estimated > 0
-    ? Math.round((lt.estimated_savings_vs_bare_cli / (lt.total_tokens_estimated + lt.estimated_savings_vs_bare_cli)) * 100)
-    : 0;
+  const dupMode = config.reads?.duplicate_mode ?? "warn";
+  const denyOn = dupMode === "deny";
   const anatomyTotal = lt.anatomy_hits + lt.anatomy_misses;
   const hitRate = anatomyTotal > 0 ? Math.round((lt.anatomy_hits / anatomyTotal) * 100) : null;
   const scanAgeH = scanState.last_scanned
     ? Math.floor((Date.now() - new Date(scanState.last_scanned).getTime()) / 3600000)
     : null;
   const phase = nextPhase(statusDoc);
+
+  // What this project's measured usage is worth at list price. Prefer the
+  // daemon's whole-project scan; the per-session rollup is there from day one.
+  const perModel = (tokenLedger.measured_project?.by_model ??
+    tokenLedger.lifetime_maps?.real_by_model) as Record<string, ModelUsage> | undefined;
+  const cost = costOfProject(perModel);
 
   return (
     <div className="space-y-4">
@@ -82,15 +91,51 @@ export function ProjectOverview({ data }: { data: WolfData }) {
 
       {/* Bento: hero + measured + agents */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        {/* Hero — the inverted tile */}
+        {/* Hero — tokens verifiably kept out of context. The governor delta is
+            measured at the rewrite point (original vs entered), which nothing
+            else in the ecosystem can observe. */}
         <div className="xl:col-span-2">
-          <StatTile
-            label="tokens saved · estimated"
-            value={lt.estimated_savings_vs_bare_cli > 0 ? formatTokens(lt.estimated_savings_vs_bare_cli) : "0"}
-            sub={savingsPct > 0 ? `${savingsPct}% vs bare agent` : "accumulates as sessions run"}
-            variant="inverted"
-            size="xl"
-          />
+          {(() => {
+            const governedSaved = Math.max(0, (lt.bash_governed_original_tokens ?? 0) - (lt.bash_governed_entered_tokens ?? 0));
+            const totalSaved = governedSaved + (denyOn ? lt.estimated_savings_vs_bare_cli : 0);
+            if (totalSaved > 0) {
+              const parts = [
+                governedSaved > 0 ? `${formatTokens(governedSaved)} bash output governed (${fmt(lt.bash_governed_calls)} calls)` : "",
+                denyOn && lt.estimated_savings_vs_bare_cli > 0 ? `${formatTokens(lt.estimated_savings_vs_bare_cli)} denied re-reads` : "",
+              ].filter(Boolean).join(" · ");
+              // The hero number is meaningless to anyone not reading a ledger
+              // unless it says what it means. One sentence, plain words, and
+              // the denominator so the figure can be sized.
+              const governedOriginal = lt.bash_governed_original_tokens ?? 0;
+              const sharePct = governedOriginal > 0 ? Math.round((governedSaved / governedOriginal) * 100) : null;
+              return (
+                <StatTile
+                  label="tokens kept out of context · measured"
+                  value={formatTokens(totalSaved)}
+                  sub={parts || "measured at the rewrite point"}
+                  variant="inverted"
+                  size="xl"
+                >
+                  <p className="text-sm mt-4 leading-relaxed"
+                    style={{ color: "color-mix(in srgb, var(--invert-text) 70%, transparent)" }}>
+                    Text your agent never had to carry, and never had to pay for again on every
+                    later message.
+                    {sharePct !== null && ` That is ${sharePct}% of ${formatTokens(governedOriginal)} of command output.`}
+                    {" "}The full text is still on disk.
+                  </p>
+                </StatTile>
+              );
+            }
+            return (
+              <StatTile
+                label="tokens kept out of context · measured"
+                value="0"
+                sub={`accumulates as the bash governor condenses oversized output${denyOn ? "" : " · deny mode off (reads.duplicate_mode)"}`}
+                variant="inverted"
+                size="xl"
+              />
+            );
+          })()}
         </div>
 
         {/* Measured usage */}
@@ -132,11 +177,41 @@ export function ProjectOverview({ data }: { data: WolfData }) {
 
       {/* Stat row */}
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-4">
-        <StatTile label="sessions" value={fmt(lt.total_sessions)} size="md" />
+        <StatTile
+          label="usage worth · list price"
+          value={cost.priced ? formatUsd(cost.total) : "—"}
+          sub={cost.priced ? `${fmt(lt.real_api_calls)} api calls` : "fills in as sessions end"}
+          size="md"
+        />
         <StatTile label="files tracked" value={fmt(anatomy.metadata.files)} size="md" />
-        <StatTile label="reads / writes" value={`${fmt(lt.total_reads)}·${fmt(lt.total_writes)}`} size="md" />
-        <StatTile label="re-reads blocked" value={fmt(lt.repeated_reads_blocked)} size="md" />
-        <StatTile label="anatomy hit rate" value={hitRate !== null ? `${hitRate}%` : "—"} size="md" />
+        {/* Reads and writes glued with a dot said nothing. The ratio is the
+            signal: an agent writing far more than it reads is working from the
+            index instead of re-reading the tree, which is the point. */}
+        <StatTile
+          label="edits per file read"
+          value={lt.total_reads > 0 ? `${(lt.total_writes / lt.total_reads).toFixed(1)}x` : fmt(lt.total_writes)}
+          sub={`${fmt(lt.total_writes)} edits · ${fmt(lt.total_reads)} reads`}
+          size="md"
+        />
+        {denyOn ? (
+          <StatTile label="re-reads denied" value={fmt(lt.repeated_reads_blocked)} size="md" />
+        ) : (
+          <StatTile
+            label="re-read warnings"
+            value={fmt(lt.repeated_reads_warned)}
+            sub={(lt.repeated_reads_warned ?? 0) > 0 ? "warned, not blocked" : undefined}
+            size="md"
+          />
+        )}
+        {/* A low hit rate means the agent is reading files the index cannot
+            describe, which is the single most actionable number here. */}
+        <StatTile
+          label="anatomy hit rate"
+          value={hitRate !== null ? `${hitRate}%` : "—"}
+          accent={hitRate !== null && hitRate < 30}
+          sub={hitRate !== null && hitRate < 30 ? "low · agent is not using openwolf find" : undefined}
+          size="md"
+        />
         <StatTile
           label="bugs on file"
           value={fmt(buglog.bugs.length)}
@@ -152,7 +227,7 @@ export function ProjectOverview({ data }: { data: WolfData }) {
           <div className="flex items-center justify-between mb-3">
             <span className="wd-label" style={{ color: "var(--text-muted)" }}>context health</span>
             {scanAgeH !== null && scanAgeH > 6 && (
-              <span className="wd-label" style={{ color: "var(--accent)" }}>stale — run openwolf scan</span>
+              <span className="wd-label" style={{ color: "var(--accent)" }}>stale · run openwolf scan</span>
             )}
           </div>
           <div className="space-y-2 font-mono text-sm" style={{ color: "var(--text-secondary)" }}>
@@ -168,7 +243,41 @@ export function ProjectOverview({ data }: { data: WolfData }) {
               <span>session digest budget</span>
               <span>{config.context?.session_digest_budget_tokens ?? 1500} tok</span>
             </div>
+            <div className="flex justify-between">
+              <span>duplicate read mode</span>
+              <span>{dupMode}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>hook health</span>
+              <span style={brokenHooks.length > 0 ? { color: "var(--accent)" } : undefined}>
+                {hookCount === 0 ? "no heartbeats yet" : brokenHooks.length > 0 ? `${brokenHooks.length} failing` : `${hookCount} healthy`}
+              </span>
+            </div>
+            {contextHealth && (
+              <div className="flex justify-between">
+                <span>always-on context (est.)</span>
+                <span>{contextHealth.always_on_estimate_tokens.toLocaleString("en-US")} tok</span>
+              </div>
+            )}
           </div>
+          {brokenHooks.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {brokenHooks.slice(0, 3).map(([name, h]) => (
+                <p key={name} className="text-sm" style={{ color: "var(--accent)" }}>
+                  {name}: {h.consecutive_failures} consecutive failures. Run openwolf update to repair. {h.last_error_message ? `(${h.last_error_message.slice(0, 80)})` : ""}
+                </p>
+              ))}
+            </div>
+          )}
+          {contextHealth && contextHealth.findings.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {contextHealth.findings.map((f) => (
+                <p key={f.id} className="text-sm" style={{ color: f.severity === "warn" ? "var(--accent)" : "var(--text-muted)" }}>
+                  {f.message}
+                </p>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="wd-card p-5">

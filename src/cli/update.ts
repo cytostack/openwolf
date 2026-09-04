@@ -9,13 +9,20 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { getRegisteredProjects, registerProject, type RegisteredProject } from "./registry.js";
+import { findProjectRoot } from "../scanner/project-root.js";
 import { readJSON, writeJSON, readText, writeText, safeCopyFile } from "../utils/fs-safe.js";
 import { ensureDir } from "../utils/paths.js";
 import { resolveAgents, availableAgents } from "../agents/index.js";
 import { newStore, importFromMarkdown, saveStore, STORE_FILE, sha256 as storeSha256 } from "../hooks/anatomy-store.js";
 import { installSkills } from "../agents/skills.js";
+import { buildHookSettings, HOOK_FILES, HOOK_ENTRY_FILES, HOOK_COUNT, type HookSettings } from "./hook-manifest.js";
+import { emptyLedger, recomputeLifetime, migrateLegacyBlockedCounts, type LedgerData } from "../hooks/ledger.js";
+import { mergeConfigDefaults, appendExcludePatterns } from "./config-merge.js";
+import { EXCLUDE_PATTERNS_ADDED_2_5_1 } from "../scanner/exclusions.js";
+import { syncCerebrumToClaudeMemory, syncClaudeMemoryIndexToCerebrum } from "./memory-migrate.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,7 +38,9 @@ function getVersion(): string {
 }
 
 // Files that are safe to overwrite (protocol docs only — never user-edited config)
-const ALWAYS_OVERWRITE = ["OPENWOLF.md", "reframe-frameworks.md"];
+// 2.2: reframe-frameworks.md is no longer shipped into projects (31KB,
+// referenced once in 2,256 measured commands); the /reframe skill carries it.
+const ALWAYS_OVERWRITE = ["OPENWOLF.md"];
 
 // Files that contain user data — NEVER overwrite, only create if missing.
 //
@@ -47,7 +56,6 @@ const USER_DATA_FILES = [
   "config.json",
   "identity.md", "cerebrum.md", "memory.md", "anatomy.md", "anatomy-index.json", "STATUS.md",
   "token-ledger.json", "buglog.json", "cron-manifest.json", "cron-state.json",
-  "suggestions.json",
 ];
 
 // Files to include in backup
@@ -56,21 +64,6 @@ const BACKUP_FILES = [
   ...USER_DATA_FILES,
 ];
 
-const HOOK_SETTINGS = {
-  hooks: {
-    SessionStart: [{ matcher: "", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/session-start.js"', timeout: 5 }] }],
-    PreToolUse: [
-      { matcher: "Read", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/pre-read.js"', timeout: 5 }] },
-      { matcher: "Write|Edit|MultiEdit", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/pre-write.js"', timeout: 5 }] },
-    ],
-    PostToolUse: [
-      { matcher: "Read", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/post-read.js"', timeout: 5 }] },
-      { matcher: "Write|Edit|MultiEdit", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/post-write.js"', timeout: 10 }] },
-    ],
-    PreCompact: [{ matcher: "", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/precompact.js"', timeout: 5 }] }],
-    Stop: [{ matcher: "", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.wolf/hooks/stop.js"', timeout: 10 }] }],
-  },
-};
 
 interface UpdateResult {
   project: RegisteredProject;
@@ -189,29 +182,78 @@ async function updateProject(
     }
     console.log(`    ✓ Templates updated (${ALWAYS_OVERWRITE.join(", ")})`);
 
+    // 2b. Merge new config defaults (add missing keys only, never overwrite):
+    // upgraded projects must be able to discover new tunables such as
+    // openwolf.reads.duplicate_mode. Runs before the port-collision pass so a
+    // merged-in default port can still be reassigned.
+    if (mergeConfigDefaults(path.join(wolfDir, "config.json"), templatesDir)) {
+      console.log(`    ✓ Config defaults merged (new keys added, existing values preserved)`);
+    }
+
+    // Projects initialized before agent selection was recorded are Claude
+    // projects. Newer projects must only refresh the integrations explicitly
+    // listed by init; otherwise updating a Codex-only project creates Claude
+    // configuration that the user did not request.
+    const cfg = readJSON<{ openwolf?: { agents?: string[] } }>(path.join(wolfDir, "config.json"), {});
+    const agentNames = cfg.openwolf?.agents ?? ["claude"];
+    const installClaude = agentNames.includes("claude");
+
+    // 2b1. Exclusion patterns that did not exist as defaults before 2.5.1.
+    // Array values are leaves for the merge above, so without this a project
+    // created earlier keeps indexing .venv, .gradle and .DS_Store (#93).
+    const addedExcludes = appendExcludePatterns(path.join(wolfDir, "config.json"), EXCLUDE_PATTERNS_ADDED_2_5_1);
+    if (addedExcludes.length > 0) {
+      console.log(`    ✓ Anatomy exclusions extended: ${addedExcludes.join(", ")}`);
+    }
+
+    // 2b2. Committed/machine-local split (2.5).
+    if (ensureWolfGitignore(wolfDir)) {
+      console.log(`    ✓ .wolf/.gitignore created (commit state, ignore machine-local runtime)`);
+    }
+
+    // 2c. Dead-weight cleanup (2.2): remove files this project never used,
+    // but ONLY when they are verbatim our shipped templates/stubs — anything
+    // the user touched stays.
+    for (const line of removeDeadWeight(wolfDir, templatesDir)) {
+      console.log(`    ✓ ${line}`);
+    }
+
     // 3. Update hook scripts
     copyHookScripts(wolfDir);
     console.log(`    ✓ Hook scripts updated`);
 
-    // 4. Update .claude/settings.json hooks
-    const claudeDir = path.join(root, ".claude");
-    ensureDir(claudeDir);
-    const settingsPath = path.join(claudeDir, "settings.json");
-    if (fs.existsSync(settingsPath)) {
-      const existing = readJSON<Record<string, unknown>>(settingsPath, {});
-      const merged = replaceOpenWolfHooks(existing, HOOK_SETTINGS);
-      writeJSON(settingsPath, merged);
-    } else {
-      writeJSON(settingsPath, HOOK_SETTINGS);
+    // 3b. Install integrity (2.2): a missing dependency file once silently
+    // killed a hook for 3 weeks (440 straight crashes, nothing noticed).
+    // Verify every manifest file landed and every hook entry point can load
+    // its imports; a failed check fails THIS project's update loudly.
+    const integrityErrors = verifyHookInstall(wolfDir);
+    if (integrityErrors.length > 0) {
+      throw new Error(`hook install integrity check failed: ${integrityErrors.join("; ")}`);
     }
-    console.log(`    ✓ Claude settings updated`);
+    console.log(`    ✓ Hook install verified (${HOOK_FILES.length} files, selfcheck passed)`);
 
-    // 5. Update .claude/rules/openwolf.md
-    const rulesDir = path.join(claudeDir, "rules");
-    ensureDir(rulesDir);
-    const rulesContent = readTemplateContent("claude-rules-openwolf.md", templatesDir);
-    writeText(path.join(rulesDir, "openwolf.md"), rulesContent);
-    console.log(`    ✓ Claude rules updated`);
+    if (installClaude) {
+      // 4. Update .claude/settings.json hooks
+      const claudeDir = path.join(root, ".claude");
+      ensureDir(claudeDir);
+      const settingsPath = path.join(claudeDir, "settings.json");
+      const hookSettings = buildHookSettings(root);
+      if (fs.existsSync(settingsPath)) {
+        const existing = readJSON<Record<string, unknown>>(settingsPath, {});
+        const merged = replaceOpenWolfHooks(existing, hookSettings);
+        writeJSON(settingsPath, merged);
+      } else {
+        writeJSON(settingsPath, hookSettings);
+      }
+      console.log(`    ✓ Claude settings updated`);
+
+      // 5. Update .claude/rules/openwolf.md
+      const rulesDir = path.join(claudeDir, "rules");
+      ensureDir(rulesDir);
+      const rulesContent = readTemplateContent("claude-rules-openwolf.md", templatesDir);
+      writeText(path.join(rulesDir, "openwolf.md"), rulesContent);
+      console.log(`    ✓ Claude rules updated`);
+    }
 
     // 5a2. One-time anatomy store migration (projects predating the durable
     // store): bootstrap anatomy-index.json from the existing anatomy.md.
@@ -224,6 +266,48 @@ async function updateProject(
           store.meta.renderedHash = storeSha256(md);
           saveStore(wolfDir, store);
           console.log(`    ✓ anatomy-index.json created (migrated from anatomy.md)`);
+        }
+      }
+    } catch {}
+
+    // 5a2b. One-time ledger repair: earlier stop hooks appended one CUMULATIVE
+    // session entry per turn and re-added totals to lifetime each time, so a
+    // 10-turn session shows as 10 duplicate entries with quadratically
+    // inflated lifetime numbers. Dedupe by session id (keep the last, most
+    // complete entry) and rebuild lifetime from the deduped sessions.
+    try {
+      const ledgerPath = path.join(wolfDir, "token-ledger.json");
+      if (fs.existsSync(ledgerPath)) {
+        const ledger = readJSON<LedgerData>(ledgerPath, emptyLedger());
+        let ledgerChanged = false;
+        if (Array.isArray(ledger.sessions) && ledger.sessions.length > 0) {
+          const before = ledger.sessions.length;
+          const byId = new Map<string, (typeof ledger.sessions)[number]>();
+          for (const s of ledger.sessions) {
+            if (s && s.id) byId.set(s.id, s);
+          }
+          if (byId.size < before || !ledger.lifetime_baseline) {
+            ledger.sessions = [...byId.values()];
+            ledger.lifetime_baseline = ledger.lifetime_baseline ?? {};
+            // total_sessions was also inflated (counted again on resume and
+            // never tied to real entries): reset it to the sessions we can
+            // actually account for.
+            ledger.lifetime.total_sessions = byId.size;
+            ledgerChanged = true;
+            console.log(`    ✓ Token ledger repaired (${before} entries -> ${byId.size} sessions, lifetime recomputed)`);
+          }
+        }
+        // 5a2c. Pre-2.0.5 sessions stored duplicate-read WARNING counts in
+        // repeated_reads_blocked; relabel them so blocked only ever means
+        // actual denials (see migrateLegacyBlockedCounts).
+        const migrated = migrateLegacyBlockedCounts(ledger);
+        if (migrated > 0) {
+          ledgerChanged = true;
+          console.log(`    ✓ Token ledger migrated (${migrated} legacy blocked-counts relabeled as warnings)`);
+        }
+        if (ledgerChanged) {
+          recomputeLifetime(ledger);
+          writeJSON(ledgerPath, ledger);
         }
       }
     } catch {}
@@ -250,8 +334,6 @@ async function updateProject(
 
     // 5c. Re-run the agent adapters this project was initialized with, so
     // Codex/OpenCode/Gemini/Cursor wiring picks up new hooks and templates.
-    const cfg = readJSON<{ openwolf?: { agents?: string[] } }>(path.join(wolfDir, "config.json"), {});
-    const agentNames = cfg.openwolf?.agents ?? ["claude"];
     const known = new Set(availableAgents());
     const extras = agentNames.filter((a) => a !== "claude");
     const unknown = extras.filter((a) => !known.has(a));
@@ -271,14 +353,43 @@ async function updateProject(
       console.log(`    ✓ ${line}`);
     }
 
-    // 6. Update CLAUDE.md snippet if it references OpenWolf
-    const claudeMdPath = path.join(root, "CLAUDE.md");
-    const snippetContent = readTemplateContent("claude-md-snippet.md", templatesDir);
-    if (fs.existsSync(claudeMdPath)) {
-      const existing = readText(claudeMdPath);
-      if (!existing.includes("OpenWolf")) {
-        writeText(claudeMdPath, snippetContent + "\n\n" + existing);
-        console.log(`    ✓ CLAUDE.md updated`);
+    // 5e. Mirror cerebrum into Claude Code auto-memory (kills the digest's
+    // double injection of Do-Not-Repeat on Claude; other agents keep it).
+    if (installClaude) {
+      try {
+        const sync = syncCerebrumToClaudeMemory(root, wolfDir);
+        if (sync.synced.length > 0) {
+          console.log(`    ✓ cerebrum synced to Claude auto-memory (${sync.synced.join(", ")})`);
+        }
+      } catch {}
+
+      // 5e2. Reverse bridge (2.5): native memory index -> committed cerebrum.
+      try {
+        if (syncClaudeMemoryIndexToCerebrum(root, wolfDir)) {
+          console.log(`    ✓ Claude auto-memory index mirrored into cerebrum.md (cross-agent visibility)`);
+        }
+      } catch {}
+
+      // 6. Update the CLAUDE.md snippet. A legacy shipped snippet (matched
+      // byte-identically, so user customizations are never touched) is replaced
+      // with the current stub; the old snippet @-inlined the whole protocol
+      // into every session, which the stub + skill now cover on demand.
+      const claudeMdPath = path.join(root, "CLAUDE.md");
+      const snippetContent = readTemplateContent("claude-md-snippet.md", templatesDir);
+      if (fs.existsSync(claudeMdPath)) {
+        const existing = readText(claudeMdPath);
+        if (!existing.includes("OpenWolf")) {
+          writeText(claudeMdPath, snippetContent + "\n\n" + existing);
+          console.log(`    ✓ CLAUDE.md updated`);
+        } else {
+          const migrated = replaceLegacySnippet(existing, snippetContent);
+          if (migrated !== null) {
+            writeText(claudeMdPath, migrated);
+            console.log(`    ✓ CLAUDE.md snippet replaced with the lean stub (protocol moved to the openwolf skill)`);
+          } else if (existing.includes("@.wolf/OPENWOLF.md")) {
+            console.log(`    ⚠ CLAUDE.md still @-imports .wolf/OPENWOLF.md but was customized; consider trimming it yourself (the openwolf skill now carries the protocol)`);
+          }
+        }
       }
     }
 
@@ -405,6 +516,176 @@ function createBackup(wolfDir: string): string {
   return backupDir;
 }
 
+/**
+ * 2.2 dead-weight cleanup. Empirical audit: reframe-frameworks.md (7.8k tok)
+ * was referenced once across 2,256 commands, identity.md was untouched in
+ * 16/16 projects, and suggestions.json was an empty stub in 15/16. Deletion
+ * only happens when the file is verbatim ours — user edits stay.
+ */
+function removeDeadWeight(wolfDir: string, templatesDir: string): string[] {
+  const actions: string[] = [];
+
+  // reframe-frameworks.md: delete only when byte-identical to the shipped template.
+  try {
+    const installed = path.join(wolfDir, "reframe-frameworks.md");
+    if (fs.existsSync(installed)) {
+      const shipped = readText(path.join(templatesDir, "reframe-frameworks.md"));
+      if (shipped && readText(installed) === shipped) {
+        fs.unlinkSync(installed);
+        actions.push("Removed reframe-frameworks.md (unused 31KB; the /reframe skill carries it)");
+      }
+    }
+  } catch {}
+
+  // identity.md: delete our untouched template (structure + size match).
+  try {
+    const p = path.join(wolfDir, "identity.md");
+    if (fs.existsSync(p)) {
+      const content = readText(p);
+      if (
+        content.length < 600 &&
+        content.includes("# Identity") &&
+        content.includes("**Role:** AI development assistant")
+      ) {
+        fs.unlinkSync(p);
+        actions.push("Removed identity.md (untouched template)");
+      }
+    }
+  } catch {}
+
+  // suggestions.json: retired in 2.5. Nothing writes it now that OpenWolf
+  // makes no model calls, and nothing reads it now that the Insights panel
+  // is gone, so a leftover file is pure noise in the project directory.
+  try {
+    const p = path.join(wolfDir, "suggestions.json");
+    if (fs.existsSync(p)) {
+      fs.unlinkSync(p);
+      actions.push("Removed suggestions.json (AI suggestions retired; OpenWolf makes no model calls)");
+    }
+  } catch {}
+
+  // Retired DesignQC generated this small empty report stub. Keep any real
+  // report or unknown/customized JSON because it may still be useful data.
+  try {
+    const p = path.join(wolfDir, "designqc-report.json");
+    if (fs.existsSync(p) && fs.statSync(p).size <= 200) {
+      const report = readJSON<Record<string, unknown> | null>(p, null);
+      const knownKeys = new Set([
+        "generated_at", "server", "browser", "routes", "viewports",
+        "captures", "tokens_estimated",
+      ]);
+      if (
+        report &&
+        Object.keys(report).length > 0 &&
+        Object.keys(report).every((key) => knownKeys.has(key)) &&
+        Array.isArray(report.captures) &&
+        report.captures.length === 0
+      ) {
+        fs.unlinkSync(p);
+        actions.push("Removed empty DesignQC report stub");
+      }
+    }
+  } catch {}
+
+  return actions;
+}
+
+/**
+ * 2.5 committed-vs-machine-local split. The durable niche native auto-memory
+ * deliberately leaves open is TEAM-SHARED, REVIEWED project state: cerebrum,
+ * STATUS, buglog, and the anatomy index belong in git; ledgers, caches,
+ * hook runtime state, and tokens are machine-local. An explicit .gitignore
+ * inside .wolf/ makes the split real without touching the project's own
+ * .gitignore. Created once; never overwritten if the user edited it.
+ */
+const WOLF_GITIGNORE = `# OpenWolf: machine-local state (committed state: cerebrum.md, STATUS.md,
+# memory.md, buglog.json, anatomy.md, anatomy-index.json, config.json, OPENWOLF.md)
+hooks/
+backups/
+cache/
+daemon.log
+daemon.pid
+dashboard-token
+token-ledger.json
+suggestions.json
+cron-state.json
+_scan-state.json
+_*.json
+*.lock
+*.tmp
+`;
+
+export function ensureWolfGitignore(wolfDir: string): boolean {
+  const p = path.join(wolfDir, ".gitignore");
+  if (fs.existsSync(p)) return false;
+  try {
+    fs.writeFileSync(p, WOLF_GITIGNORE, "utf-8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 2.2 install integrity: every manifest file must exist with content, and
+ * every registered hook entry point must load cleanly (`--selfcheck` exits
+ * after module resolution — a missing dependency fails right there, which is
+ * exactly the failure class that once ran silently for 3 weeks).
+ */
+function verifyHookInstall(wolfDir: string): string[] {
+  const hooksDir = path.join(wolfDir, "hooks");
+  const errors: string[] = [];
+
+  for (const file of HOOK_FILES) {
+    const p = path.join(hooksDir, file);
+    try {
+      if (fs.statSync(p).size === 0) errors.push(`${file} is empty`);
+    } catch {
+      errors.push(`${file} missing`);
+    }
+  }
+  if (errors.length > 0) return errors;
+
+  // Entry-point hooks (the ones settings.json actually invokes).
+  const entryFiles = new Set<string>(HOOK_ENTRY_FILES);
+  for (const file of entryFiles) {
+    try {
+      execFileSync(process.execPath, [path.join(hooksDir, file), "--selfcheck"], {
+        stdio: ["ignore", "ignore", "pipe"],
+        timeout: 10000,
+      });
+    } catch (err) {
+      const stderr = (err as { stderr?: Buffer }).stderr?.toString().split("\n")[0] ?? String(err);
+      errors.push(`${file} selfcheck failed: ${stderr.slice(0, 120)}`);
+    }
+  }
+  return errors;
+}
+
+// Every CLAUDE.md snippet OpenWolf has ever shipped, verbatim (trimmed).
+// Replacement happens only on a byte-identical match of one of these blocks,
+// so anything the user edited is theirs and stays untouched.
+const LEGACY_CLAUDE_SNIPPETS = [
+  "# OpenWolf\n\n@.wolf/OPENWOLF.md\n\nThis project uses OpenWolf for context management. The imported protocol above applies every session.",
+  "# OpenWolf\n\n@.wolf/OPENWOLF.md\n\nThis project uses OpenWolf for context management. Read and follow .wolf/OPENWOLF.md every session. Check .wolf/cerebrum.md before generating code. Check .wolf/anatomy.md before reading files.",
+];
+
+/**
+ * Replace a legacy shipped snippet inside CLAUDE.md with the current stub.
+ * Returns the new content, or null when no shipped snippet matches verbatim.
+ */
+export function replaceLegacySnippet(existing: string, stub: string): string | null {
+  const stubTrimmed = stub.trim();
+  for (const legacy of LEGACY_CLAUDE_SNIPPETS) {
+    if (legacy === stubTrimmed) continue;
+    const idx = existing.indexOf(legacy);
+    if (idx !== -1) {
+      return existing.slice(0, idx) + stubTrimmed + existing.slice(idx + legacy.length);
+    }
+  }
+  return null;
+}
+
 // ─── Shared helpers (extracted from init.ts patterns) ─────────────
 
 function findTemplatesDir(): string {
@@ -426,8 +707,8 @@ function readTemplateContent(filename: string, templatesDir: string): string {
     return fs.readFileSync(filePath, "utf-8");
   }
   const templates: Record<string, string> = {
-    "claude-md-snippet.md": `# OpenWolf\n\n@.wolf/OPENWOLF.md\n\nThis project uses OpenWolf for context management. Read and follow .wolf/OPENWOLF.md every session. Check .wolf/cerebrum.md before generating code. Check .wolf/anatomy.md before reading files.`,
-    "claude-rules-openwolf.md": `---\ndescription: OpenWolf protocol enforcement — active on all files\nglobs: **/*\n---\n\n- Check .wolf/anatomy.md before reading any project file\n- Check .wolf/cerebrum.md Do-Not-Repeat list before generating code\n- After writing or editing files, update .wolf/anatomy.md and append to .wolf/memory.md\n- After receiving a user correction, update .wolf/cerebrum.md immediately (Preferences, Learnings, or Do-Not-Repeat)\n- LEARN from every interaction: if you discover a convention, user preference, or project pattern, add it to .wolf/cerebrum.md. Low threshold — when in doubt, log it.\n- BEFORE fixing any bug or error: read .wolf/buglog.json for known fixes\n- AFTER fixing any bug, error, failed test, failed build, or user-reported problem: ALWAYS log to .wolf/buglog.json with error_message, root_cause, fix, and tags\n- If you edit a file more than twice in a session, that likely indicates a bug — log it to .wolf/buglog.json\n- When the user asks to change/pick/migrate UI framework: read .wolf/reframe-frameworks.md, ask decision questions, recommend a framework, then execute with the framework's prompt`,
+    "claude-md-snippet.md": `# OpenWolf\n\nThis project uses OpenWolf for context management. The always-on rules live in \`.claude/rules/openwolf.md\`; the hooks handle bookkeeping (anatomy index, memory log, read tracking) automatically.\n\nFor the full operating protocol (session handoff, memory discipline, bug logging), load the \`openwolf\` skill, or read \`.wolf/OPENWOLF.md\`. Regenerate the session handoff with \`/handoff\`.`,
+    "claude-rules-openwolf.md": `---\ndescription: OpenWolf protocol enforcement, active on all files\nglobs: **/*\n---\n\n- To locate a symbol or file, run \`openwolf find <name>\` first (ranked shortlist, under 1k tokens). For one file's description and symbol ranges: \`openwolf find --file <path>\`. Never read .wolf/anatomy.md whole; it is an index.\n- Check .wolf/cerebrum.md Do-Not-Repeat list before generating code (grep "## Do-Not-Repeat"); after a user correction, update cerebrum.md immediately.\n- Do NOT manually update .wolf/anatomy.md or .wolf/memory.md; the OpenWolf hooks maintain them.\n- BEFORE fixing any bug: run \`openwolf bug search "<error>"\` or grep .wolf/buglog.json. AFTER fixing one: log it there (error_message, root_cause, fix, tags).\n- When resuming a session, read .wolf/STATUS.md first; regenerate it with /handoff when a quest finishes.`,
   };
   return templates[filename] ?? "";
 }
@@ -450,11 +731,7 @@ function copyHookScripts(wolfDir: string): void {
     }
   }
 
-  const hookFiles = [
-    "session-start.js", "pre-read.js", "pre-write.js",
-    "post-read.js", "post-write.js", "precompact.js", "stop.js", "shared.js",
-    "anatomy-store.js", "anatomy-lock.js",
-  ];
+  const hookFiles = HOOK_FILES;
 
   if (sourceDir) {
     for (const file of hookFiles) {
@@ -472,7 +749,7 @@ function copyHookScripts(wolfDir: string): void {
 
 function replaceOpenWolfHooks(
   existing: Record<string, unknown>,
-  hookSettings: typeof HOOK_SETTINGS
+  hookSettings: HookSettings
 ): Record<string, unknown> {
   const merged = { ...existing };
   if (!merged.hooks) merged.hooks = {};
@@ -481,10 +758,13 @@ function replaceOpenWolfHooks(
   for (const [event, newMatchers] of Object.entries(hookSettings.hooks)) {
     if (!hooks[event]) hooks[event] = [];
 
-    // Remove existing OpenWolf hook entries
+    // Remove existing OpenWolf hook entries. Backslashes are normalised first:
+    // Windows users who hand-patched settings.json around the broken
+    // %CLAUDE_PROJECT_DIR% commands wrote native paths, and those would
+    // otherwise survive the filter and run twice alongside the new entries.
     hooks[event] = hooks[event].filter((entry) => {
       const isOpenWolfHook = entry.hooks?.some(
-        (h) => h.command && h.command.includes(".wolf/hooks/")
+        (h) => h.command && h.command.replace(/\\/g, "/").includes(".wolf/hooks/")
       );
       return !isOpenWolfHook;
     });
@@ -524,7 +804,9 @@ export function listProjects(): void {
  * Restore a project's .wolf from a backup
  */
 export function restoreCommand(backupName?: string): void {
-  const wolfDir = path.join(process.cwd(), ".wolf");
+  // findProjectRoot, not cwd: run from a subdirectory, cwd has no .wolf and
+  // restore reported "No backups found" while every other command worked.
+  const wolfDir = path.join(findProjectRoot(), ".wolf");
   const backupsDir = path.join(wolfDir, "backups");
 
   if (!fs.existsSync(backupsDir)) {

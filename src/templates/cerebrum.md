@@ -1,3 +1,7 @@
+---
+description: learned preferences, project conventions, and Do-Not-Repeat rules
+budget_tokens: 2000
+---
 # Cerebrum
 
 > OpenWolf's learning memory. Updated automatically as the AI learns from interactions.

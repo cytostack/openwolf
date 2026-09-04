@@ -10,12 +10,37 @@ import { handlePostRead } from "./post-read.js"
 import { handlePostWrite } from "./post-write.js"
 import { handleStop } from "./stop.js"
 
+/**
+ * OpenCode event payloads have carried the session id in different places
+ * across versions: top-level `session_id`/`sessionID` in older builds, and
+ * nested under `properties` (`properties.info.id` for session.created,
+ * `properties.sessionID` elsewhere) in newer ones. Accept all shapes.
+ */
+function extractSessionId(source: unknown): string {
+  if (!source || typeof source !== "object") return ""
+  const obj = source as {
+    session_id?: unknown
+    sessionID?: unknown
+    properties?: { info?: { id?: unknown }; sessionID?: unknown }
+  }
+  const candidates = [
+    obj.session_id,
+    obj.sessionID,
+    obj.properties?.info?.id,
+    obj.properties?.sessionID,
+  ]
+  for (const c of candidates) {
+    if (typeof c === "string" && c) return c
+  }
+  return ""
+}
+
 export const OpenWolf: Plugin = async ({ directory }: { directory: string }) => {
   return {
     event: async ({ event }: { event: { type: string; [key: string]: unknown } }) => {
       if (event.type === "session.created" && !wolfDirExists(directory)) return
 
-      const sessionId = (event as any).session_id || (event as any).sessionID
+      const sessionId = extractSessionId(event)
       if (!sessionId) return
 
       if (event.type === "session.created") {
@@ -30,7 +55,7 @@ export const OpenWolf: Plugin = async ({ directory }: { directory: string }) => 
     "tool.execute.before": async (input: { tool: string; sessionID: string }, output: { args: Record<string, unknown> }) => {
       if (!wolfDirExists(directory)) return
 
-      const sessionId = input.sessionID
+      const sessionId = extractSessionId(input)
       if (!sessionId) return
 
       const args: Record<string, unknown> = output.args || {}
@@ -38,7 +63,8 @@ export const OpenWolf: Plugin = async ({ directory }: { directory: string }) => 
 
       if (tool === "read") {
         const filePath = String(args.filePath || args.file_path || "")
-        if (filePath) handlePreRead(directory, sessionId, filePath)
+        const isRangedRead = args.offset !== undefined || args.limit !== undefined
+        if (filePath) handlePreRead(directory, sessionId, filePath, isRangedRead)
       }
 
       if (tool === "write" || tool === "edit") {
@@ -53,7 +79,7 @@ export const OpenWolf: Plugin = async ({ directory }: { directory: string }) => 
     "tool.execute.after": async (input: { tool: string; sessionID: string; args: Record<string, unknown> }, output: Record<string, unknown>) => {
       if (!wolfDirExists(directory)) return
 
-      const sessionId = input.sessionID
+      const sessionId = extractSessionId(input)
       if (!sessionId) return
 
       const tool = input.tool.toLowerCase()
@@ -66,7 +92,7 @@ export const OpenWolf: Plugin = async ({ directory }: { directory: string }) => 
       }
 
       if (tool === "write" || tool === "edit") {
-        const filePath = args.filePath || args.file_path || ""
+        const filePath = String(args.filePath || args.file_path || "")
         const content = String(args.content || "")
         const oldStr = String(args.old_string || args.oldString || "")
         const newStr = String(args.new_string || args.newString || "")
@@ -77,7 +103,7 @@ export const OpenWolf: Plugin = async ({ directory }: { directory: string }) => 
     stop: async (input: Record<string, unknown>) => {
       if (!wolfDirExists(directory)) return
 
-      const sessionId = (input as any).sessionID || (input as any).session_id
+      const sessionId = extractSessionId(input)
       if (!sessionId) return
 
       handleStop(directory, sessionId)
