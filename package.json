@@ -1,6 +1,6 @@
 {
   "name": "@alptech/openwolf",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "One project memory across Claude Code, Codex and OpenCode. Token usage measured, not estimated. Zero API calls.",
   "type": "module",
   "bin": {

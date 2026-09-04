@@ -7,6 +7,24 @@ All notable changes to OpenWolf are documented here. The format follows
 > This fork is published as `@alptech/openwolf` and keeps its own package
 > version. Upstream release history is retained below for reference.
 
+## [1.1.2] - 2026-09-04
+
+### Fixed
+
+- Made an explicit `openwolf init --agent ...` selection exact. For example,
+  `--agent codex` now creates only Codex integration files instead of also
+  creating Claude Code settings, rules, skills, and `CLAUDE.md`.
+- Made `openwolf update` and `openwolf status` respect the recorded agent list,
+  while treating legacy projects without that field as Claude projects.
+
+### Changed
+
+- Documented initialization commands for every supported agent, multi-agent
+  selections, the default auto-detection behavior, and `--agent all` in every
+  README translation.
+- Fixed npm publishing to the official public registry and added production
+  dependency auditing to CI; documentation installs now use the lockfile.
+
 ## [1.1.1] - 2026-09-04
 
 ### Changed
