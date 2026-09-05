@@ -1,14 +1,11 @@
 import React from "react";
-import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ComposedChart } from "recharts";
+import { Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ComposedChart } from "recharts";
 import { formatTokens } from "../../lib/utils.js";
 import { StatTile } from "../shared/StatTile.js";
 import { costOfProject, formatUsd, CACHE_READ_MULTIPLIER } from "../../lib/pricing.js";
 import type { ModelUsage } from "../../lib/pricing.js";
 import type { WolfData, LedgerSession } from "../../hooks/useWolfData.js";
-
-function fmt(n: number | undefined): string {
-  return (n ?? 0).toLocaleString("en-US");
-}
+import { useI18n } from "../../lib/i18n-context.js";
 
 interface AgentRow {
   agent: string;
@@ -37,6 +34,8 @@ function byAgent(sessions: LedgerSession[]): AgentRow[] {
 }
 
 export function TokenUsage({ data }: { data: WolfData }) {
+  const { t, formatNumber } = useI18n();
+  const fmt = (n: number | undefined) => formatNumber(n ?? 0);
   const { tokenLedger, config } = data;
   const lt = tokenLedger.lifetime;
   const measured = (lt.real_api_calls ?? 0) > 0;
@@ -51,17 +50,13 @@ export function TokenUsage({ data }: { data: WolfData }) {
   }));
 
   const agents = byAgent(tokenLedger.sessions);
-  const savingsPct = lt.total_tokens_estimated > 0
-    ? Math.round((lt.estimated_savings_vs_bare_cli / (lt.total_tokens_estimated + lt.estimated_savings_vs_bare_cli)) * 100)
-    : 0;
-
   // Cost. Prefer the daemon's project-wide transcript scan (it sees subagents
   // and every transcript); fall back to the lifetime per-model rollup the Stop
   // hook maintains, which is present from the very first session.
   const perModel = (tokenLedger.measured_project?.by_model ??
     tokenLedger.lifetime_maps?.real_by_model) as Record<string, ModelUsage> | undefined;
   const cost = costOfProject(perModel);
-  const costSource = tokenLedger.measured_project?.by_model ? "all transcripts" : "session ledger";
+  const costSource = t(tokenLedger.measured_project?.by_model ? "all transcripts" : "session ledger");
 
   // What the governor kept out, and what OpenWolf charged for keeping it out.
   const governedOriginal = lt.bash_governed_original_tokens ?? 0;
@@ -106,31 +101,31 @@ export function TokenUsage({ data }: { data: WolfData }) {
       {/* Headline tiles — measured numbers lead, estimates are demoted */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatTile
-          label="measured · lifetime"
+          label={t("measured · lifetime")}
           value={measured ? formatTokens((lt.real_input_tokens ?? 0) + (lt.real_output_tokens ?? 0)) : "—"}
-          sub={measured ? `${fmt(lt.real_api_calls)} api calls` : "fills in as sessions end"}
+          sub={measured ? t("{count} api calls", { count: fmt(lt.real_api_calls) }) : t("fills in as sessions end")}
           size="md"
         />
         <StatTile
-          label="cache read · measured"
+          label={t("cache read · measured")}
           value={measured ? formatTokens(lt.real_cache_read_tokens ?? 0) : "—"}
-          sub={measured ? "prompt cache working for you" : undefined}
+          sub={measured ? t("prompt cache working for you") : undefined}
           size="md"
         />
         <StatTile
-          label="openwolf overhead"
+          label={t("openwolf overhead")}
           value={overheadLabel ?? formatTokens(overhead)}
           sub={
             overheadLabel !== null
-              ? `${formatTokens(overhead)} injected · ${overheadLabel} of what it kept out`
-              : "context injected by hooks"
+              ? t("{tokens} injected · {percent} of what it kept out", { tokens: formatTokens(overhead), percent: overheadLabel })
+              : t("context injected by hooks")
           }
           size="md"
         />
         <StatTile
-          label="what this usage is worth"
+          label={t("what this usage is worth")}
           value={cost.priced ? formatUsd(cost.total) : "—"}
-          sub={cost.priced ? `at list price · ${costSource}` : "fills in as sessions end"}
+          sub={cost.priced ? t("at list price · {source}", { source: costSource }) : t("fills in as sessions end")}
           variant="inverted"
           size="md"
         />
@@ -141,21 +136,19 @@ export function TokenUsage({ data }: { data: WolfData }) {
       {cost.priced && (
         <div className="wd-card p-5">
           <div className="flex items-center justify-between mb-1">
-            <span className="wd-label" style={{ color: "var(--text-muted)" }}>where the cost is</span>
-            <span className="wd-label" style={{ color: "var(--text-faint)" }}>list price · {costSource}</span>
+            <span className="wd-label" style={{ color: "var(--text-muted)" }}>{t("where the cost is")}</span>
+            <span className="wd-label" style={{ color: "var(--text-faint)" }}>{t("list price · {source}", { source: costSource })}</span>
           </div>
           <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
-            What this project's measured token usage is worth at Anthropic's published rates.
-            On a Claude subscription you are not billed per token, so read this as the size of
-            the work, not an invoice.
+            {t("What this project's measured token usage is worth at Anthropic's published rates. On a Claude subscription you are not billed per token, so read this as the size of the work, not an invoice.")}
           </p>
 
           <div className="flex h-3 rounded-full overflow-hidden mb-3" style={{ background: "var(--bg-surface-hover)" }}>
             {([
-              ["cache read", cost.cacheRead, "var(--text-primary)"],
-              ["output", cost.output, "var(--accent)"],
-              ["cache write", cost.cacheWrite, "var(--text-muted)"],
-              ["fresh input", cost.input, "var(--text-faint)"],
+              [t("cache read"), cost.cacheRead, "var(--text-primary)"],
+              [t("output"), cost.output, "var(--accent)"],
+              [t("cache write"), cost.cacheWrite, "var(--text-muted)"],
+              [t("fresh input"), cost.input, "var(--text-faint)"],
             ] as Array<[string, number, string]>).map(([label, amount, color]) => (
               amount > 0 ? (
                 <div key={label} title={`${label}: ${formatUsd(amount)}`}
@@ -166,10 +159,10 @@ export function TokenUsage({ data }: { data: WolfData }) {
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 font-mono text-sm mb-4">
             {([
-              ["cache read", cost.cacheRead],
-              ["output", cost.output],
-              ["cache write", cost.cacheWrite],
-              ["fresh input", cost.input],
+              [t("cache read"), cost.cacheRead],
+              [t("output"), cost.output],
+              [t("cache write"), cost.cacheWrite],
+              [t("fresh input"), cost.input],
             ] as Array<[string, number]>).map(([label, amount]) => (
               <div key={label}>
                 <div className="wd-label" style={{ color: "var(--text-faint)" }}>{label}</div>
@@ -186,7 +179,7 @@ export function TokenUsage({ data }: { data: WolfData }) {
               <div key={row.model} className="flex justify-between gap-4">
                 <span className="truncate">{row.model}</span>
                 <span style={{ color: "var(--text-faint)" }}>
-                  {fmt(row.usage.api_calls)} calls · {formatTokens(row.usage.cache_read_input_tokens)} cache read
+                  {t("{count} calls · {tokens} cache read", { count: fmt(row.usage.api_calls), tokens: formatTokens(row.usage.cache_read_input_tokens) })}
                 </span>
                 <span className="dot-display" style={{ color: "var(--text-primary)" }}>{formatUsd(row.cost.total)}</span>
               </div>
@@ -194,7 +187,7 @@ export function TokenUsage({ data }: { data: WolfData }) {
           </div>
           {cost.unpriced.length > 0 && (
             <p className="wd-label mt-3" style={{ color: "var(--text-faint)" }}>
-              not priced (unknown model, excluded from the total): {cost.unpriced.join(", ")}
+              {t("not priced (unknown model, excluded from the total): {models}", { models: cost.unpriced.join(", ") })}
             </p>
           )}
         </div>
@@ -203,44 +196,34 @@ export function TokenUsage({ data }: { data: WolfData }) {
       {/* Plain language, for the many OpenWolf users who are not reading a
           ledger. One paragraph, real numbers, no jargon. */}
       <div className="wd-card p-5">
-        <span className="wd-label" style={{ color: "var(--text-muted)" }}>in plain language</span>
+        <span className="wd-label" style={{ color: "var(--text-muted)" }}>{t("in plain language")}</span>
         {keptOut > 0 ? (
           <div className="mt-3 space-y-3 text-sm" style={{ color: "var(--text-secondary)" }}>
             <p>
-              OpenWolf kept{" "}
-              <span className="dot-display text-xl" style={{ color: "var(--text-primary)" }}>{formatTokens(keptOut)}</span>{" "}
-              tokens out of your agent's context. That is text your agent would otherwise have
-              carried in every message for the rest of the session, paid for again on each one.
+              {t("OpenWolf kept {tokens} tokens out of your agent's context. That is text your agent would otherwise have carried in every message for the rest of the session, paid for again on each one.", { tokens: formatTokens(keptOut) })}
               {blendedInputPerMTok !== null && (
-                <> Had all of it sat in context for this project's{" "}
-                {fmt(Math.max(1, lt.real_api_calls ?? 1))} calls, that would have been up to{" "}
-                <span style={{ color: "var(--text-primary)" }}>
-                  {formatUsd((keptOut * (lt.real_api_calls ?? 1) * blendedInputPerMTok * CACHE_READ_MULTIPLIER) / 1_000_000)}
-                </span>{" "}
-                in cache reads. A ceiling, not a measurement: output arrives throughout a
-                session, so the real figure is lower.</>
+                <> {t("Had all of it sat in context for this project's {count} calls, that would have been up to {cost} in cache reads. A ceiling, not a measurement: output arrives throughout a session, so the real figure is lower.", {
+                  count: fmt(Math.max(1, lt.real_api_calls ?? 1)),
+                  cost: formatUsd((keptOut * (lt.real_api_calls ?? 1) * blendedInputPerMTok * CACHE_READ_MULTIPLIER) / 1_000_000),
+                })}</>
               )}
             </p>
             <p>
-              Doing that cost {formatTokens(overhead)} tokens of its own, so the net saving is{" "}
-              <span style={{ color: "var(--text-primary)" }}>{formatTokens(Math.max(0, netKeptOut))}</span>
-              {overheadLabel !== null && <> ({overheadLabel} overhead)</>}.
-              Nothing was lost: every condensed output is still on disk, and the agent is told where.
+              {t("Doing that cost {overhead} tokens of its own, so the net saving is {saving}{percent}. Nothing was lost: every condensed output is still on disk, and the agent is told where.", {
+                overhead: formatTokens(overhead),
+                saving: formatTokens(Math.max(0, netKeptOut)),
+                percent: overheadLabel !== null ? ` (${overheadLabel} ${t("overhead")})` : "",
+              })}
             </p>
             {!denyOn && (lt.repeated_reads_warned ?? 0) > 0 && (
               <p style={{ color: "var(--text-muted)" }}>
-                Separately, {fmt(lt.repeated_reads_warned)} repeated file{" "}
-                {(lt.repeated_reads_warned ?? 0) === 1 ? "read was" : "reads were"} flagged but allowed,
-                because duplicate reads are set to <span className="font-mono">{dupMode}</span>. Set
-                <span className="font-mono"> openwolf.reads.duplicate_mode</span> to
-                <span className="font-mono"> deny</span> to block them and count the saving here.
+                {t("Separately, {count} repeated file reads were flagged but allowed because duplicate reads are set to {mode}. Set openwolf.reads.duplicate_mode to deny to block them and count the saving here.", { count: fmt(lt.repeated_reads_warned), mode: dupMode })}
               </p>
             )}
           </div>
         ) : (
           <p className="mt-3 text-sm" style={{ color: "var(--text-muted)" }}>
-            Nothing kept out yet. This fills in the first time a command produces more output than
-            the governor threshold, or a file is read twice.
+            {t("Nothing kept out yet. This fills in the first time a command produces more output than the governor threshold, or a file is read twice.")}
           </p>
         )}
       </div>
@@ -249,9 +232,9 @@ export function TokenUsage({ data }: { data: WolfData }) {
       {families.length > 0 && (
         <div className="wd-card p-5">
           <div className="flex items-center justify-between mb-4">
-            <span className="wd-label" style={{ color: "var(--text-muted)" }}>governor · by command family</span>
+            <span className="wd-label" style={{ color: "var(--text-muted)" }}>{t("governor · by command family")}</span>
             <span className="wd-label" style={{ color: "var(--text-faint)" }}>
-              {fmt(lt.bash_governed_calls)} governed calls
+              {t("{count} governed calls", { count: fmt(lt.bash_governed_calls) })}
             </span>
           </div>
           <div className="space-y-3">
@@ -275,8 +258,7 @@ export function TokenUsage({ data }: { data: WolfData }) {
             ))}
           </div>
           <p className="wd-label mt-4" style={{ color: "var(--text-faint)" }}>
-            tokens kept out per family · percentage of that family's output condensed.
-            A family sitting near 0% is set to suggest, or its output rarely crosses the threshold.
+            {t("tokens kept out per family · percentage of that family's output condensed. A family sitting near 0% is set to suggest, or its output rarely crosses the threshold.")}
           </p>
         </div>
       )}
@@ -285,16 +267,16 @@ export function TokenUsage({ data }: { data: WolfData }) {
       {tokenLedger.measured_project && (
         <div className="wd-card p-5">
           <div className="flex items-center justify-between mb-3">
-            <span className="wd-label" style={{ color: "var(--text-muted)" }}>measured · all project transcripts</span>
+            <span className="wd-label" style={{ color: "var(--text-muted)" }}>{t("measured · all project transcripts")}</span>
             <span className="wd-label" style={{ color: "var(--text-faint)" }}>
-              {tokenLedger.measured_project.transcripts} transcripts · scanned {tokenLedger.measured_project.scanned_at?.slice(0, 16).replace("T", " ")}
+              {t("{count} transcripts · scanned {date}", { count: tokenLedger.measured_project.transcripts, date: tokenLedger.measured_project.scanned_at?.slice(0, 16).replace("T", " ") ?? "—" })}
             </span>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-2 font-mono text-sm" style={{ color: "var(--text-secondary)" }}>
-            <div className="flex justify-between"><span>in</span><span className="dot-display" style={{ color: "var(--text-primary)" }}>{formatTokens(tokenLedger.measured_project.input_tokens)}</span></div>
-            <div className="flex justify-between"><span>out</span><span className="dot-display" style={{ color: "var(--text-primary)" }}>{formatTokens(tokenLedger.measured_project.output_tokens)}</span></div>
-            <div className="flex justify-between"><span>cache read</span><span className="dot-display" style={{ color: "var(--text-primary)" }}>{formatTokens(tokenLedger.measured_project.cache_read_input_tokens)}</span></div>
-            <div className="flex justify-between"><span>cache write</span><span className="dot-display" style={{ color: "var(--text-primary)" }}>{formatTokens(tokenLedger.measured_project.cache_creation_input_tokens)}</span></div>
+            <div className="flex justify-between"><span>{t("in")}</span><span className="dot-display" style={{ color: "var(--text-primary)" }}>{formatTokens(tokenLedger.measured_project.input_tokens)}</span></div>
+            <div className="flex justify-between"><span>{t("out")}</span><span className="dot-display" style={{ color: "var(--text-primary)" }}>{formatTokens(tokenLedger.measured_project.output_tokens)}</span></div>
+            <div className="flex justify-between"><span>{t("cache read")}</span><span className="dot-display" style={{ color: "var(--text-primary)" }}>{formatTokens(tokenLedger.measured_project.cache_read_input_tokens)}</span></div>
+            <div className="flex justify-between"><span>{t("cache write")}</span><span className="dot-display" style={{ color: "var(--text-primary)" }}>{formatTokens(tokenLedger.measured_project.cache_creation_input_tokens)}</span></div>
           </div>
           {Object.keys(tokenLedger.measured_project.by_model).length > 0 && (
             <div className="mt-3 space-y-1 font-mono text-sm" style={{ color: "var(--text-secondary)" }}>
@@ -303,13 +285,13 @@ export function TokenUsage({ data }: { data: WolfData }) {
                 .map(([model, m]) => (
                   <div key={model} className="flex justify-between">
                     <span style={{ color: "var(--text-muted)" }}>{model}</span>
-                    <span>in {formatTokens(m.input_tokens)} · out {formatTokens(m.output_tokens)} · {fmt(m.api_calls)} calls</span>
+                    <span>{t("in {input} · out {output} · {count} calls", { input: formatTokens(m.input_tokens), output: formatTokens(m.output_tokens), count: fmt(m.api_calls) })}</span>
                   </div>
                 ))}
               {tokenLedger.measured_project.sidechain.api_calls > 0 && (
                 <div className="flex justify-between">
-                  <span style={{ color: "var(--text-muted)" }}>subagent share</span>
-                  <span>in {formatTokens(tokenLedger.measured_project.sidechain.input_tokens)} · out {formatTokens(tokenLedger.measured_project.sidechain.output_tokens)} · {fmt(tokenLedger.measured_project.sidechain.api_calls)} calls</span>
+                  <span style={{ color: "var(--text-muted)" }}>{t("subagent share")}</span>
+                  <span>{t("in {input} · out {output} · {count} calls", { input: formatTokens(tokenLedger.measured_project.sidechain.input_tokens), output: formatTokens(tokenLedger.measured_project.sidechain.output_tokens), count: fmt(tokenLedger.measured_project.sidechain.api_calls) })}</span>
                 </div>
               )}
             </div>
@@ -320,11 +302,11 @@ export function TokenUsage({ data }: { data: WolfData }) {
       {/* Usage over time */}
       <div className="wd-card p-5">
         <div className="flex items-center justify-between mb-4">
-          <span className="wd-label" style={{ color: "var(--text-muted)" }}>usage over time · per session</span>
-          <span className="wd-label" style={{ color: "var(--text-faint)" }}>tokens</span>
+          <span className="wd-label" style={{ color: "var(--text-muted)" }}>{t("usage over time · per session")}</span>
+          <span className="wd-label" style={{ color: "var(--text-faint)" }}>{t("tokens")}</span>
         </div>
         {chartData.length === 0 ? (
-          <div className="text-sm py-8 text-center" style={{ color: "var(--text-muted)" }}>No session data yet.</div>
+          <div className="text-sm py-8 text-center" style={{ color: "var(--text-muted)" }}>{t("No session data yet.")}</div>
         ) : (
           <ResponsiveContainer width="100%" height={260}>
             <ComposedChart data={chartData}>
@@ -336,10 +318,10 @@ export function TokenUsage({ data }: { data: WolfData }) {
                 formatter={(v: number, name: string) => [formatTokens(v), name]}
               />
               <Legend wrapperStyle={{ fontFamily: "var(--font-mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em" }} />
-              <Area isAnimationActive={false} type="monotone" dataKey="input" name="est. input" stackId="1" stroke="var(--series-1)" strokeWidth={2} fill="var(--series-1)" fillOpacity={0.16} />
-              <Area isAnimationActive={false} type="monotone" dataKey="output" name="est. output" stackId="1" stroke="var(--series-2)" strokeWidth={2} fill="var(--series-2)" fillOpacity={0.16} />
+              <Area isAnimationActive={false} type="monotone" dataKey="input" name={t("est. input")} stackId="1" stroke="var(--series-1)" strokeWidth={2} fill="var(--series-1)" fillOpacity={0.16} />
+              <Area isAnimationActive={false} type="monotone" dataKey="output" name={t("est. output")} stackId="1" stroke="var(--series-2)" strokeWidth={2} fill="var(--series-2)" fillOpacity={0.16} />
               {measured && (
-                <Line isAnimationActive={false} type="monotone" dataKey="measured" name="measured" stroke="var(--series-red)" strokeWidth={2} dot={{ r: 3, fill: "var(--series-red)", strokeWidth: 0 }} connectNulls />
+                <Line isAnimationActive={false} type="monotone" dataKey="measured" name={t("measured")} stroke="var(--series-red)" strokeWidth={2} dot={{ r: 3, fill: "var(--series-red)", strokeWidth: 0 }} connectNulls />
               )}
             </ComposedChart>
           </ResponsiveContainer>
@@ -348,20 +330,20 @@ export function TokenUsage({ data }: { data: WolfData }) {
 
       {/* Per-agent breakdown */}
       <div className="wd-card p-5">
-        <span className="wd-label" style={{ color: "var(--text-muted)" }}>by agent</span>
+        <span className="wd-label" style={{ color: "var(--text-muted)" }}>{t("by agent")}</span>
         {agents.length === 0 ? (
-          <p className="text-sm mt-3" style={{ color: "var(--text-muted)" }}>No sessions recorded yet.</p>
+          <p className="text-sm mt-3" style={{ color: "var(--text-muted)" }}>{t("No sessions recorded yet.")}</p>
         ) : (
           <div className="overflow-x-auto mt-3">
             <table className="w-full text-sm font-mono">
               <thead>
                 <tr className="wd-label" style={{ color: "var(--text-faint)" }}>
-                  <th className="text-left py-2 font-normal">agent</th>
-                  <th className="text-right py-2 font-normal">sessions</th>
-                  <th className="text-right py-2 font-normal">estimated</th>
-                  <th className="text-right py-2 font-normal">measured in</th>
-                  <th className="text-right py-2 font-normal">measured out</th>
-                  <th className="text-right py-2 font-normal">cache read</th>
+                  <th className="text-left py-2 font-normal">{t("agent")}</th>
+                  <th className="text-right py-2 font-normal">{t("sessions")}</th>
+                  <th className="text-right py-2 font-normal">{t("estimated")}</th>
+                  <th className="text-right py-2 font-normal">{t("measured in")}</th>
+                  <th className="text-right py-2 font-normal">{t("measured out")}</th>
+                  <th className="text-right py-2 font-normal">{t("cache read")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -380,7 +362,7 @@ export function TokenUsage({ data }: { data: WolfData }) {
           </div>
         )}
         <p className="wd-label mt-3" style={{ color: "var(--text-faint)" }}>
-          estimated = char-ratio heuristic · measured = summed from harness transcripts at session end
+          {t("estimated = char-ratio heuristic · measured = summed from harness transcripts at session end")}
         </p>
         {(() => {
           const withVerified = tokenLedger.sessions.filter((s) => s.verified);
@@ -391,7 +373,9 @@ export function TokenUsage({ data }: { data: WolfData }) {
           const deliveredTok = withVerified.reduce((n, s) => n + (s.verified!.injection_tokens_delivered ?? 0), 0);
           return (
             <p className="wd-label mt-1" style={{ color: failed > 0 ? "var(--accent)" : "var(--text-faint)" }}>
-              verified from transcripts ({withVerified.length} sessions): {fmt(fired)} hook runs · {fmt(failed)} failures · {fmt(delivered)} injections ({formatTokens(deliveredTok)}) actually entered context
+              {t("verified from transcripts ({sessions} sessions): {runs} hook runs · {failures} failures · {injections} injections ({tokens}) actually entered context", {
+                sessions: withVerified.length, runs: fmt(fired), failures: fmt(failed), injections: fmt(delivered), tokens: formatTokens(deliveredTok),
+              })}
             </p>
           );
         })()}
@@ -400,7 +384,7 @@ export function TokenUsage({ data }: { data: WolfData }) {
       {/* Waste alerts */}
       {tokenLedger.waste_flags.length > 0 && (
         <div className="wd-card p-5">
-          <span className="wd-label" style={{ color: "var(--text-muted)" }}>waste alerts</span>
+          <span className="wd-label" style={{ color: "var(--text-muted)" }}>{t("waste alerts")}</span>
           <div className="space-y-3 mt-3">
             {tokenLedger.waste_flags.map((flag: any, i: number) => (
               <div key={i} className="rounded-xl p-4" style={{ background: "var(--danger-subtle)", border: "1px solid var(--border)" }}>

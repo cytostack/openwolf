@@ -7,6 +7,13 @@ All notable changes to OpenWolf are documented here. The format follows
 > This fork is published as `@alptech/openwolf` and keeps its own package
 > version. Upstream release history is retained below for reference.
 
+## [1.1.3] - 2026-09-05
+
+### Changed
+
+- Prepared the next patch release for the dashboard localization updates and
+  the accompanying documentation changes.
+
 ## [1.1.2] - 2026-09-04
 
 ### Fixed

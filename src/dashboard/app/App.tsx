@@ -4,6 +4,7 @@ import { Layout } from "./components/layout/Layout.js";
 import { ErrorBoundary } from "./components/layout/ErrorBoundary.js";
 import { useWolfData } from "./hooks/useWolfData.js";
 import { useTheme } from "./hooks/useTheme.js";
+import { useI18n } from "./lib/i18n-context.js";
 
 const ProjectOverview = lazy(() => import("./components/panels/ProjectOverview.js").then(m => ({ default: m.ProjectOverview })));
 const ActivityTimeline = lazy(() => import("./components/panels/ActivityTimeline.js").then(m => ({ default: m.ActivityTimeline })));
@@ -31,6 +32,7 @@ function Skeleton() {
 const PANELS = ["overview", "activity", "tokens", "cron", "cerebrum", "memory", "anatomy", "bugs"];
 
 export default function App() {
+  const { t } = useI18n();
   // Hash-based deep links: /#tokens opens the Tokens panel directly.
   const initial = location.hash.slice(1);
   const [activePanel, setActivePanelState] = useState(PANELS.includes(initial) ? initial : "overview");
@@ -46,7 +48,7 @@ export default function App() {
       <div className="flex items-center justify-center min-h-screen" style={{ background: "var(--bg-base)" }}>
         <div className="text-center">
           <div className="dot-display text-3xl mb-3" style={{ color: "var(--text-primary)" }}>OPENWOLF</div>
-          <p className="wd-label" style={{ color: "var(--text-muted)" }}>loading…</p>
+          <p className="wd-label" style={{ color: "var(--text-muted)" }}>{t("loading...")}</p>
         </div>
       </div>
     );
@@ -57,11 +59,9 @@ export default function App() {
       <div className="flex items-center justify-center min-h-screen px-6" style={{ background: "var(--bg-base)" }}>
         <div className="wd-card p-8 max-w-lg text-center">
           <div className="dot-display text-3xl mb-3" style={{ color: "var(--accent)" }}>401</div>
-          <p className="mb-3" style={{ color: "var(--text-primary)" }}>Dashboard token rejected.</p>
+          <p className="mb-3" style={{ color: "var(--text-primary)" }}>{t("Dashboard token rejected.")}</p>
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-            The server on this port belongs to a different project or an older session.
-            Close this tab and relaunch with <span className="font-mono" style={{ color: "var(--text-secondary)" }}>openwolf dashboard</span> from
-            your project to open the correct URL with a matching token.
+            {t("The server on this port belongs to a different project or an older session. Close this tab and relaunch with openwolf dashboard from your project to open the correct URL with a matching token.")}
           </p>
         </div>
       </div>

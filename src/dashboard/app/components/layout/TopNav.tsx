@@ -1,6 +1,7 @@
 import React from "react";
 import { LiveIndicator } from "../shared/LiveIndicator.js";
 import type { Theme } from "../../hooks/useTheme.js";
+import { useI18n } from "../../lib/i18n-context.js";
 
 const NAV_ITEMS = [
   { id: "overview", label: "Overview" },
@@ -24,6 +25,7 @@ interface TopNavProps {
 }
 
 export function TopNav({ activePanel, onNavigate, daemonStatus, projectName, agents, theme, onToggleTheme }: TopNavProps) {
+  const { t } = useI18n();
   return (
     <header className="sticky top-0 z-50" style={{ background: "var(--bg-base)", borderBottom: "1px solid var(--border-subtle)" }}>
       <div className="max-w-7xl mx-auto px-5">
@@ -40,7 +42,7 @@ export function TopNav({ activePanel, onNavigate, daemonStatus, projectName, age
               {projectName}
             </span>
             {agents.length > 0 && (
-              <div className="hidden lg:flex items-center gap-1" title={`Wired agents: ${agents.join(", ")}`}>
+              <div className="hidden lg:flex items-center gap-1" title={t("Wired agents: {agents}", { agents: agents.join(", ") })}>
                 {agents.map((a) => (
                   <span key={a} className="wd-label flex items-center justify-center rounded-full"
                     style={{ width: 22, height: 22, border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: "0.55rem" }}>
@@ -51,12 +53,12 @@ export function TopNav({ activePanel, onNavigate, daemonStatus, projectName, age
             )}
             <LiveIndicator />
             <span className="wd-label hidden sm:inline" style={{ color: daemonStatus === "ok" || daemonStatus === "running" ? "var(--text-secondary)" : "var(--accent)" }}>
-              {daemonStatus === "ok" || daemonStatus === "running" ? "daemon on" : `daemon ${daemonStatus}`}
+              {daemonStatus === "ok" || daemonStatus === "running" ? t("daemon on") : t("daemon {status}", { status: t(daemonStatus) })}
             </span>
             <button onClick={onToggleTheme} className="wd-pill px-3 py-1 cursor-pointer"
               style={{ color: "var(--text-secondary)" }}
-              title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
-              {theme === "dark" ? "light" : "dark"}
+              title={t("Switch to {theme} mode", { theme: t(theme === "dark" ? "light" : "dark") })}>
+              {t(theme === "dark" ? "light" : "dark")}
             </button>
           </div>
         </div>
@@ -80,7 +82,7 @@ export function TopNav({ activePanel, onNavigate, daemonStatus, projectName, age
                 onMouseLeave={(e) => { if (!active) e.currentTarget.style.color = "var(--text-muted)"; }}
               >
                 {active && <span className="rounded-full" style={{ width: 5, height: 5, background: "var(--accent)" }} />}
-                {item.label}
+                {t(item.label)}
               </button>
             );
           })}

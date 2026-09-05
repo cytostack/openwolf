@@ -1,5 +1,6 @@
 import React from "react";
 import { cn } from "../../lib/utils.js";
+import { useI18n } from "../../lib/i18n-context.js";
 
 // Monochrome status system: ok = neutral ink dot, warning = outlined red dot,
 // error = filled red. Status is never carried by color alone — the label
@@ -14,6 +15,7 @@ const toneOf: Record<string, Tone> = {
 };
 
 export function StatusBadge({ status, className }: { status?: string | null; className?: string }) {
+  const { t } = useI18n();
   // Never trust the incoming value: a failed/malformed API response can leave
   // this undefined, and a crash here white-screens the whole dashboard.
   const label = typeof status === "string" && status.trim() ? status : "unknown";
@@ -33,7 +35,7 @@ export function StatusBadge({ status, className }: { status?: string | null; cla
     >
       <span className={cn("rounded-full", tone === "ok" && label.toLowerCase() === "running" ? "rec-pulse" : "")}
         style={{ width: 6, height: 6, ...dotStyle }} />
-      {label}
+      {t(label.toLowerCase())}
     </span>
   );
 }

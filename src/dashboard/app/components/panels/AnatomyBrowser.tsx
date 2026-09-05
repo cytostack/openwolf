@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { TokenBadge } from "../shared/TokenBadge.js";
 import type { WolfData } from "../../hooks/useWolfData.js";
+import { useI18n } from "../../lib/i18n-context.js";
 
 interface TreeNode {
   name: string;
@@ -38,6 +39,7 @@ function buildTree(entries: WolfData["anatomy"]["entries"]): TreeNode {
 }
 
 function DirNode({ node, search, depth = 0 }: { node: TreeNode; search: string; depth?: number }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(depth < 2);
   const lower = search.toLowerCase();
   const matchedFiles = node.files.filter((f) =>
@@ -55,7 +57,7 @@ function DirNode({ node, search, depth = 0 }: { node: TreeNode; search: string; 
           <span className="w-4 text-center" style={{ color: "var(--text-faint)" }}>{expanded ? "▼" : "▶"}</span>
           <span style={{ color: "var(--text-muted)" }}>▸</span>
           <span>{node.name}/</span>
-          <span className="text-xs" style={{ color: "var(--text-faint)" }}>{countFiles(node)} files</span>
+          <span className="text-xs" style={{ color: "var(--text-faint)" }}>{t("{count} files", { count: countFiles(node) })}</span>
         </button>
       )}
       {(expanded || node.name === ".") && (
@@ -76,7 +78,7 @@ function DirNode({ node, search, depth = 0 }: { node: TreeNode; search: string; 
                     </span>
                   ))}
                   {f.symbols.length > 8 && (
-                    <span className="wd-label" style={{ color: "var(--text-faint)", fontSize: "0.6rem" }}>+{f.symbols.length - 8} more</span>
+                    <span className="wd-label" style={{ color: "var(--text-faint)", fontSize: "0.6rem" }}>{t("+{count} more", { count: f.symbols.length - 8 })}</span>
                   )}
                 </div>
               )}
@@ -101,6 +103,7 @@ function hasMatches(node: TreeNode, search: string): boolean {
 }
 
 export function AnatomyBrowser({ data }: { data: WolfData }) {
+  const { t } = useI18n();
   const { anatomy } = data;
   const [search, setSearch] = useState("");
   const [sortBySize, setSortBySize] = useState(false);
@@ -119,27 +122,27 @@ export function AnatomyBrowser({ data }: { data: WolfData }) {
   return (
     <div>
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        <input type="text" placeholder="Search files..." value={search} onChange={(e) => setSearch(e.target.value)}
+        <input type="text" placeholder={t("Search files...")} value={search} onChange={(e) => setSearch(e.target.value)}
           className="flex-1 min-w-[200px] rounded-lg px-3 py-2 text-sm focus:outline-none"
           style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
         />
         <button onClick={() => setSortBySize(!sortBySize)}
           className="px-3 py-2 text-xs rounded-lg"
           style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
-        >{sortBySize ? "Sort: Size" : "Sort: A-Z"}</button>
+        >{t(sortBySize ? "Sort: Size" : "Sort: A-Z")}</button>
       </div>
 
       <div className="flex gap-4 mb-4 text-sm" style={{ color: "var(--text-muted)" }}>
-        <span>{stats.total} files tracked</span>
-        <span>Avg: {stats.avg} tok/file</span>
-        <span>Largest: {stats.largest} tok</span>
+        <span>{t("{count} files tracked", { count: stats.total })}</span>
+        <span>{t("Avg: {count} tok/file", { count: stats.avg })}</span>
+        <span>{t("Largest: {count} tok", { count: stats.largest })}</span>
       </div>
 
       <div className="rounded-xl p-4" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
         {anatomy.entries.length === 0 ? (
           <div className="text-center py-12" style={{ color: "var(--text-muted)" }}>
             <p className="text-2xl mb-2">📂</p>
-            <p>No anatomy data. Run <code style={{ color: "var(--text-secondary)" }}>openwolf scan</code> to index your project.</p>
+            <p>{t("No anatomy data. Run openwolf scan to index your project.")}</p>
           </div>
         ) : (
           <DirNode node={tree} search={search} />

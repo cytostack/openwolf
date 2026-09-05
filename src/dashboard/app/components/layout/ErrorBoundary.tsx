@@ -1,9 +1,12 @@
 import React from "react";
+import { useI18n } from "../../lib/i18n-context.js";
+import type { TranslationValues } from "../../lib/i18n.js";
 
 interface Props {
   /** Panel name, shown so the user knows which tile failed. */
   label: string;
   children: React.ReactNode;
+  t: (message: string, values?: TranslationValues) => string;
 }
 
 interface State {
@@ -21,7 +24,7 @@ interface State {
  *
  * Mount with key={activePanel} so navigating away clears the error.
  */
-export class ErrorBoundary extends React.Component<Props, State> {
+class ErrorBoundaryInner extends React.Component<Props, State> {
   state: State = { error: null };
 
   static getDerivedStateFromError(error: Error): State {
@@ -35,18 +38,16 @@ export class ErrorBoundary extends React.Component<Props, State> {
   render(): React.ReactNode {
     const { error } = this.state;
     if (!error) return this.props.children;
+    const panelLabel = this.props.label.charAt(0).toUpperCase() + this.props.label.slice(1);
 
     return (
       <div className="wd-card p-8">
-        <div className="dot-display text-2xl mb-3" style={{ color: "var(--accent)" }}>PANEL FAILED</div>
+        <div className="dot-display text-2xl mb-3" style={{ color: "var(--accent)" }}>{this.props.t("PANEL FAILED")}</div>
         <p className="mb-3" style={{ color: "var(--text-primary)" }}>
-          The <span className="font-mono">{this.props.label}</span> panel could not render.
+          {this.props.t("The {panel} panel could not render.", { panel: this.props.t(panelLabel) })}
         </p>
         <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
-          This usually means a file in <span className="font-mono">.wolf/</span> holds a shape the
-          dashboard did not expect. Every other panel still works. Run{" "}
-          <span className="font-mono" style={{ color: "var(--text-secondary)" }}>openwolf status</span> to
-          check the project state files.
+          {this.props.t("This usually means a file in .wolf/ holds a shape the dashboard did not expect. Every other panel still works. Run openwolf status to check the project state files.")}
         </p>
         <pre
           className="text-xs rounded-lg p-3 overflow-x-auto font-mono"
@@ -55,4 +56,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
       </div>
     );
   }
+}
+
+export function ErrorBoundary({ label, children }: Omit<Props, "t">) {
+  const { t } = useI18n();
+  return <ErrorBoundaryInner label={label} t={t}>{children}</ErrorBoundaryInner>;
 }

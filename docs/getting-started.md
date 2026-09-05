@@ -30,7 +30,7 @@ openwolf init
   ██  ██ ██     ██     ██  ███ ██ ███ ██ ██  ██ ██     ██
   ██████ ██     ██████ ██   ██  ███ ███  ██████ ██████ ██
 
-  v1.1.2  ·  one project memory across your coding agents
+  v1.1.3  ·  one project memory across your coding agents
   ~/your-project
 
   ✓ Agents detected: codex, gemini (wiring all; --agent claude to skip)

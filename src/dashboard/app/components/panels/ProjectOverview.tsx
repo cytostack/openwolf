@@ -6,14 +6,11 @@ import type { ModelUsage } from "../../lib/pricing.js";
 import { DotBar, type DotBarDatum } from "../shared/DotBar.js";
 import { formatTokens } from "../../lib/utils.js";
 import type { WolfData } from "../../hooks/useWolfData.js";
-
-function fmt(n: number | undefined): string {
-  return (n ?? 0).toLocaleString("en-US");
-}
+import { useI18n } from "../../lib/i18n-context.js";
 
 /** Sessions per weekday over the ledger's recent history → dot chart. */
-function weeklyActivity(data: WolfData): DotBarDatum[] {
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+function weeklyActivity(data: WolfData, t: (message: string) => string): DotBarDatum[] {
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(t);
   const counts = new Array(7).fill(0);
   for (const s of data.tokenLedger.sessions.slice(-60)) {
     const d = new Date(s.ended ?? s.started);
@@ -48,6 +45,8 @@ function nextPhase(statusDoc: string): string[] {
 }
 
 export function ProjectOverview({ data }: { data: WolfData }) {
+  const { t, formatNumber } = useI18n();
+  const fmt = (n: number | undefined) => formatNumber(n ?? 0);
   const { health, tokenLedger, anatomy, buglog, cronState, config, contextHealth, hookHealth, statusDoc, scanState, project, identity } = data;
   const brokenHooks = Object.entries(hookHealth).filter(([, h]) => h.consecutive_failures >= 2);
   const hookCount = Object.keys(hookHealth).length;
@@ -74,16 +73,16 @@ export function ProjectOverview({ data }: { data: WolfData }) {
       {/* Header row */}
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <h2 className="dot-display text-4xl" style={{ color: "var(--text-primary)" }}>{projectName}</h2>
+          <h2 className="dot-display text-2xl sm:text-4xl break-all" style={{ color: "var(--text-primary)" }}>{projectName}</h2>
           <p className="wd-label mt-2" style={{ color: "var(--text-muted)" }}>
-            one brain · {config.agents.length} agent{config.agents.length === 1 ? "" : "s"} wired
+            {t("one brain · {count} agents wired", { count: config.agents.length })}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <StatusBadge status={health.status} />
           {health.uptime_seconds > 0 && (
             <span className="wd-label" style={{ color: "var(--text-faint)" }}>
-              up {Math.floor(health.uptime_seconds / 3600)}h {Math.floor((health.uptime_seconds % 3600) / 60)}m
+              {t("up {hours}h {minutes}m", { hours: Math.floor(health.uptime_seconds / 3600), minutes: Math.floor((health.uptime_seconds % 3600) / 60) })}
             </span>
           )}
         </div>
@@ -100,8 +99,8 @@ export function ProjectOverview({ data }: { data: WolfData }) {
             const totalSaved = governedSaved + (denyOn ? lt.estimated_savings_vs_bare_cli : 0);
             if (totalSaved > 0) {
               const parts = [
-                governedSaved > 0 ? `${formatTokens(governedSaved)} bash output governed (${fmt(lt.bash_governed_calls)} calls)` : "",
-                denyOn && lt.estimated_savings_vs_bare_cli > 0 ? `${formatTokens(lt.estimated_savings_vs_bare_cli)} denied re-reads` : "",
+                governedSaved > 0 ? t("{tokens} bash output governed ({count} calls)", { tokens: formatTokens(governedSaved), count: fmt(lt.bash_governed_calls) }) : "",
+                denyOn && lt.estimated_savings_vs_bare_cli > 0 ? t("{tokens} denied re-reads", { tokens: formatTokens(lt.estimated_savings_vs_bare_cli) }) : "",
               ].filter(Boolean).join(" · ");
               // The hero number is meaningless to anyone not reading a ledger
               // unless it says what it means. One sentence, plain words, and
@@ -110,27 +109,25 @@ export function ProjectOverview({ data }: { data: WolfData }) {
               const sharePct = governedOriginal > 0 ? Math.round((governedSaved / governedOriginal) * 100) : null;
               return (
                 <StatTile
-                  label="tokens kept out of context · measured"
+                  label={t("tokens kept out of context · measured")}
                   value={formatTokens(totalSaved)}
-                  sub={parts || "measured at the rewrite point"}
+                  sub={parts || t("measured at the rewrite point")}
                   variant="inverted"
                   size="xl"
                 >
                   <p className="text-sm mt-4 leading-relaxed"
                     style={{ color: "color-mix(in srgb, var(--invert-text) 70%, transparent)" }}>
-                    Text your agent never had to carry, and never had to pay for again on every
-                    later message.
-                    {sharePct !== null && ` That is ${sharePct}% of ${formatTokens(governedOriginal)} of command output.`}
-                    {" "}The full text is still on disk.
+                    {t("Text your agent never had to carry or pay for again in every later message. The full text is still on disk.")}
+                    {sharePct !== null && ` ${t("That is {percent}% of {tokens} of command output.", { percent: sharePct, tokens: formatTokens(governedOriginal) })}`}
                   </p>
                 </StatTile>
               );
             }
             return (
               <StatTile
-                label="tokens kept out of context · measured"
+                label={t("tokens kept out of context · measured")}
                 value="0"
-                sub={`accumulates as the bash governor condenses oversized output${denyOn ? "" : " · deny mode off (reads.duplicate_mode)"}`}
+                sub={t(denyOn ? "accumulates as the bash governor condenses oversized output" : "accumulates as the bash governor condenses oversized output · deny mode off (reads.duplicate_mode)")}
                 variant="inverted"
                 size="xl"
               />
@@ -141,26 +138,26 @@ export function ProjectOverview({ data }: { data: WolfData }) {
         {/* Measured usage */}
         <div className="wd-card p-5 flex flex-col justify-between gap-3 min-h-[132px]">
           <div className="flex items-start justify-between">
-            <span className="wd-label" style={{ color: "var(--text-muted)" }}>measured · transcripts</span>
+            <span className="wd-label" style={{ color: "var(--text-muted)" }}>{t("measured · transcripts")}</span>
             {measured && <span className="rounded-full" style={{ width: 6, height: 6, background: "var(--accent)" }} />}
           </div>
           {measured ? (
             <div className="space-y-1.5 font-mono text-sm" style={{ color: "var(--text-secondary)" }}>
-              <div className="flex justify-between"><span>in</span><span className="dot-display text-base" style={{ color: "var(--text-primary)" }}>{fmt(lt.real_input_tokens)}</span></div>
-              <div className="flex justify-between"><span>out</span><span className="dot-display text-base" style={{ color: "var(--text-primary)" }}>{fmt(lt.real_output_tokens)}</span></div>
-              <div className="flex justify-between"><span>cache read</span><span className="dot-display text-base" style={{ color: "var(--text-primary)" }}>{fmt(lt.real_cache_read_tokens)}</span></div>
-              <div className="flex justify-between wd-label pt-1" style={{ color: "var(--text-faint)" }}><span>api calls</span><span>{fmt(lt.real_api_calls)}</span></div>
+              <div className="flex justify-between"><span>{t("in")}</span><span className="dot-display text-base" style={{ color: "var(--text-primary)" }}>{fmt(lt.real_input_tokens)}</span></div>
+              <div className="flex justify-between"><span>{t("out")}</span><span className="dot-display text-base" style={{ color: "var(--text-primary)" }}>{fmt(lt.real_output_tokens)}</span></div>
+              <div className="flex justify-between"><span>{t("cache read")}</span><span className="dot-display text-base" style={{ color: "var(--text-primary)" }}>{fmt(lt.real_cache_read_tokens)}</span></div>
+              <div className="flex justify-between wd-label pt-1" style={{ color: "var(--text-faint)" }}><span>{t("api calls")}</span><span>{fmt(lt.real_api_calls)}</span></div>
             </div>
           ) : (
             <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-              No measured usage yet — real token counts are read from each session's transcript at Stop.
+              {t("No measured usage yet - real token counts are read from each session's transcript at Stop.")}
             </p>
           )}
         </div>
 
         {/* Agents */}
         <div className="wd-card p-5 flex flex-col justify-between gap-3 min-h-[132px]">
-          <span className="wd-label" style={{ color: "var(--text-muted)" }}>agents</span>
+          <span className="wd-label" style={{ color: "var(--text-muted)" }}>{t("agents")}</span>
           <div className="flex flex-wrap gap-2">
             {config.agents.map((a) => (
               <span key={a} className="flex flex-col items-center gap-1.5">
@@ -178,46 +175,46 @@ export function ProjectOverview({ data }: { data: WolfData }) {
       {/* Stat row */}
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-4">
         <StatTile
-          label="usage worth · list price"
+          label={t("usage worth · list price")}
           value={cost.priced ? formatUsd(cost.total) : "—"}
-          sub={cost.priced ? `${fmt(lt.real_api_calls)} api calls` : "fills in as sessions end"}
+          sub={cost.priced ? t("{count} api calls", { count: fmt(lt.real_api_calls) }) : t("fills in as sessions end")}
           size="md"
         />
-        <StatTile label="files tracked" value={fmt(anatomy.metadata.files)} size="md" />
+        <StatTile label={t("files tracked")} value={fmt(anatomy.metadata.files)} size="md" />
         {/* Reads and writes glued with a dot said nothing. The ratio is the
             signal: an agent writing far more than it reads is working from the
             index instead of re-reading the tree, which is the point. */}
         <StatTile
-          label="edits per file read"
+          label={t("edits per file read")}
           value={lt.total_reads > 0 ? `${(lt.total_writes / lt.total_reads).toFixed(1)}x` : fmt(lt.total_writes)}
-          sub={`${fmt(lt.total_writes)} edits · ${fmt(lt.total_reads)} reads`}
+          sub={t("{edits} edits · {reads} reads", { edits: fmt(lt.total_writes), reads: fmt(lt.total_reads) })}
           size="md"
         />
         {denyOn ? (
-          <StatTile label="re-reads denied" value={fmt(lt.repeated_reads_blocked)} size="md" />
+          <StatTile label={t("re-reads denied")} value={fmt(lt.repeated_reads_blocked)} size="md" />
         ) : (
           <StatTile
-            label="re-read warnings"
+            label={t("re-read warnings")}
             value={fmt(lt.repeated_reads_warned)}
-            sub={(lt.repeated_reads_warned ?? 0) > 0 ? "warned, not blocked" : undefined}
+            sub={(lt.repeated_reads_warned ?? 0) > 0 ? t("warned, not blocked") : undefined}
             size="md"
           />
         )}
         {/* A low hit rate means the agent is reading files the index cannot
             describe, which is the single most actionable number here. */}
         <StatTile
-          label="anatomy hit rate"
+          label={t("anatomy hit rate")}
           value={hitRate !== null ? `${hitRate}%` : "—"}
           accent={hitRate !== null && hitRate < 30}
-          sub={hitRate !== null && hitRate < 30 ? "low · agent is not using openwolf find" : undefined}
+          sub={hitRate !== null && hitRate < 30 ? t("low · agent is not using openwolf find") : undefined}
           size="md"
         />
         <StatTile
-          label="bugs on file"
+          label={t("bugs on file")}
           value={fmt(buglog.bugs.length)}
           size="md"
           accent={cronState.dead_letter_queue.length > 0}
-          sub={cronState.dead_letter_queue.length > 0 ? `${cronState.dead_letter_queue.length} dead-lettered task(s)` : undefined}
+          sub={cronState.dead_letter_queue.length > 0 ? t("{count} dead-lettered tasks", { count: cronState.dead_letter_queue.length }) : undefined}
         />
       </div>
 
@@ -225,38 +222,38 @@ export function ProjectOverview({ data }: { data: WolfData }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="wd-card p-5">
           <div className="flex items-center justify-between mb-3">
-            <span className="wd-label" style={{ color: "var(--text-muted)" }}>context health</span>
+            <span className="wd-label" style={{ color: "var(--text-muted)" }}>{t("context health")}</span>
             {scanAgeH !== null && scanAgeH > 6 && (
-              <span className="wd-label" style={{ color: "var(--accent)" }}>stale · run openwolf scan</span>
+              <span className="wd-label" style={{ color: "var(--accent)" }}>{t("stale · run openwolf scan")}</span>
             )}
           </div>
           <div className="space-y-2 font-mono text-sm" style={{ color: "var(--text-secondary)" }}>
             <div className="flex justify-between">
-              <span>anatomy scanned</span>
-              <span>{scanAgeH === null ? "no scan state" : scanAgeH === 0 ? "under 1h ago" : `${scanAgeH}h ago`}</span>
+              <span>{t("anatomy scanned")}</span>
+              <span>{scanAgeH === null ? t("no scan state") : scanAgeH === 0 ? t("under 1h ago") : t("{hours}h ago", { hours: scanAgeH })}</span>
             </div>
             <div className="flex justify-between">
-              <span>git head pinned</span>
+              <span>{t("git head pinned")}</span>
               <span>{scanState.git_head ? scanState.git_head.slice(0, 7) : "—"}</span>
             </div>
             <div className="flex justify-between">
-              <span>session digest budget</span>
+              <span>{t("session digest budget")}</span>
               <span>{config.context?.session_digest_budget_tokens ?? 1500} tok</span>
             </div>
             <div className="flex justify-between">
-              <span>duplicate read mode</span>
+              <span>{t("duplicate read mode")}</span>
               <span>{dupMode}</span>
             </div>
             <div className="flex justify-between">
-              <span>hook health</span>
+              <span>{t("hook health")}</span>
               <span style={brokenHooks.length > 0 ? { color: "var(--accent)" } : undefined}>
-                {hookCount === 0 ? "no heartbeats yet" : brokenHooks.length > 0 ? `${brokenHooks.length} failing` : `${hookCount} healthy`}
+                {hookCount === 0 ? t("no heartbeats yet") : brokenHooks.length > 0 ? t("{count} failing", { count: brokenHooks.length }) : t("{count} healthy", { count: hookCount })}
               </span>
             </div>
             {contextHealth && (
               <div className="flex justify-between">
-                <span>always-on context (est.)</span>
-                <span>{contextHealth.always_on_estimate_tokens.toLocaleString("en-US")} tok</span>
+                <span>{t("always-on context (est.)")}</span>
+                <span>{formatNumber(contextHealth.always_on_estimate_tokens)} tok</span>
               </div>
             )}
           </div>
@@ -264,7 +261,7 @@ export function ProjectOverview({ data }: { data: WolfData }) {
             <div className="mt-3 space-y-1.5">
               {brokenHooks.slice(0, 3).map(([name, h]) => (
                 <p key={name} className="text-sm" style={{ color: "var(--accent)" }}>
-                  {name}: {h.consecutive_failures} consecutive failures. Run openwolf update to repair. {h.last_error_message ? `(${h.last_error_message.slice(0, 80)})` : ""}
+                  {t("{name}: {count} consecutive failures. Run openwolf update to repair.", { name, count: h.consecutive_failures })} {h.last_error_message ? `(${h.last_error_message.slice(0, 80)})` : ""}
                 </p>
               ))}
             </div>
@@ -281,7 +278,7 @@ export function ProjectOverview({ data }: { data: WolfData }) {
         </div>
 
         <div className="wd-card p-5">
-          <span className="wd-label" style={{ color: "var(--text-muted)" }}>next phase · status.md</span>
+          <span className="wd-label" style={{ color: "var(--text-muted)" }}>{t("next phase · status.md")}</span>
           {phase.length > 0 ? (
             <div className="mt-3 space-y-1.5 text-sm" style={{ color: "var(--text-secondary)" }}>
               {phase.map((line, i) => (
@@ -290,7 +287,7 @@ export function ProjectOverview({ data }: { data: WolfData }) {
             </div>
           ) : (
             <p className="mt-3 text-sm" style={{ color: "var(--text-muted)" }}>
-              No handoff yet — .wolf/STATUS.md fills in as work completes.
+              {t("No handoff yet - .wolf/STATUS.md fills in as work completes.")}
             </p>
           )}
         </div>
@@ -299,13 +296,13 @@ export function ProjectOverview({ data }: { data: WolfData }) {
       {/* Weekly activity dot chart */}
       <div className="wd-card p-5">
         <div className="flex items-center justify-between mb-4">
-          <span className="wd-label" style={{ color: "var(--text-muted)" }}>sessions / week</span>
-          <span className="wd-label" style={{ color: "var(--text-faint)" }}>last {Math.min(tokenLedger.sessions.length, 60)} sessions</span>
+          <span className="wd-label" style={{ color: "var(--text-muted)" }}>{t("sessions / week")}</span>
+          <span className="wd-label" style={{ color: "var(--text-faint)" }}>{t("last {count} sessions", { count: Math.min(tokenLedger.sessions.length, 60) })}</span>
         </div>
         {tokenLedger.sessions.length > 0 ? (
-          <DotBar data={weeklyActivity(data)} rows={7} unit="sessions" />
+          <DotBar data={weeklyActivity(data, t)} rows={7} unit={t("sessions")} />
         ) : (
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>No sessions yet — start your agent and this fills in live.</p>
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>{t("No sessions yet - start your agent and this fills in live.")}</p>
         )}
       </div>
     </div>

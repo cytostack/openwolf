@@ -1,7 +1,9 @@
 import React, { useState } from "react";
 import type { WolfData } from "../../hooks/useWolfData.js";
+import { useI18n } from "../../lib/i18n-context.js";
 
 export function BugLog({ data }: { data: WolfData }) {
+  const { t } = useI18n();
   const { buglog } = data;
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -19,9 +21,9 @@ export function BugLog({ data }: { data: WolfData }) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <div className="text-4xl mb-3">🐛</div>
-        <h3 className="font-medium mb-1" style={{ color: "var(--text-secondary)" }}>No bugs logged yet</h3>
+        <h3 className="font-medium mb-1" style={{ color: "var(--text-secondary)" }}>{t("No bugs logged yet")}</h3>
         <p className="text-sm max-w-sm" style={{ color: "var(--text-muted)" }}>
-          When you encounter and fix bugs, they'll appear here for future reference.
+          {t("When you encounter and fix bugs, they'll appear here for future reference.")}
         </p>
       </div>
     );
@@ -37,11 +39,11 @@ export function BugLog({ data }: { data: WolfData }) {
   return (
     <div>
       <div className="flex flex-wrap items-center gap-4 mb-4">
-        <input type="text" placeholder="Search bugs..." value={search} onChange={(e) => setSearch(e.target.value)}
+        <input type="text" placeholder={t("Search bugs...")} value={search} onChange={(e) => setSearch(e.target.value)}
           className="flex-1 min-w-[200px] rounded-lg px-3 py-2 text-sm focus:outline-none"
           style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
         />
-        <span className="text-sm" style={{ color: "var(--text-faint)" }}>{buglog.bugs.length} bugs logged</span>
+        <span className="text-sm" style={{ color: "var(--text-faint)" }}>{t("{count} bugs logged", { count: buglog.bugs.length })}</span>
       </div>
 
       {topTags.length > 0 && (
@@ -75,22 +77,22 @@ export function BugLog({ data }: { data: WolfData }) {
                 </div>
                 {bug.occurrences > 1 && (
                   <span className="shrink-0 px-2 py-0.5 rounded-full text-xs" style={{ background: "var(--warning-subtle)", color: "var(--warning)" }}>
-                    Seen {bug.occurrences}x
+                    {t("Seen {count}x", { count: bug.occurrences })}
                   </span>
                 )}
               </button>
               {isExpanded && (
                 <div className="px-5 py-4 space-y-3" style={{ borderTop: "1px solid var(--border)" }}>
                   <div>
-                    <p className="text-xs uppercase mb-1" style={{ color: "var(--text-faint)" }}>Error Message</p>
+                    <p className="text-xs uppercase mb-1" style={{ color: "var(--text-faint)" }}>{t("Error Message")}</p>
                     <pre className="text-sm rounded-lg p-3 overflow-x-auto font-mono" style={{ color: "var(--danger)", background: "var(--danger-subtle)" }}>{bug.error_message}</pre>
                   </div>
                   <div>
-                    <p className="text-xs uppercase mb-1" style={{ color: "var(--text-faint)" }}>Root Cause</p>
+                    <p className="text-xs uppercase mb-1" style={{ color: "var(--text-faint)" }}>{t("Root Cause")}</p>
                     <p className="text-sm" style={{ color: "var(--text-secondary)" }}>{bug.root_cause}</p>
                   </div>
                   <div>
-                    <p className="text-xs uppercase mb-1" style={{ color: "var(--text-faint)" }}>Fix</p>
+                    <p className="text-xs uppercase mb-1" style={{ color: "var(--text-faint)" }}>{t("Fix")}</p>
                     <pre className="text-sm rounded-lg p-3 overflow-x-auto font-mono" style={{ color: "var(--accent)", background: "var(--accent-subtle)" }}>{bug.fix}</pre>
                   </div>
                   <div className="flex flex-wrap gap-2">

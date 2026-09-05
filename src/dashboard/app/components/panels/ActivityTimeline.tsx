@@ -1,7 +1,9 @@
 import React, { useState, useMemo } from "react";
 import type { WolfData } from "../../hooks/useWolfData.js";
+import { useI18n } from "../../lib/i18n-context.js";
 
 export function ActivityTimeline({ data }: { data: WolfData }) {
+  const { t } = useI18n();
   const { memory } = data;
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -39,25 +41,25 @@ export function ActivityTimeline({ data }: { data: WolfData }) {
                 background: filter === f ? "var(--bg-surface-hover)" : "transparent",
                 color: filter === f ? "var(--text-primary)" : "var(--text-muted)",
               }}
-            >{f === "all" ? "All" : f === "today" ? "Today" : "This Week"}</button>
+            >{t(f === "all" ? "All" : f === "today" ? "Today" : "This Week")}</button>
           ))}
         </div>
-        <input type="text" placeholder="Search actions..." value={search} onChange={(e) => setSearch(e.target.value)}
+        <input type="text" placeholder={t("Search actions...")} value={search} onChange={(e) => setSearch(e.target.value)}
           className="rounded-lg px-3 py-1.5 text-sm flex-1 min-w-[200px] focus:outline-none"
           style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
         />
         <button onClick={() => setGrouped(!grouped)}
           className="px-3 py-1.5 text-xs rounded-lg"
           style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
-        >{grouped ? "Flat view" : "Group by session"}</button>
+        >{t(grouped ? "Flat view" : "Group by session")}</button>
       </div>
 
       {filtered.length === 0 ? (
-        <div className="text-center py-12" style={{ color: "var(--text-muted)" }}>No activity found.</div>
+        <div className="text-center py-12" style={{ color: "var(--text-muted)" }}>{t("No activity found.")}</div>
       ) : grouped ? (
         filtered.map((session, si) => (
           <div key={si} className="mb-4">
-            <div className="text-sm font-medium mb-2" style={{ color: "var(--text-muted)" }}>{session.date} {session.time} — {session.entries.length} actions</div>
+            <div className="text-sm font-medium mb-2" style={{ color: "var(--text-muted)" }}>{session.date} {session.time} · {t("{count} actions", { count: session.entries.length })}</div>
             <div className="rounded-xl" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
               {session.entries.map((entry, ei) => (
                 <div key={ei} className="flex items-center gap-4 px-4 py-3" style={{ borderBottom: ei < session.entries.length - 1 ? "1px solid var(--border)" : "none" }}>

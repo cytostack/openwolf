@@ -3,8 +3,10 @@ import { StatusBadge } from "../shared/StatusBadge.js";
 import { relativeTime, formatSchedule } from "../../lib/utils.js";
 import { dashboardFetch } from "../../lib/wolf-client.js";
 import type { WolfData } from "../../hooks/useWolfData.js";
+import { useI18n } from "../../lib/i18n-context.js";
 
 export function CronStatus({ data }: { data: WolfData }) {
+  const { locale, t } = useI18n();
   const { cronManifest, cronState, client } = data;
   const [showDeadLetters, setShowDeadLetters] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
@@ -18,7 +20,7 @@ export function CronStatus({ data }: { data: WolfData }) {
 
   const getLastRun = (taskId: string): string => {
     const last = cronState.execution_log.filter((e: any) => e.task_id === taskId).sort((a: any, b: any) => b.timestamp.localeCompare(a.timestamp))[0];
-    return last ? relativeTime(last.timestamp) : "never";
+    return last ? relativeTime(last.timestamp, locale) : t("never");
   };
 
   // Run Now over authenticated HTTP (from PR #4 by @MyEditHub): the old
@@ -43,11 +45,11 @@ export function CronStatus({ data }: { data: WolfData }) {
         <table className="w-full">
           <thead>
             <tr style={{ borderBottom: "1px solid var(--border)" }}>
-              <th className="text-left px-4 py-3 text-xs font-medium uppercase" style={{ color: "var(--text-faint)" }}>Status</th>
-              <th className="text-left px-4 py-3 text-xs font-medium uppercase" style={{ color: "var(--text-faint)" }}>Task</th>
-              <th className="text-left px-4 py-3 text-xs font-medium uppercase hidden md:table-cell" style={{ color: "var(--text-faint)" }}>Schedule</th>
-              <th className="text-left px-4 py-3 text-xs font-medium uppercase hidden md:table-cell" style={{ color: "var(--text-faint)" }}>Last Run</th>
-              <th className="text-right px-4 py-3 text-xs font-medium uppercase" style={{ color: "var(--text-faint)" }}>Actions</th>
+              <th className="text-left px-4 py-3 text-xs font-medium uppercase" style={{ color: "var(--text-faint)" }}>{t("Status")}</th>
+              <th className="text-left px-4 py-3 text-xs font-medium uppercase" style={{ color: "var(--text-faint)" }}>{t("Task")}</th>
+              <th className="text-left px-4 py-3 text-xs font-medium uppercase hidden md:table-cell" style={{ color: "var(--text-faint)" }}>{t("Schedule")}</th>
+              <th className="text-left px-4 py-3 text-xs font-medium uppercase hidden md:table-cell" style={{ color: "var(--text-faint)" }}>{t("Last Run")}</th>
+              <th className="text-right px-4 py-3 text-xs font-medium uppercase" style={{ color: "var(--text-faint)" }}>{t("Actions")}</th>
             </tr>
           </thead>
           <tbody>
@@ -60,7 +62,7 @@ export function CronStatus({ data }: { data: WolfData }) {
                   <p className="text-sm" style={{ color: "var(--text-primary)" }}>{task.name}</p>
                   <p className="text-xs" style={{ color: "var(--text-faint)" }}>{task.description}</p>
                 </td>
-                <td className="px-4 py-3 hidden md:table-cell text-sm" style={{ color: "var(--text-muted)" }}>{formatSchedule(task.schedule)}</td>
+                <td className="px-4 py-3 hidden md:table-cell text-sm" style={{ color: "var(--text-muted)" }}>{formatSchedule(task.schedule, locale)}</td>
                 <td className="px-4 py-3 hidden md:table-cell text-sm" style={{ color: "var(--text-faint)" }}>{getLastRun(task.id)}</td>
                 <td className="px-4 py-3 text-right">
                   <button onClick={() => triggerTask(task.id)}
@@ -72,7 +74,7 @@ export function CronStatus({ data }: { data: WolfData }) {
                       color: runningTasks[task.id] === "error" ? "var(--danger, #e5484d)" : "var(--text-secondary)",
                       opacity: runningTasks[task.id] === "running" ? 0.6 : 1,
                     }}
-                  >{runningTasks[task.id] === "running" ? "Running…" : runningTasks[task.id] === "ok" ? "✓ Queued" : runningTasks[task.id] === "error" ? "✗ Failed" : "Run Now"}</button>
+                  >{runningTasks[task.id] === "running" ? t("Running...") : runningTasks[task.id] === "ok" ? `✓ ${t("Queued")}` : runningTasks[task.id] === "error" ? `✗ ${t("Failed")}` : t("Run Now")}</button>
                 </td>
               </tr>
             ))}
@@ -84,13 +86,13 @@ export function CronStatus({ data }: { data: WolfData }) {
       <div className="rounded-xl p-5 mb-6" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
         <button onClick={() => setShowDeadLetters(!showDeadLetters)} className="flex items-center gap-2 w-full text-left">
           <span className="text-sm" style={{ color: "var(--text-muted)" }}>{showDeadLetters ? "▼" : "▶"}</span>
-          <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>Dead Letter Queue</h3>
+          <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>{t("Dead Letter Queue")}</h3>
           <span className="text-xs" style={{ color: "var(--text-faint)" }}>({cronState.dead_letter_queue.length})</span>
         </button>
         {showDeadLetters && (
           cronState.dead_letter_queue.length === 0 ? (
             <div className="text-center py-6 text-sm mt-2" style={{ color: "var(--text-muted)" }}>
-              No dead letters — all systems healthy
+              {t("No dead letters - all systems healthy")}
             </div>
           ) : (
             <div className="space-y-3 mt-3">
@@ -100,12 +102,12 @@ export function CronStatus({ data }: { data: WolfData }) {
                     <div>
                       <p className="text-sm font-medium" style={{ color: "var(--danger)" }}>{dl.task_id}</p>
                       <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{dl.error}</p>
-                      <p className="text-xs mt-1" style={{ color: "var(--text-faint)" }}>{relativeTime(dl.timestamp)} · {dl.attempts} attempts</p>
+                      <p className="text-xs mt-1" style={{ color: "var(--text-faint)" }}>{relativeTime(dl.timestamp, locale)} · {t("{count} attempts", { count: dl.attempts })}</p>
                     </div>
                     <button onClick={() => retryDeadLetter(dl.task_id)}
                       className="px-3 py-1 text-xs rounded-md"
                       style={{ background: "var(--bg-surface-hover)", border: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}
-                    >Retry</button>
+                    >{t("Retry")}</button>
                   </div>
                 </div>
               ))}
@@ -118,7 +120,7 @@ export function CronStatus({ data }: { data: WolfData }) {
       <div className="rounded-xl p-5" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
         <button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-2 w-full text-left">
           <span className="text-sm" style={{ color: "var(--text-muted)" }}>{showHistory ? "▼" : "▶"}</span>
-          <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>Execution History</h3>
+          <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>{t("Execution History")}</h3>
         </button>
         {showHistory && (
           <div className="mt-3">
@@ -131,7 +133,7 @@ export function CronStatus({ data }: { data: WolfData }) {
               </div>
             ))}
             {cronState.execution_log.length === 0 && (
-              <p className="text-sm py-4 text-center" style={{ color: "var(--text-muted)" }}>No executions yet.</p>
+              <p className="text-sm py-4 text-center" style={{ color: "var(--text-muted)" }}>{t("No executions yet.")}</p>
             )}
           </div>
         )}

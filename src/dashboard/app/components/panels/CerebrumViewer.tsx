@@ -1,7 +1,9 @@
-import React, { useState, useMemo } from "react";
+import React, { useState } from "react";
 import type { WolfData } from "../../hooks/useWolfData.js";
+import { useI18n } from "../../lib/i18n-context.js";
 
 export function CerebrumViewer({ data }: { data: WolfData }) {
+  const { t } = useI18n();
   const { cerebrum } = data;
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ preferences: true, learnings: true, doNotRepeat: true, decisions: false });
@@ -14,11 +16,13 @@ export function CerebrumViewer({ data }: { data: WolfData }) {
     <div>
       <div className="flex items-center justify-between mb-4">
         <div className="text-sm" style={{ color: "var(--text-faint)" }}>
-          Last updated: {cerebrum.lastUpdated || "—"} ·
-          {cerebrum.preferences.length + cerebrum.learnings.length + cerebrum.doNotRepeat.length + cerebrum.decisions.length} entries
+          {t("Last updated: {date} · {count} entries", {
+            date: cerebrum.lastUpdated || "—",
+            count: cerebrum.preferences.length + cerebrum.learnings.length + cerebrum.doNotRepeat.length + cerebrum.decisions.length,
+          })}
         </div>
       </div>
-      <input type="text" placeholder="Search cerebrum..." value={search} onChange={(e) => setSearch(e.target.value)}
+      <input type="text" placeholder={t("Search cerebrum...")} value={search} onChange={(e) => setSearch(e.target.value)}
         className="w-full rounded-lg px-3 py-2 text-sm mb-4 focus:outline-none"
         style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
       />
@@ -30,7 +34,7 @@ export function CerebrumViewer({ data }: { data: WolfData }) {
           onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
           <div className="flex items-center gap-2">
             <span style={{ color: "var(--danger)" }}>⊘</span>
-            <h3 className="font-medium" style={{ color: "var(--danger)" }}>Do-Not-Repeat</h3>
+            <h3 className="font-medium" style={{ color: "var(--danger)" }}>{t("Do-Not-Repeat")}</h3>
             <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "rgba(220, 38, 38, 0.1)", color: "var(--danger)" }}>{cerebrum.doNotRepeat.length}</span>
           </div>
           <span className="text-sm" style={{ color: "var(--text-faint)" }}>{expanded.doNotRepeat ? "▼" : "▶"}</span>
@@ -43,7 +47,7 @@ export function CerebrumViewer({ data }: { data: WolfData }) {
                 <span className="text-sm" style={{ color: "var(--text-secondary)" }}>{entry.text}</span>
               </div>
             ))}
-            {cerebrum.doNotRepeat.length === 0 && <p className="text-sm" style={{ color: "var(--text-muted)" }}>No entries yet.</p>}
+            {cerebrum.doNotRepeat.length === 0 && <p className="text-sm" style={{ color: "var(--text-muted)" }}>{t("No entries yet.")}</p>}
           </div>
         )}
       </div>
@@ -55,7 +59,7 @@ export function CerebrumViewer({ data }: { data: WolfData }) {
           onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
           <div className="flex items-center gap-2">
             <span style={{ color: "var(--text-muted)" }}>◈</span>
-            <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>User Preferences</h3>
+            <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>{t("User Preferences")}</h3>
             <span className="text-xs" style={{ color: "var(--text-faint)" }}>{cerebrum.preferences.length}</span>
           </div>
           <span className="text-sm" style={{ color: "var(--text-faint)" }}>{expanded.preferences ? "▼" : "▶"}</span>
@@ -68,7 +72,7 @@ export function CerebrumViewer({ data }: { data: WolfData }) {
                 <span className="text-sm" style={{ color: "var(--text-secondary)" }}>{item}</span>
               </div>
             ))}
-            {cerebrum.preferences.length === 0 && <p className="text-sm" style={{ color: "var(--text-muted)" }}>No preferences recorded yet.</p>}
+            {cerebrum.preferences.length === 0 && <p className="text-sm" style={{ color: "var(--text-muted)" }}>{t("No preferences recorded yet.")}</p>}
           </div>
         )}
       </div>
@@ -80,7 +84,7 @@ export function CerebrumViewer({ data }: { data: WolfData }) {
           onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
           <div className="flex items-center gap-2">
             <span style={{ color: "var(--accent)" }}>◎</span>
-            <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>Key Learnings</h3>
+            <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>{t("Key Learnings")}</h3>
             <span className="text-xs" style={{ color: "var(--text-faint)" }}>{cerebrum.learnings.length}</span>
           </div>
           <span className="text-sm" style={{ color: "var(--text-faint)" }}>{expanded.learnings ? "▼" : "▶"}</span>
@@ -90,7 +94,7 @@ export function CerebrumViewer({ data }: { data: WolfData }) {
             {cerebrum.learnings.filter(matchesSearch).map((item, i) => (
               <div key={i} className="rounded-lg p-3 text-sm" style={{ background: "var(--bg-surface-hover)", color: "var(--text-secondary)" }}>{item}</div>
             ))}
-            {cerebrum.learnings.length === 0 && <p className="text-sm" style={{ color: "var(--text-muted)" }}>No learnings recorded yet.</p>}
+            {cerebrum.learnings.length === 0 && <p className="text-sm" style={{ color: "var(--text-muted)" }}>{t("No learnings recorded yet.")}</p>}
           </div>
         )}
       </div>
@@ -102,7 +106,7 @@ export function CerebrumViewer({ data }: { data: WolfData }) {
           onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
           <div className="flex items-center gap-2">
             <span style={{ color: "var(--text-muted)" }}>⚖</span>
-            <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>Decision Log</h3>
+            <h3 className="font-medium" style={{ color: "var(--text-secondary)" }}>{t("Decision Log")}</h3>
             <span className="text-xs" style={{ color: "var(--text-faint)" }}>{cerebrum.decisions.length}</span>
           </div>
           <span className="text-sm" style={{ color: "var(--text-faint)" }}>{expanded.decisions ? "▼" : "▶"}</span>
@@ -112,7 +116,7 @@ export function CerebrumViewer({ data }: { data: WolfData }) {
             {cerebrum.decisions.filter(matchesSearch).map((item, i) => (
               <div key={i} className="rounded-lg p-3 text-sm" style={{ background: "var(--bg-surface-hover)", color: "var(--text-secondary)" }}>{item}</div>
             ))}
-            {cerebrum.decisions.length === 0 && <p className="text-sm" style={{ color: "var(--text-muted)" }}>No decisions logged yet.</p>}
+            {cerebrum.decisions.length === 0 && <p className="text-sm" style={{ color: "var(--text-muted)" }}>{t("No decisions logged yet.")}</p>}
           </div>
         )}
       </div>
