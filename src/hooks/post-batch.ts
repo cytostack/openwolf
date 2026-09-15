@@ -43,6 +43,11 @@ async function main(): Promise<void> {
   try {
     rules = topRules(approvedMemory(wolfDir, "cerebrum.md"), 3);
   } catch {}
+  // Do-Not-Repeat entries can be long paragraphs, not the "short factual
+  // statement" this countermeasure assumes — cap each one so a periodic
+  // reinjection can't balloon past the intended ~100 tok/rule budget.
+  const MAX_RULE_CHARS = 200;
+  rules = rules.map((r) => (r.length > MAX_RULE_CHARS ? r.slice(0, MAX_RULE_CHARS) + "…" : r));
 
   // tool_batches is a counter driving an every-Nth-batch reinjection: an
   // unlocked increment both undercounts and can fire the note twice (#83).
