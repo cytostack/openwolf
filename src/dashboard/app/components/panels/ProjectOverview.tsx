@@ -209,7 +209,7 @@ export function ProjectOverview({ data }: { data: WolfData }) {
           label="anatomy hit rate"
           value={hitRate !== null ? `${hitRate}%` : "—"}
           accent={hitRate !== null && hitRate < 30}
-          sub={hitRate !== null && hitRate < 30 ? "low · agent is not using openwolf find" : undefined}
+          sub={hitRate !== null && hitRate < 30 ? "low · most first reads miss the index" : undefined}
           size="md"
         />
         <StatTile
