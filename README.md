@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <sub><b>Hooks:</b> Claude Code, Codex CLI &nbsp;·&nbsp; <b>Plugin:</b> OpenCode &nbsp;·&nbsp; <b>Compatible hooks:</b> Grok Build &nbsp;·&nbsp; <b>Context only:</b> Cursor, Gemini CLI, Antigravity</sub>
+  <sub><b>Hooks:</b> Claude Code, Codex CLI, Oh My Pi &nbsp;·&nbsp; <b>Plugin:</b> OpenCode &nbsp;·&nbsp; <b>Context + skills:</b> Pi &nbsp;·&nbsp; <b>Context only:</b> Cursor, Gemini CLI, Antigravity</sub>
 </p>
 
 <p align="center">
@@ -66,7 +66,7 @@ openwolf init
 
 `init` detects installed agents and sets up their project integration.
 Complete any project or hook trust review shown by your agent, then start a
-new session. You can select agents with `--agent claude codex opencode`.
+new session. You can select agents with `--agent claude codex opencode pi omp`.
 
 ## Supported agents
 
@@ -79,6 +79,8 @@ new session. You can select agents with `--agent claude codex opencode`.
 | Cursor | Rules file (context only) |
 | Gemini CLI | `GEMINI.md` block (context only) |
 | Antigravity | `AGENTS.md` block (context only) |
+| Pi | `AGENTS.md` and shared `.agents/skills/` |
+| Oh My Pi | Native hooks, `AGENTS.md` and shared `.agents/skills/` |
 
 Agents use the project's `.wolf/` directory. The generated `.gitignore`
 excludes local runtime data. Review notes, bug records and indexed content

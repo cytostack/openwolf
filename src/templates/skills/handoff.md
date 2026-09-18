@@ -1,3 +1,9 @@
+---
+name: handoff
+description: Regenerate the current project handoff document from the session state.
+argument-hint: [notes]
+---
+
 Regenerate `.wolf/STATUS.md` as a session handoff document. $ARGUMENTS
 
 Build it from the session's actual state, not from memory of the conversation alone:

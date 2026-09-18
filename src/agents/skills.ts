@@ -7,6 +7,7 @@ import { safeCopyFile } from "../utils/fs-safe.js";
 //   Claude Code → .claude/commands/<name>.md   (slash command, $ARGUMENTS)
 //   OpenCode    → .opencode/command/<name>.md  (custom command, $ARGUMENTS)
 //   Codex       → .codex/prompts/<name>.md     (custom prompt)
+//   Pi and OMP  → .agents/skills/<name>/SKILL.md (shared Agent Skills)
 // Gemini CLI and Cursor have no project-level command surface we target yet.
 
 const SKILLS = ["security-audit", "reframe", "designqc", "handoff"];
@@ -21,14 +22,17 @@ export function installSkills(projectRoot: string, templatesDir: string, agents:
   const skillsDir = path.join(templatesDir, "skills");
   if (!fs.existsSync(skillsDir)) return [];
 
-  const destinations: Array<{ agent: string; dir: string }> = [
-    { agent: "claude", dir: path.join(projectRoot, ".claude", "commands") },
+  const destinations: Array<{ agent: string; dir: string; nestedSkill: boolean }> = [
+    { agent: "claude", dir: path.join(projectRoot, ".claude", "commands"), nestedSkill: false },
   ];
   if (agents.includes("opencode")) {
-    destinations.push({ agent: "opencode", dir: path.join(projectRoot, ".opencode", "command") });
+    destinations.push({ agent: "opencode", dir: path.join(projectRoot, ".opencode", "command"), nestedSkill: false });
   }
   if (agents.includes("codex")) {
-    destinations.push({ agent: "codex", dir: path.join(projectRoot, ".codex", "prompts") });
+    destinations.push({ agent: "codex", dir: path.join(projectRoot, ".codex", "prompts"), nestedSkill: false });
+  }
+  if (agents.includes("pi") || agents.includes("omp")) {
+    destinations.push({ agent: "pi/omp", dir: path.join(projectRoot, ".agents", "skills"), nestedSkill: true });
   }
 
   const actions: string[] = [];
@@ -36,14 +40,16 @@ export function installSkills(projectRoot: string, templatesDir: string, agents:
   // identical everywhere, and four near-identical lines pushed the useful
   // part of `openwolf init` off the top of the screen.
   const skillsInstalledFor: string[] = [];
-  for (const { agent, dir } of destinations) {
+  for (const { agent, dir, nestedSkill } of destinations) {
     fs.mkdirSync(dir, { recursive: true });
     let installed = 0;
     const skipped: string[] = [];
     for (const skill of SKILLS) {
       const src = path.join(skillsDir, `${skill}.md`);
       if (!fs.existsSync(src)) continue;
-      const dest = path.join(dir, `${skill}.md`);
+      const dest = nestedSkill
+        ? path.join(dir, skill, "SKILL.md")
+        : path.join(dir, `${skill}.md`);
       // Idempotency contract (types.ts): never clobber a file the user has
       // customized. Overwrite only when missing or identical to our template;
       // a differing file is theirs now — skip it and say so.

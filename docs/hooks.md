@@ -12,6 +12,8 @@ Agent support is different across products and versions. A registered hook is no
 | Codex CLI | `.codex/hooks.json` and `AGENTS.md` | Requires hook support, enabled settings and project trust. Tool names and payloads can differ by version. |
 | OpenCode | Native plugin and `AGENTS.md` | Uses session and tool events. It does not implement every Claude hook feature. |
 | Grok Build | Enabled Claude-compatible discovery | Uses the existing registration. OpenWolf activity notices are dashboard-only. |
+| Pi | `AGENTS.md` and shared `.agents/skills/` | Context and skills only in this release. No lifecycle hook or usage coverage is claimed. |
+| Oh My Pi | Native `.omp/hooks/pre/openwolf.ts`, `AGENTS.md` and shared `.agents/skills/` | Bridges session, prompt, compaction, tool and shutdown events to the shared `.wolf/hooks/` runtime. Verify against the installed OMP release because its extension API can change. |
 | Cursor, Gemini CLI, Antigravity | Project instruction files | No full hook integration or equivalent usage coverage is claimed. |
 
 See [release validation](release-2.5.2.md) for the native versions that were checked.

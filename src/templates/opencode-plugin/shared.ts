@@ -58,6 +58,7 @@ export function getWolfDir(): string {
 /** Which agent harness invoked this hook — used for per-agent ledger attribution. */
 export function detectAgent(): string {
   if(process.env.GROK_HOOK_EVENT||process.env.GROK_SESSION_ID)return "grok";
+  if (process.env.OMP_HOOK_EVENT || process.env.OMP_SESSION_ID) return "omp";
   // CLAUDECODE is set in every Claude Code hook process; CLAUDE_PROJECT_DIR is
   // not set at all, so checking it alone attributed real Claude sessions to
   // "default" and lost their per-agent ledger rows.

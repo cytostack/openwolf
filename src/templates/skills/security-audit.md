@@ -1,4 +1,5 @@
 ---
+name: security-audit
 description: Layered security audit of the current project (dependencies → secrets → injection → authz → report)
 argument-hint: [path or scope, e.g. src/api — omit for whole project]
 ---

@@ -1,4 +1,5 @@
 ---
+name: reframe
 description: OpenWolf's design brain — pick/migrate UI frameworks or audit/fix UI against the anti-generic design principles
 argument-hint: [migrate [framework] | audit [target] | fix [target]]
 ---

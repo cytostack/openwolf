@@ -4,6 +4,22 @@ All notable changes to OpenWolf are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and OpenWolf uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Pi and Oh My Pi can now be selected with `openwolf init --agent pi` and
+  `openwolf init --agent omp`.
+- OMP installs a native hook bridge under `.omp/hooks/pre/` and routes its
+  lifecycle and tool events through the existing `.wolf/hooks/` scripts.
+
+### Changed
+
+- OMP startup context waits for the next turn, so the first prompt does not
+  race the session-start hook.
+- Pi and OMP share the existing `AGENTS.md` context and `.agents/skills/`
+  files. Existing customized files stay untouched.
+
 ## [2.5.2] - 2026-09-15
 
 ### Added

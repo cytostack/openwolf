@@ -9,6 +9,8 @@ import { opencodeAdapter } from "./opencode.js";
 import { geminiAdapter } from "./gemini.js";
 import { cursorAdapter } from "./cursor.js";
 import { antigravityAdapter } from "./antigravity.js";
+import { piAdapter } from "./pi.js";
+import { ompAdapter } from "./omp.js";
 
 export type { AgentAdapter, AgentInstallContext, AgentInstallResult } from "./types.js";
 
@@ -22,6 +24,8 @@ const ADAPTERS: Record<string, AgentAdapter> = {
   [geminiAdapter.name]: geminiAdapter,
   [cursorAdapter.name]: cursorAdapter,
   [antigravityAdapter.name]: antigravityAdapter,
+  [piAdapter.name]: piAdapter,
+  [ompAdapter.name]: ompAdapter,
 };
 
 export function availableAgents(): string[] {
@@ -45,12 +49,16 @@ function onPath(bin: string): boolean {
  * An agent counts as installed if its config directory exists or its CLI
  * is on PATH; Cursor is an app, so its app bundle also counts on macOS.
  */
-export function detectInstalledAgents(): string[] {
-  const home = os.homedir();
+export function detectInstalledAgents(options?: {
+  home?: string;
+  hasCommand?: (bin: string) => boolean;
+}): string[] {
+  const home = options?.home ?? os.homedir();
+  const hasCommand = options?.hasCommand ?? onPath;
   const detected: string[] = [];
-  if (fs.existsSync(path.join(home, ".codex")) || onPath("codex")) detected.push("codex");
-  if (fs.existsSync(path.join(home, ".config", "opencode")) || onPath("opencode")) detected.push("opencode");
-  if (fs.existsSync(path.join(home, ".gemini")) || onPath("gemini")) detected.push("gemini");
+  if (fs.existsSync(path.join(home, ".codex")) || hasCommand("codex")) detected.push("codex");
+  if (fs.existsSync(path.join(home, ".config", "opencode")) || hasCommand("opencode")) detected.push("opencode");
+  if (fs.existsSync(path.join(home, ".gemini")) || hasCommand("gemini")) detected.push("gemini");
   if (
     fs.existsSync(path.join(home, ".cursor")) ||
     (process.platform === "darwin" && fs.existsSync("/Applications/Cursor.app"))
@@ -60,6 +68,8 @@ export function detectInstalledAgents(): string[] {
     fs.existsSync(path.join(home, ".config", "antigravity")) ||
     (process.platform === "darwin" && fs.existsSync("/Applications/Antigravity.app"))
   ) detected.push("antigravity");
+  if (fs.existsSync(path.join(home, ".pi", "agent")) || hasCommand("pi")) detected.push("pi");
+  if (fs.existsSync(path.join(home, ".omp", "agent")) || hasCommand("omp")) detected.push("omp");
   return detected;
 }
 

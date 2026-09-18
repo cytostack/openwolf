@@ -1,4 +1,5 @@
 ---
+name: designqc
 description: Screenshot-based design review of the running app via openwolf designqc
 argument-hint: [--url <url>] [--routes <routes>]
 ---
