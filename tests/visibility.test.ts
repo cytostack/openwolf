@@ -19,6 +19,10 @@ test('records completed actions privately and deduplicates retries across sessio
  record(root,'secret/path and task title','checkpoint-saved',1_000_001,'other-session');s=v.activityState(root,undefined,1_000_001).state;
  assert.equal(s.counts['checkpoint-saved'],1);assert.doesNotMatch(JSON.stringify(s),/secret\/path|task title|test-session/);
 });
+test('preserves OMP attribution in activity receipts',t=>{
+ const root=fixture(t);config(root,'verbose');assert.equal(v.recordReceipt(root,{operation:'read-denied',evidence:'omp-read',at:1_000_000,session:'omp-session',agent:'omp'}),true);
+ const state=v.activityState(root,undefined,1_000_000).state;assert.equal(state.history[0].agent,'omp');
+});
 test('aggregates at boundaries, enforces five minutes and three receipts per turn including resume',t=>{
  const root=fixture(t);record(root,'one');record(root,'two');
  assert.match(v.activityState(root,delivery(),1_000_000).message,/2 context checkpoints/);

@@ -21,7 +21,8 @@ export const ompAdapter: AgentAdapter = {
       warnings.push("OMP hook template is missing; native OMP hooks were not registered");
     } else if (fs.existsSync(hookPath)) {
       const existing = fs.readFileSync(hookPath, "utf-8");
-      if (!existing.includes("openwolf:managed-omp-hook")) {
+      const template = fs.readFileSync(hookSource, "utf-8");
+      if (existing !== template) {
         warnings.push(".omp/hooks/pre/openwolf.ts is customized; it was left untouched");
       } else {
         safeCopyFile(hookSource, hookPath);

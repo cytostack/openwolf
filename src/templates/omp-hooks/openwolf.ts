@@ -32,8 +32,28 @@ function textFromContent(content: unknown) {
     .join("");
 }
 
+function normalizedToolInput(event: AnyRecord): AnyRecord {
+  const input = { ...(event?.input ?? {}) };
+  if (input.file_path === undefined && input.path !== undefined) input.file_path = input.path;
+  if (input.path === undefined && input.file_path !== undefined) input.path = input.file_path;
+  if (input.old_string === undefined && typeof input.oldText === "string") input.old_string = input.oldText;
+  if (input.new_string === undefined && typeof input.newText === "string") input.new_string = input.newText;
+
+  // Pi uses inclusive line ranges for reads; the shared runtime uses the
+  // offset/limit shape used by Claude and Codex. Preserve the original Pi
+  // fields while adding the canonical fields the hooks understand.
+  const start = input.offset ?? input.startLine ?? input.lineStart ?? input.line_start;
+  const end = input.endLine ?? input.lineEnd ?? input.line_end;
+  if (input.offset === undefined && typeof start === "number") input.offset = start;
+  if (input.limit === undefined) {
+    if (typeof start === "number" && typeof end === "number") input.limit = Math.max(0, end - start + 1);
+    else if (typeof end === "number") input.limit = end;
+  }
+  return input;
+}
+
 function toolPayload(event: AnyRecord, ctx: AnyRecord, result: boolean) {
-  const input = event?.input ?? {};
+  const input = normalizedToolInput(event);
   const text = textFromContent(event?.content);
   return {
     ...basePayload(event, ctx),
@@ -41,7 +61,7 @@ function toolPayload(event: AnyRecord, ctx: AnyRecord, result: boolean) {
     tool_use_id: event?.toolCallId,
     tool_input: input,
     tool_response: result === true
-      ? { content: text, stdout: event?.toolName === "bash" ? text : "", stderr: "" }
+      ? { ...(event?.details ?? {}), content: text, stdout: event?.toolName === "bash" ? text : "", stderr: "" }
       : undefined,
     tool_output: result === true ? { content: text } : undefined,
   };
@@ -131,8 +151,15 @@ function eventScript(toolName: string, phase: string): string | undefined {
 function updatedResult(event: AnyRecord, output: AnyRecord): AnyRecord | undefined {
   const updated = hookFields(output).updatedToolOutput;
   if (!updated || event?.toolName !== "bash" || typeof updated.stdout !== "string") return undefined;
+  let replaced = false;
   const content = Array.isArray(event.content)
-    ? event.content.map((block: AnyRecord) => block && block.type === "text" ? { ...block, text: updated.stdout } : block)
+    ? event.content.map((block: AnyRecord) => {
+      if (!replaced && block && block.type === "text") {
+        replaced = true;
+        return { ...block, text: updated.stdout };
+      }
+      return block;
+    })
     : [{ type: "text", text: updated.stdout }];
   return { content, details: event.details, isError: event.isError };
 }

@@ -205,9 +205,10 @@ describe("Pi and OMP adapters", { skip: !haveDist ? "dist not built" : false }, 
     assert.ok(fs.existsSync(hookPath));
     assert.ok(first.actions.some((line) => line.includes("OMP hooks registered")));
 
-    fs.writeFileSync(hookPath, "custom omp hook\n", "utf-8");
+    fs.writeFileSync(hookPath, `${fs.readFileSync(hookPath, "utf-8")}// user customization\n`, "utf-8");
     const second = adapter.install(ctx);
     assert.ok(second.warnings.some((line) => line.includes("customized")));
-    assert.strictEqual(fs.readFileSync(hookPath, "utf-8"), "custom omp hook\n");
+    assert.match(fs.readFileSync(hookPath, "utf-8"), /openwolf:managed-omp-hook/);
+    assert.match(fs.readFileSync(hookPath, "utf-8"), /user customization/);
   });
 });
