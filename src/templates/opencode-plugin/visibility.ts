@@ -23,7 +23,7 @@ export function recordReceipt(root:string,input:{operation:Operation;agent?:stri
     const evidence=hash(input.evidence),id=hash(input.operation+':'+evidence);
     const at=input.at??Date.now(),count=input.count??1;
     if(!Number.isSafeInteger(count)||count<1||!Number.isFinite(at))return false;
-    const receipt:Receipt={schema:1,id,session:input.session?hash(input.session):'',agent:['claude','codex','opencode','grok'].includes(input.agent??'')?input.agent!:'project',operation:input.operation,outcome:'completed',at,evidence,count,category:input.operation==='context-restored'?'recovery':'routine'};
+    const receipt:Receipt={schema:1,id,session:input.session?hash(input.session):'',agent:['claude','codex','opencode','grok','omp'].includes(input.agent??'')?input.agent!:'project',operation:input.operation,outcome:'completed',at,evidence,count,category:input.operation==='context-restored'?'recovery':'routine'};
     const queue=path.join(dir(root),'queue');fs.mkdirSync(queue,{recursive:true});
     // Fixed 4096-slot spool: no directory scan, lock, sleep or unbounded backlog on tool paths.
     // An occupied slot may drop a receipt, never an operational write. Counters are recorded actions only.
@@ -32,7 +32,7 @@ export function recordReceipt(root:string,input:{operation:Operation;agent?:stri
   }catch{return false}
 }
 function readState(root:string):State {try{return JSON.parse(fs.readFileSync(path.join(dir(root),'state.json'),'utf8'))}catch{return empty()}}
-function valid(r:Receipt):boolean{return r.schema===1&&/^[a-f0-9]{64}$/.test(r.id)&&/^[a-f0-9]{64}$/.test(r.evidence)&&operations.includes(r.operation)&&r.outcome==='completed'&&Number.isSafeInteger(r.count)&&r.count>0&&Number.isFinite(r.at)&&['claude','codex','opencode','grok','project'].includes(r.agent)&&(r.session===''||/^[a-f0-9]{64}$/.test(r.session))}
+function valid(r:Receipt):boolean{return r.schema===1&&/^[a-f0-9]{64}$/.test(r.id)&&/^[a-f0-9]{64}$/.test(r.evidence)&&operations.includes(r.operation)&&r.outcome==='completed'&&Number.isSafeInteger(r.count)&&r.count>0&&Number.isFinite(r.at)&&['claude','codex','opencode','grok','omp','project'].includes(r.agent)&&(r.session===''||/^[a-f0-9]{64}$/.test(r.session))}
 export function receiptText(r:Pick<Receipt,'operation'|'count'>):string {
   const n=r.count;
   const messages:Record<Operation,string>={

@@ -18,9 +18,10 @@ openwolf init
 
 ```bash
 openwolf init --agent claude codex opencode
+openwolf init --agent pi omp
 ```
 
-Grok Build can use `--agent grok` with enabled Claude-compatible hooks. Cursor, Gemini CLI and Antigravity receive project instructions only. See [agent hook coverage](hooks.md).
+Pi receives the shared `AGENTS.md` context and project skills. Oh My Pi also receives native lifecycle and tool hooks. Cursor, Gemini CLI and Antigravity receive project instructions only. See [agent hook coverage](hooks.md).
 
 ## Check the installation
 
