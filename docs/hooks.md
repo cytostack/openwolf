@@ -35,6 +35,8 @@ See [release validation](release-2.5.2.md) for the native versions that were che
 
 The OpenCode plugin performs its work through native session and tool events. Grok uses compatible events where available. Do not assume that the table describes every agent equally.
 
+`openwolf init` checks `opencode --version` before installing the integration. OpenCode 1 receives the legacy plugin under `.opencode/plugin/`; OpenCode 2 receives a default `id`/`setup` plugin under `.opencode/plugins/`. If the executable cannot be queried, OpenWolf keeps the V1-compatible fallback and reports a warning; rerun `openwolf init` after installing or upgrading OpenCode.
+
 ## Permissions and memory authority
 
 OpenWolf does not auto-approve agent tool calls. Project and hook trust prompts belong to the agent and remain in place.
