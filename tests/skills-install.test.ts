@@ -86,3 +86,18 @@ test("never creates a global copy the user did not have", () => {
   g.runGlobal();
   assert.equal(fs.existsSync(g.file), false);
 });
+
+test("an unwritable global copy does not abort the project install", { skip: process.platform === "win32" || process.getuid?.() === 0 }, () => {
+  const g = withGlobal();
+  g.setTemplate("new\n");
+  fs.mkdirSync(path.dirname(g.file), { recursive: true });
+  fs.writeFileSync(g.file, SHIPPED_BEFORE_MANIFEST);
+  fs.chmodSync(g.file, 0o444);
+  try {
+    const actions = g.runGlobal();
+    assert.equal(fs.readFileSync(g.dest, "utf-8"), "new\n");
+    assert.match(actions.join("\n"), /Global Claude command \/handoff could not be refreshed/);
+  } finally {
+    fs.chmodSync(g.file, 0o644);
+  }
+});

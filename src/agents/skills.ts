@@ -119,8 +119,13 @@ export function installSkills(projectRoot: string, templatesDir: string, agents:
       const src = path.join(skillsDir, `${skill}.md`);
       const dest = path.join(globalClaudeDir, "commands", `${skill}.md`);
       if (!fs.existsSync(src) || !fs.existsSync(dest)) continue;
-      if (sha256(fs.readFileSync(src, "utf-8")) === sha256(fs.readFileSync(dest, "utf-8"))) continue;
-      (placeSkill(projectRoot, src, dest, manifest) ? refreshed : kept).push(`/${skill}`);
+      try {
+        if (sha256(fs.readFileSync(src, "utf-8")) === sha256(fs.readFileSync(dest, "utf-8"))) continue;
+        (placeSkill(projectRoot, src, dest, manifest) ? refreshed : kept).push(`/${skill}`);
+      } catch (err) {
+        // User-level files are best effort: never abort the project install over them.
+        actions.push(`Global Claude command /${skill} could not be refreshed: ${(err as Error).message}`);
+      }
     }
     if (refreshed.length > 0) actions.push(`Global Claude commands refreshed (${path.join(globalClaudeDir, "commands")}): ${refreshed.join(", ")}`);
     if (kept.length > 0) actions.push(`Global Claude commands left untouched (customized): ${kept.join(", ")}`);
