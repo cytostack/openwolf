@@ -35,7 +35,7 @@ After fixing any bug, failed test, failed build, or user-reported problem: appen
 
 ## Session end
 
-Before wrapping up: update `.wolf/STATUS.md`, write a one-line session summary to `.wolf/memory.md` (`| HH:MM | description | file(s) | outcome | ~tokens |`), and record any learnings or bugs from the session in cerebrum.md / buglog.json.
+Before wrapping up: update `.wolf/STATUS.md`, and record any learnings or bugs from the session in cerebrum.md / buglog.json. If your agent has no OpenWolf hooks installed, also write a one-line session summary to `.wolf/memory.md` (`| HH:MM | description | file(s) | outcome | ~tokens |`).
 
 ## On-demand skills
 
