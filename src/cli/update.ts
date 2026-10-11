@@ -9,6 +9,7 @@ import { claudePaths } from "./claude-paths.js";
  * 3. Preserves all user data (cerebrum, memory, anatomy, buglog, ledger)
  * 4. Reports results per project
  */
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { execFileSync } from "node:child_process";
@@ -208,7 +209,7 @@ async function updateProject(
     // 2c. Dead-weight cleanup (2.2): remove files this project never used,
     // but ONLY when they are verbatim our shipped templates/stubs — anything
     // the user touched stays.
-    for (const line of removeDeadWeight(wolfDir, templatesDir)) {
+    for (const line of removeDeadWeight(wolfDir)) {
       console.log(`    ✓ ${line}`);
     }
 
@@ -518,15 +519,22 @@ function createBackup(wolfDir: string): string {
  * designqc-report.json was a 90-byte stub in 10/10. Deletion only happens
  * when the file is verbatim ours (or a content-free stub) — user edits stay.
  */
-function removeDeadWeight(wolfDir: string, templatesDir: string): string[] {
+const SHIPPED_REFRAME_FRAMEWORKS_SHA256 = new Set([
+  "7c0a2df89d950b76efcc94d70c308a8233e184199c235aab74973774f8bb3a76", // 182d906
+  "9a12be53c7910ed19e87dcbee9dfbab35c1a653aa7be39fbf9052779b68b65ea", // 30c4aec
+  "44acc3e2561ebba9ac6bbe8f256f1a52fc92a4b707c30fb8a6aaa28a3bc66364", // 92fd1f5
+]);
+
+export function removeDeadWeight(wolfDir: string): string[] {
   const actions: string[] = [];
 
-  // reframe-frameworks.md: delete only when byte-identical to the shipped template.
+  // reframe-frameworks.md: delete only when it is verbatim one of the versions
+  // we shipped (sha256, LF-normalised); the /reframe skill carries the content.
   try {
     const installed = path.join(wolfDir, "reframe-frameworks.md");
     if (fs.existsSync(installed)) {
-      const shipped = readText(path.join(templatesDir, "reframe-frameworks.md"));
-      if (shipped && readText(installed) === shipped) {
+      const hash = crypto.createHash("sha256").update(readText(installed).replace(/\r\n/g, "\n")).digest("hex");
+      if (SHIPPED_REFRAME_FRAMEWORKS_SHA256.has(hash)) {
         fs.unlinkSync(installed);
         actions.push("Removed reframe-frameworks.md (unused 31KB; the /reframe skill carries it)");
       }
