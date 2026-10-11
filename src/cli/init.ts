@@ -15,7 +15,7 @@ import { ensureDir } from "../utils/paths.js";
 import { isWindows } from "../utils/platform.js";
 import { registerProject, getRegisteredProjects } from "./registry.js";
 import { resolveAgents, detectInstalledAgents } from "../agents/index.js";
-import { installSkills } from "../agents/skills.js";
+import { claudeConfigDir, installSkills } from "../agents/skills.js";
 import { newStore, importFromMarkdown, saveStore, loadStore, STORE_FILE, sha256 as storeSha256 } from "../hooks/anatomy-store.js";
 import { buildHookSettings, HOOK_FILES, HOOK_COUNT, type HookSettings } from "./hook-manifest.js";
 import { mergeConfigDefaults } from "./config-merge.js";
@@ -264,7 +264,7 @@ export async function initCommand(options?: { agent?: string[] }): Promise<void>
 
   // --- Bundled skills (Workstream H): /security-audit, /reframe ---
   try {
-    for (const line of installSkills(projectRoot, actualTemplatesDir, installedAgents)) {
+    for (const line of installSkills(projectRoot, actualTemplatesDir, installedAgents, claudeConfigDir())) {
       console.log(`  ✓ ${line}`);
     }
   } catch {}
