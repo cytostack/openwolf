@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { readJSON, safeCopyFile, writeJSON } from "../utils/fs-safe.js";
@@ -43,7 +44,8 @@ const sha256 = (text: string): string =>
 /** Copy src to dest unless dest is user-customized. Returns whether it was written. */
 function placeSkill(projectRoot: string, src: string, dest: string, manifest: Record<string, string>): boolean {
   const template = sha256(fs.readFileSync(src, "utf-8"));
-  const key = path.relative(projectRoot, dest).split(path.sep).join("/");
+  const rel = path.relative(projectRoot, dest);
+  const key = (rel.startsWith("..") ? dest : rel).split(path.sep).join("/");
   if (fs.existsSync(dest)) {
     const existing = sha256(fs.readFileSync(dest, "utf-8"));
     if (existing !== template && existing !== manifest[key] && !LEGACY_SHA256.has(existing)) return false;
@@ -53,7 +55,15 @@ function placeSkill(projectRoot: string, src: string, dest: string, manifest: Re
   return true;
 }
 
-export function installSkills(projectRoot: string, templatesDir: string, agents: string[]): string[] {
+/** Where Claude Code keeps user-level config (honours CLAUDE_CONFIG_DIR). */
+export const claudeConfigDir = (): string =>
+  process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+
+/**
+ * `globalClaudeDir`: when given, also refresh commands the user already copied
+ * into <dir>/commands (never creates one) under the same never-clobber rule.
+ */
+export function installSkills(projectRoot: string, templatesDir: string, agents: string[], globalClaudeDir?: string): string[] {
   const skillsDir = path.join(templatesDir, "skills");
   if (!fs.existsSync(skillsDir)) return [];
 
@@ -100,6 +110,20 @@ export function installSkills(projectRoot: string, templatesDir: string, agents:
     actions.push(
       `Skills installed: ${SKILLS.map((sk) => `/${sk}`).join(", ")} (${skillsInstalledFor.join(", ")})`
     );
+  }
+
+  if (globalClaudeDir) {
+    const refreshed: string[] = [];
+    const kept: string[] = [];
+    for (const skill of SKILLS) {
+      const src = path.join(skillsDir, `${skill}.md`);
+      const dest = path.join(globalClaudeDir, "commands", `${skill}.md`);
+      if (!fs.existsSync(src) || !fs.existsSync(dest)) continue;
+      if (sha256(fs.readFileSync(src, "utf-8")) === sha256(fs.readFileSync(dest, "utf-8"))) continue;
+      (placeSkill(projectRoot, src, dest, manifest) ? refreshed : kept).push(`/${skill}`);
+    }
+    if (refreshed.length > 0) actions.push(`Global Claude commands refreshed (${path.join(globalClaudeDir, "commands")}): ${refreshed.join(", ")}`);
+    if (kept.length > 0) actions.push(`Global Claude commands left untouched (customized): ${kept.join(", ")}`);
   }
 
   // Claude Code skills: same never-clobber-customized contract.

@@ -19,7 +19,7 @@ import { readJSON, writeJSON, readText, writeText, safeCopyFile } from "../utils
 import { ensureDir } from "../utils/paths.js";
 import { resolveAgents, availableAgents } from "../agents/index.js";
 import { newStore, importFromMarkdown, saveStore, STORE_FILE, sha256 as storeSha256 } from "../hooks/anatomy-store.js";
-import { installSkills } from "../agents/skills.js";
+import { claudeConfigDir, installSkills } from "../agents/skills.js";
 import { buildHookSettings, HOOK_FILES, HOOK_ENTRY_FILES, HOOK_COUNT, type HookSettings } from "./hook-manifest.js";
 import { emptyLedger, recomputeLifetime, migrateLegacyBlockedCounts, type LedgerData } from "../hooks/ledger.js";
 import { mergeConfigDefaults, appendExcludePatterns } from "./config-merge.js";
@@ -345,7 +345,7 @@ async function updateProject(
     }
 
     // 5d. Refresh bundled skills for every configured agent.
-    for (const line of installSkills(root, templatesDir, agentNames)) {
+    for (const line of installSkills(root, templatesDir, agentNames, claudeConfigDir())) {
       console.log(`    ✓ ${line}`);
     }
 

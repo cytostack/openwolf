@@ -53,3 +53,36 @@ test("follows template updates after install, until the user edits the file", ()
   p.run();
   assert.equal(fs.readFileSync(p.dest, "utf-8"), "v2 edited\n");
 });
+
+// Global ~/.claude/commands copies: refresh existing untouched ones, never create or clobber.
+function withGlobal() {
+  const p = project();
+  const globalDir = fs.mkdtempSync(path.join(os.tmpdir(), "wolf-global-"));
+  const file = path.join(globalDir, "commands", "handoff.md");
+  return { ...p, globalDir, file, runGlobal: () => installSkills(p.root, p.templates, ["claude"], globalDir) };
+}
+
+test("refreshes an existing global copy that predates the manifest", () => {
+  const g = withGlobal();
+  g.setTemplate("new\n");
+  fs.mkdirSync(path.dirname(g.file), { recursive: true });
+  fs.writeFileSync(g.file, SHIPPED_BEFORE_MANIFEST);
+  g.runGlobal();
+  assert.equal(fs.readFileSync(g.file, "utf-8"), "new\n");
+});
+
+test("leaves a customized global copy alone", () => {
+  const g = withGlobal();
+  g.setTemplate("new\n");
+  fs.mkdirSync(path.dirname(g.file), { recursive: true });
+  fs.writeFileSync(g.file, "mine\n");
+  g.runGlobal();
+  assert.equal(fs.readFileSync(g.file, "utf-8"), "mine\n");
+});
+
+test("never creates a global copy the user did not have", () => {
+  const g = withGlobal();
+  g.setTemplate("new\n");
+  g.runGlobal();
+  assert.equal(fs.existsSync(g.file), false);
+});
