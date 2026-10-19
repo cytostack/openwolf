@@ -1,7 +1,7 @@
 import { mutateJSON, HOOK_LOCK_BUDGET_MS } from "./anatomy-lock.js";
 import { reconcileReads } from "./event-journal.js";
 import * as path from "node:path";
-import { getWolfDir, ensureWolfDir, readJSON, appendMarkdown, timeShort, readStdin, hookMain, getSessionFilePath } from "./shared.js";
+import { getWolfDir, ensureWolfDir, readJSON, appendMarkdown, timeShort, readStdin, hookMain, getSessionFilePath, realpathOrSelf } from "./shared.js";
 import { buildSessionEntry, flushSessionToLedger, type SessionData } from "./ledger.js";
 import { verifyHookDelivery } from "./hook-attachments.js";
 
@@ -11,20 +11,27 @@ import { verifyHookDelivery } from "./hook-attachments.js";
 // memory line here instead of on every Stop is what keeps memory.md from
 // growing one summary line per turn.
 
-async function main(): Promise<void> {
+export interface FinalizeResult {
+  finalized: boolean;
+  reason?: string;
+  session_id?: string;
+}
+
+/**
+ * Core SessionEnd logic, shared by the hook entry point (below) and the
+ * `openwolf finalize` CLI command. The CLI command exists for harnesses like
+ * Antigravity whose Stop event fires every turn but that expose no separate,
+ * automatic session-end event — see docs/hooks.md.
+ */
+export async function finalizeSession(hookInput: { transcript_path?: string; reason?: string; session_id?: string } = {}): Promise<FinalizeResult> {
   ensureWolfDir();
   const wolfDir = getWolfDir();
-
-  let hookInput: { transcript_path?: string; reason?: string; session_id?: string } = {};
-  try {
-    hookInput = JSON.parse(await readStdin());
-  } catch {}
   const sessionFile = getSessionFilePath(hookInput);
 
   reconcileReads(sessionFile);
   const session = readJSON<SessionData | null>(sessionFile, null);
   if (!session || !session.session_id) {
-    return;
+    return { finalized: false, reason: "no active session state found for this session id" };
   }
 
   let firstEnd = false;
@@ -35,7 +42,7 @@ async function main(): Promise<void> {
   const readCount = Object.keys(session.files_read ?? {}).length;
   const writeCount = (session.files_written ?? []).length;
   if (readCount === 0 && writeCount === 0) {
-    return;
+    return { finalized: false, reason: "no recorded activity this session", session_id: session.session_id };
   }
 
   const entry = buildSessionEntry(session, hookInput.transcript_path);
@@ -56,6 +63,25 @@ async function main(): Promise<void> {
       );
     } catch {}
   }
+
+  return { finalized: firstEnd, session_id: session.session_id, reason: firstEnd ? undefined : "session was already finalized" };
 }
 
-hookMain("session-end", main);
+async function main(): Promise<void> {
+  let hookInput: { transcript_path?: string; reason?: string; session_id?: string } = {};
+  try {
+    hookInput = JSON.parse(await readStdin());
+  } catch {}
+  await finalizeSession(hookInput);
+}
+
+// Run only when executed as a hook script — never on import (the CLI's
+// `finalize` command imports finalizeSession() directly, and must not also
+// trigger the stdin-reading hook runner as a side effect of that import).
+// Compared via realpath: a symlink anywhere in the project path (e.g. a
+// linked work directory) would otherwise make argv[1] never match
+// import.meta.url and silently disable SessionEnd entirely.
+import { fileURLToPath } from "node:url";
+if (process.argv[1] && realpathOrSelf(process.argv[1]) === realpathOrSelf(fileURLToPath(import.meta.url))) {
+  hookMain("session-end", main);
+}

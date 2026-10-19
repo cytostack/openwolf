@@ -4,20 +4,22 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import {LocalSessions,readAll,verifyPacketClaims,type SourceOptions} from './sources.js';
 import {CodexReader,CodexServerSessions} from './codex-server.js';
+import {AntigravitySessions} from './antigravity-source.js';
 import {repoSnapshot} from './repository.js';
 import {hashText,redact,queueCheckpoint,reconcileActive,activeFile,type ActiveState} from '../hooks/handoff-state.js';
 import type {Agent,Packet,SessionSource,SourceSnapshot} from './types.js';
-export function agentName(s:unknown):Agent {if(s!=='claude'&&s!=='codex')throw Error('Agent must be claude or codex');return s}
+export function agentName(s:unknown):Agent {if(s!=='claude'&&s!=='codex'&&s!=='antigravity')throw Error('Agent must be claude, codex or antigravity');return s}
 export function sessionName(s:unknown):string {if(typeof s!=='string'||!s.trim()||s.length>200)throw Error('An explicit session id is required');return s}
 export function sourceOptions(root:string):SourceOptions {try{const c=JSON.parse(fs.readFileSync(path.join(root,'.wolf/config.json'),'utf8')).openwolf?.handoff;return {claudeDir:typeof c?.claude_projects_dir==='string'?c.claude_projects_dir:undefined,codexDir:typeof c?.codex_sessions_dir==='string'?c.codex_sessions_dir:undefined}}catch{return {}}}
 async function withSource<T>(root:string,agent:Agent,mode:string,fn:(source:SessionSource)=>Promise<T>,options?:SourceOptions):Promise<T>{
+  if(agent==='antigravity')return fn(new AntigravitySessions(root));
   if(agent==='codex'&&mode!=='local'){
     const reader=new CodexReader(root);try{await reader.open();return await fn(new CodexServerSessions(root,reader))}catch(error){if(mode==='app-server')throw error}finally{reader.close()}
   }
   return fn(new LocalSessions(root,agent,options??sourceOptions(root)));
 }
 export async function listSessions(root:string,agent?:Agent,mode='auto',options?:SourceOptions){
-  const results=[];for(const a of agent?[agent]:['claude','codex'] as Agent[])results.push(await withSource(root,a,mode,s=>s.list(),options));return {sessions:results.flatMap(r=>r.sessions),gaps:results.flatMap(r=>r.gaps)};
+  const results=[];for(const a of agent?[agent]:['claude','codex','antigravity'] as Agent[])results.push(await withSource(root,a,mode,s=>s.list(),options));return {sessions:results.flatMap(r=>r.sessions),gaps:results.flatMap(r=>r.gaps)};
 }
 export async function readSession(root:string,agent:Agent,id:string,cursor=0,limit=200,mode='auto',options?:SourceOptions){return withSource(root,agent,mode,s=>s.read(sessionName(id),cursor,limit),options)}
 const packetDir=(root:string)=>path.join(root,'.wolf/handoff/packets');
@@ -106,7 +108,8 @@ export function retrieve(root:string,query:string,limit=8){
 function repoSnapshotIdentity(root:string){return hashText(fs.realpathSync(root)).slice(0,16)}
 
 export async function recoverSession(root:string,agent:Agent,session:string,options?:SourceOptions){
-  const read=await readAll(new LocalSessions(root,agent,options??sourceOptions(root)),sessionName(session));
+  const source=agent==='antigravity'?new AntigravitySessions(root):new LocalSessions(root,agent,options??sourceOptions(root));
+  const read=await readAll(source,sessionName(session));
   indexEvidence(root,read);
   const before=reconcileActive(root,agent,session);
   for(const e of read.events)queueCheckpoint(root,agent,session,{id:'source:'+e.id,kind:e.kind==='compaction'?'compaction':'recovered-'+e.kind,at:e.at||read.session.updated_at,text:e.text.slice(0,1200)});

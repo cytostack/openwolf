@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <sub><b>Hooks:</b> Claude Code, Codex CLI &nbsp;·&nbsp; <b>Plugin:</b> OpenCode &nbsp;·&nbsp; <b>Compatible hooks:</b> Grok Build &nbsp;·&nbsp; <b>Context only:</b> Cursor, Gemini CLI, Antigravity</sub>
+  <sub><b>Hooks:</b> Claude Code, Codex CLI, Antigravity &nbsp;·&nbsp; <b>Plugin:</b> OpenCode &nbsp;·&nbsp; <b>Compatible hooks:</b> Grok Build &nbsp;·&nbsp; <b>Context only:</b> Cursor, Gemini CLI</sub>
 </p>
 
 <p align="center">
@@ -66,7 +66,7 @@ openwolf init
 
 `init` detects installed agents and sets up their project integration.
 Complete any project or hook trust review shown by your agent, then start a
-new session. You can select agents with `--agent claude codex opencode`.
+new session. You can select agents with `--agent claude codex opencode antigravity`.
 
 ## Supported agents
 
@@ -76,9 +76,9 @@ new session. You can select agents with `--agent claude codex opencode`.
 | Codex CLI | Project hooks and `AGENTS.md`: saved task recovery and supported session and tool events |
 | OpenCode | Native plugin and `AGENTS.md`: session and tool events, usage records and activity toasts |
 | Grok Build | Enabled Claude-compatible hook discovery; activity notices stay in the dashboard |
+| Antigravity | Bridged project hooks (`.agents/hooks.json`) and `AGENTS.md`: session start, read/write/bash tool events and stop |
 | Cursor | Rules file (context only) |
 | Gemini CLI | `GEMINI.md` block (context only) |
-| Antigravity | `AGENTS.md` block (context only) |
 
 Agents use the project's `.wolf/` directory. The generated `.gitignore`
 excludes local runtime data. Review notes, bug records and indexed content
@@ -228,8 +228,9 @@ openwolf find --file <p>    Show one file's description and symbol map
 openwolf map                Show a focused project overview
 openwolf report             Review operational records and usage
 openwolf usage report       Report available provider token counters
-openwolf handoff list       Find saved Claude and Codex sessions
+openwolf handoff list       Find saved Claude, Codex and Antigravity sessions
 openwolf handoff search <q> Search saved task evidence
+openwolf finalize           Manually close a session for agents with no auto session-end
 openwolf memory archive     Archive eligible older session notes
 openwolf bench              Compare supported tasks (--yes required)
 openwolf bug search <term>  Search known problems and fixes

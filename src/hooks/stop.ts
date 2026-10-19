@@ -2,7 +2,7 @@ import { semanticSessionEntries } from "./session-memory.js";
 import { reconcileReads } from "./event-journal.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getWolfDir, ensureWolfDir, readJSON, writeJSON, countSemanticEntries, readStdin, hookMain, getSessionFilePath } from "./shared.js";
+import { getWolfDir, ensureWolfDir, readJSON, writeJSON, countSemanticEntries, readStdin, hookMain, getSessionFilePath, realpathOrSelf } from "./shared.js";
 import { buildSessionEntry, flushSessionToLedger, type SessionData } from "./ledger.js";
 import { verifyHookDelivery } from "./hook-attachments.js";
 import { mutateJSON, HOOK_LOCK_BUDGET_MS } from "./anatomy-lock.js";
@@ -106,7 +106,10 @@ function checkSemanticSummaries(wolfDir: string, session: SessionData): string |
 
 // Run only when executed as a hook script — never on import (tests import
 // from this module, and main() exits the process).
-import { pathToFileURL } from "node:url";
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Compared via realpath: a symlink anywhere in the project path would
+// otherwise make argv[1] never match import.meta.url and silently disable
+// this hook.
+import { fileURLToPath } from "node:url";
+if (process.argv[1] && realpathOrSelf(process.argv[1]) === realpathOrSelf(fileURLToPath(import.meta.url))) {
   hookMain("stop", main);
 }

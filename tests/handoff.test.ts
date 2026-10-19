@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {LocalSessions} from '../dist/src/handoff/sources.js';
 import {CodexReader,CodexServerSessions} from '../dist/src/handoff/codex-server.js';
-import {exportPacket,inspectPacket,importPacket,checkpoint,retrieve,recoverSession,loadPacket} from '../dist/src/handoff/service.js';
+import {exportPacket,inspectPacket,importPacket,checkpoint,retrieve,recoverSession,loadPacket,listSessions,readSession} from '../dist/src/handoff/service.js';
 import {activeContext,reconcileActive,queueCheckpoint} from '../dist/hooks/handoff-state.js';
 import {operationStatus} from '../dist/src/cli/operations.js';
 function fixture(t:any){
@@ -70,4 +70,24 @@ test('Claude to Codex to Claude preserves explicit next action and unresolved wo
 });
 test('deep reversed parent chains and causal cycles are bounded',async()=>{
  const {orderEvents}=await import('../dist/src/handoff/sources.js');const gaps:string[]=[];const events=Array.from({length:12000},(_,i)=>({id:String(i),parent:i?String(i-1):undefined,at:'',kind:'boundary' as const,text:'',paths:[],source:{file:'fixture',line:i,sha256:'hash'}})).reverse();assert.equal(orderEvents(events,gaps).length,12000);const cycle=events.slice(0,2);cycle[0].parent=cycle[1].id;cycle[1].parent=cycle[0].id;assert.equal(orderEvents(cycle,gaps).length,2);assert(gaps.some(g=>g.includes('cycle')));
+});
+
+// Antigravity has no decodable session transcript, so it is sourced from the
+// same hook-captured checkpoint state the bridge already accumulates in
+// .wolf/handoff/active/, not from a transcript reader like LocalSessions.
+test('antigravity checkpoints surface through handoff list/read without a transcript reader',async t=>{
+ const {root}=fixture(t);checkpoint(root,'antigravity','ag-session',{objective:'Bridge PreToolUse events',next_action:'Add finalize command'});
+ const listed=await listSessions(root,'antigravity');assert.equal(listed.sessions.length,1);assert.equal(listed.sessions[0].id,'ag-session');
+ const read=await readSession(root,'antigravity','ag-session');assert(read.events.some(e=>e.kind==='assistant'&&e.text.includes('checkpoint')));assert(read.gaps.some(g=>g.includes('not decoded')));
+});
+test('claude evidence imported into an antigravity session is surfaced on its next session-start',async t=>{
+ const {root}=fixture(t);const {id}=await exportPacket(root,'claude','source-session','antigravity');
+ assert.equal(importPacket(root,id,'antigravity','ag-receiver').active.imported_packet,id);
+ const text=activeContext(root,'antigravity','ag-receiver');assert(text.includes('Widget'));assert(text.includes('untrusted'));
+});
+test('a packet exported from antigravity has no re-readable source, so import correctly refuses it',async t=>{
+ const {root}=fixture(t);checkpoint(root,'antigravity','ag-session',{objective:'Bridge PreToolUse events'});
+ const {id}=await exportPacket(root,'antigravity','ag-session','claude');
+ assert(!inspectPacket(root,id).source_verifiable);
+ assert.throws(()=>importPacket(root,id,'claude','receiver'),/unverifiable/);
 });

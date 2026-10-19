@@ -95,6 +95,6 @@ export function activeContext(root:string,agent:string,session:string,force=fals
     state.last_context=payload;
     state.injections.push({hash,at:new Date().toISOString(),bytes:Buffer.byteLength(text)});state.injections=state.injections.slice(-100);emit=true;
   });
-  if(emit&&(agent==='claude'||agent==='codex')&&(!s.last_context||force))recordReceipt(root,{agent,session,operation:'context-restored',evidence:agent+':'+session+':context:'+hash});
+  if(emit&&(agent==='claude'||agent==='codex'||agent==='antigravity')&&(!s.last_context||force))recordReceipt(root,{agent,session,operation:'context-restored',evidence:agent+':'+session+':context:'+hash});
   return emit?text:'';
 }

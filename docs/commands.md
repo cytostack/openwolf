@@ -6,7 +6,7 @@ Run commands from the project directory unless a command explicitly selects regi
 
 ```bash
 openwolf init
-openwolf init --agent claude codex opencode
+openwolf init --agent claude codex opencode antigravity
 openwolf status
 openwolf status --all
 openwolf operations doctor
@@ -75,6 +75,18 @@ openwolf handoff search "expired session"
 ```
 
 Recovery uses saved records when observations are missing. Search returns relevant saved evidence. See [handover details](claude-codex-handoff-plan.md).
+
+Antigravity sessions can take part too (`--from antigravity` / `--to antigravity` / `--agent antigravity`), sourced from the hook-captured checkpoint state rather than a decoded transcript. See the [Antigravity limits](hooks.md#antigravity-limits) for what that does and does not cover.
+
+## Close an Antigravity session
+
+Antigravity has no automatic session-end event: its `Stop` mapping fires every turn, not once at session close, so the ledger's final flush and the "Session end" line in `memory.md` need an explicit close:
+
+```bash
+openwolf finalize --agent antigravity --session SESSION_ID
+```
+
+Run it after the final turn of an Antigravity session. It is safe to run more than once; a session that is already finalized reports `finalized: false`.
 
 ## Session notes and archives
 

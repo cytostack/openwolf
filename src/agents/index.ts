@@ -58,6 +58,9 @@ export function detectInstalledAgents(): string[] {
   if (
     fs.existsSync(path.join(home, ".antigravity")) ||
     fs.existsSync(path.join(home, ".config", "antigravity")) ||
+    fs.existsSync(path.join(home, ".gemini", "antigravity-cli")) ||
+    onPath("agy") ||
+    onPath("antigravity") ||
     (process.platform === "darwin" && fs.existsSync("/Applications/Antigravity.app"))
   ) detected.push("antigravity");
   return detected;

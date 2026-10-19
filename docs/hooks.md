@@ -12,9 +12,17 @@ Agent support is different across products and versions. A registered hook is no
 | Codex CLI | `.codex/hooks.json` and `AGENTS.md` | Requires hook support, enabled settings and project trust. Tool names and payloads can differ by version. |
 | OpenCode | Native plugin and `AGENTS.md` | Uses session and tool events. It does not implement every Claude hook feature. |
 | Grok Build | Enabled Claude-compatible discovery | Uses the existing registration. OpenWolf activity notices are dashboard-only. |
-| Cursor, Gemini CLI, Antigravity | Project instruction files | No full hook integration or equivalent usage coverage is claimed. |
+| Antigravity | `.agents/hooks.json` bridge and `AGENTS.md` | A bridge script (`antigravity-bridge.js`) translates Antigravity's camelCase tool events (`view_file`, `write_to_file`, `replace_file_content`, `run_command`) and `PreInvocation`/`Stop` events to OpenWolf's read/write/bash and session-start/stop hooks. Does not cover `user-prompt-submit`, `post-batch` or `precompact`; those have no Antigravity equivalent. See the two limits below. |
+| Cursor, Gemini CLI | Project instruction files | No full hook integration or equivalent usage coverage is claimed. |
 
 See [2.5.3 release validation](release-2.5.3.md) for OpenCode V2 checks and [2.5.2 validation](release-2.5.2.md) for earlier native integration results.
+
+### Antigravity limits
+
+- **Saved context only injects on the first model call.** The bridge maps `PreInvocation` to `session-start.js` only when `invocationNum === 1`. Antigravity does not re-emit `PreInvocation` with saved-context injection support on later model calls within the same session, so a handoff or checkpoint that becomes available after the first call is not automatically surfaced; use `openwolf handoff recover --from antigravity --session <id>` (or re-check `openwolf handoff list`) to pull it in manually.
+- **`Stop` is a per-turn boundary, not a true session end.** Antigravity has no dedicated session-end event, so the bridge's `Stop` mapping runs `stop.js` (an idempotent per-turn ledger flush) on every turn, never `session-end.js`. The one-time "Session end" line in `memory.md` and the session's `ended` timestamp are therefore never written automatically. Run `openwolf finalize --agent antigravity --session <id>` after the final turn to write them.
+
+Antigravity sessions participate in `openwolf handoff` (`checkpoint`, `list`, `read`, `recover`, `export`, `import`) through the same hook-captured checkpoint state the bridge already accumulates. Because Antigravity's own conversation transcript is not decoded, a packet exported *from* an antigravity session has no independently re-readable source file, so `handoff import` correctly refuses it as unverifiable; importing *into* an antigravity session (e.g. from a Claude or Codex handoff) is fully supported and is surfaced automatically on the next `session-start.js`.
 
 ## What hooks do
 

@@ -1,4 +1,5 @@
 import {addHandoffCommands} from "./handoff.js";
+import {addFinalizeCommand} from "./finalize.js";
 import { logSessionMemory } from "../hooks/session-memory.js";
 import { reviewMemory, approveMemory, revokeMemory } from "./memory-review.js";
 import { usageReport, reconcileUsage } from "../tracker/usage-report.js";
@@ -33,6 +34,7 @@ function getVersion(): string {
 export function createProgram(): Command {
   const program = new Command();
   addHandoffCommands(program);
+  addFinalizeCommand(program);
 
   program
     .name("openwolf")
@@ -44,7 +46,7 @@ export function createProgram(): Command {
     .description("Initialize .wolf/ in current project")
     .option(
       "--agent <agents...>",
-      "agents to wire up alongside Claude Code: codex, opencode, grok, gemini, cursor, all. Default: auto-detect what's installed; pass 'claude' to wire Claude Code only"
+      "agents to wire up alongside Claude Code: codex, opencode, grok, gemini, cursor, antigravity, all. Default: auto-detect what's installed; pass 'claude' to wire Claude Code only"
     )
     .action((opts: { agent?: string[] }) => initCommand(opts));
 

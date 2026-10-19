@@ -7,7 +7,7 @@ import {listSessions,readSession,exportPacket,inspectPacket,importPacket,checkpo
 import {operationStatus,prepareOperations} from './operations.js';
 const root=()=>findProjectRoot(process.cwd());const print=(v:unknown)=>console.log(JSON.stringify(v,null,2));
 export function addHandoffCommands(program:Command){
- const handoff=program.command('handoff').description('Inspect and transfer saved Claude/Codex task evidence');
+ const handoff=program.command('handoff').description('Inspect and transfer saved Claude/Codex/Antigravity task evidence');
  handoff.command('list').option('--from <agent>').option('--source <source>','auto, local or app-server','auto').action(async o=>print(await listSessions(root(),o.from?agentName(o.from):undefined,o.source)));
  handoff.command('read').requiredOption('--from <agent>').requiredOption('--session <id>').option('--cursor <number>','Event offset','0').option('--limit <number>','Page size','200').option('--source <source>','auto, local or app-server','auto').action(async o=>print(await readSession(root(),agentName(o.from),o.session,Number(o.cursor),Number(o.limit),o.source)));
  handoff.command('export').requiredOption('--from <agent>').requiredOption('--session <id>').requiredOption('--to <agent>').option('--preview','Read-only packet preview').option('--budget <number>','Estimated token budget','4000').option('--source <source>','local or app-server','local').action(async o=>print(await exportPacket(root(),agentName(o.from),o.session,agentName(o.to),{preview:o.preview,budget:Number(o.budget),source:o.source})));

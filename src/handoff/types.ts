@@ -1,4 +1,4 @@
-export type Agent = 'claude'|'codex';
+export type Agent = 'claude'|'codex'|'antigravity';
 export type EventKind = 'user'|'assistant'|'tool-call'|'tool-result'|'compaction'|'boundary';
 export interface EvidenceEvent {
   id:string; parent?:string; at:string; kind:EventKind; text:string;

@@ -447,7 +447,7 @@ function generateTemplate(destPath: string, file: string): void {
         cron: { enabled: true, max_retry_attempts: 3, dead_letter_enabled: true, heartbeat_interval_minutes: 30 },
         memory: { consolidation_after_days: 7, max_entries_before_consolidation: 200 },
         cerebrum: { max_tokens: 2000, reflection_frequency: "weekly" },
-        context: { session_digest_budget_tokens: 1500, budgets: { claude: 1500, codex: 1200, gemini: 1200, opencode: 1200, cursor: 800 } },
+        context: { session_digest_budget_tokens: 1500, budgets: { claude: 1500, codex: 1200, gemini: 1200, opencode: 1200, cursor: 800, antigravity: 1200, grok: 1200 } },
         daemon: { port: 18790, log_level: "info" },
         dashboard: { enabled: true, port: 18791, host: "127.0.0.1" },
         buglog: { auto_detect: true },

@@ -65,6 +65,7 @@ export function detectAgent(): string {
   if (process.env.CLAUDECODE || process.env.CLAUDE_CODE_ENTRYPOINT || process.env.CLAUDE_PROJECT_DIR) return "claude";
   if (process.env.CODEX_PROJECT_ROOT || process.env.CODEX_SANDBOX || process.env.CODEX_THREAD_ID) return "codex";
   if (process.env.OPENCODE || process.env.OPENCODE_PROJECT_ROOT) return "opencode";
+  if (process.env.ANTIGRAVITY || process.env.ANTIGRAVITY_PROJECT_ROOT) return "antigravity";
   return "default";
 }
 
@@ -807,7 +808,7 @@ export function isInsideDir(root: string, target: string): boolean {
 }
 
 /** realpath, tolerating a path whose leaf does not exist yet. */
-function realpathOrSelf(p: string): string {
+export function realpathOrSelf(p: string): string {
   try {
     return fs.realpathSync(p);
   } catch {}
