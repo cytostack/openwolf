@@ -79,6 +79,11 @@ export function startFileWatcher(
     logger.debug(`File removed: ${relativePath}`);
     broadcast({type:"file_changed", file:relativePath, content:"", timestamp:new Date().toISOString()});
   });
+  // chokidar emits 'error' for FS watcher failures (e.g. EMFILE after watching a
+  // large tree, or ENOENT when a watched path disappears). An unhandled 'error'
+  // event is re-thrown and takes the daemon down; keep going like the sibling
+  // source/git watchers do.
+  watcher.on("error", (error) => logger.warn(`File watcher error (continuing): ${error}`));
 
   logger.info("File watcher started on .wolf/");
 }
